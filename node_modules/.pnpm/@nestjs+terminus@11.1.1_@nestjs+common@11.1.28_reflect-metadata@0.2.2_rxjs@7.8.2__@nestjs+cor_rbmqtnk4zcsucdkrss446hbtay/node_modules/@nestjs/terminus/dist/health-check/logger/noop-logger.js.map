@@ -1,0 +1,1 @@
+{"version":3,"file":"noop-logger.js","sourceRoot":"","sources":["../../../lib/health-check/logger/noop-logger.ts"],"names":[],"mappings":";;;AAAa,QAAA,WAAW,GAAG;IACzB,gEAAgE;IAChE,GAAG,EAAE,GAAG,EAAE,GAAE,CAAC;IACb,gEAAgE;IAChE,KAAK,EAAE,GAAG,EAAE,GAAE,CAAC;IACf,gEAAgE;IAChE,IAAI,EAAE,GAAG,EAAE,GAAE,CAAC;CACf,CAAC"}
