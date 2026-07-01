@@ -1,0 +1,3 @@
+d7b6893 feat(phase1): enforce permission baseline and admin content hard-deny
+7ff97f2 feat(phase1): implement identity sessions and user-role administration
+6088fe0 chore(phase1): bootstrap ten NestJS services and local infrastructure

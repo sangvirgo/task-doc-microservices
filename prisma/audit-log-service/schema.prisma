@@ -1,0 +1,36 @@
+generator client {
+  provider = "prisma-client-js"
+  output   = "../../node_modules/@prisma/client-audit"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("AUDIT_DATABASE_URL")
+}
+
+model AuditEvent {
+  id              String   @id
+  event_type      String
+  occurred_at     DateTime
+  actor_id        String?
+  resource_type   String
+  resource_id     String
+  payload         Json
+  payload_hash    String
+  previous_hash   String?
+  current_hash    String
+  decision_reason String?
+  created_at      DateTime @default(now())
+
+  @@unique([id])
+  @@index([occurred_at])
+  @@index([resource_id])
+  @@index([actor_id])
+}
+
+model ChainHead {
+  id            String   @id @default("singleton")
+  last_hash     String   @default("")
+  last_event_id String?
+  updated_at    DateTime @updatedAt
+}

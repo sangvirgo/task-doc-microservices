@@ -1,0 +1,39 @@
+generator client {
+  provider = "prisma-client-js"
+  output   = "../../node_modules/@prisma/client-permission"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("PERMISSION_DATABASE_URL")
+}
+
+model Grant {
+  id                   String    @id @default(uuid())
+  actor_id             String
+  resource_type        String
+  resource_id          String
+  permissions          String[]
+  task_id              String?
+  expires_at           DateTime
+  effective_expires_at DateTime
+  revoked_at           DateTime?
+  created_at           DateTime  @default(now())
+
+  @@unique([actor_id, resource_id])
+  @@index([actor_id])
+  @@index([resource_id])
+  @@index([expires_at])
+}
+
+model DelegatedGrant {
+  id           String   @id @default(uuid())
+  parent_id    String
+  actor_id     String
+  permissions  String[]
+  revoked_at   DateTime?
+  created_at   DateTime @default(now())
+
+  @@index([parent_id])
+  @@index([actor_id])
+}
