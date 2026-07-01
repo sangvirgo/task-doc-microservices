@@ -1,4 +1,4 @@
-import { BadRequestException, Body, Controller, Inject, Post } from '@nestjs/common';
+import { BadRequestException, Body, Controller, Post } from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import Redis from 'ioredis';
 
@@ -14,18 +14,17 @@ import { AuthService } from './auth.service';
 @ApiTags('auth')
 @Controller('auth')
 export class AuthController {
-  private redis: Redis;
+  private readonly redis: Redis;
 
-  constructor(
-    private readonly authService: AuthService,
-    @Inject('REDIS_URL') private readonly redisUrl: string,
-  ) {
-    this.redis = new Redis(redisUrl);
+  constructor(private readonly authService: AuthService) {
+    // Phase 1: connect to Redis at env URL
+    // Phase 2: inject via dependency with proper provider setup
+    this.redis = new Redis(process.env.REDIS_URL || 'redis://localhost:6379');
   }
 
   @Post('login')
   @ApiOperation({ summary: 'Authenticate and obtain an access token' })
-  login(@Body() request: LoginRequest): LoginResponse {
+  async login(@Body() request: LoginRequest): Promise<LoginResponse> {
     const parsed = loginRequestSchema.safeParse(request);
     if (!parsed.success) {
       throw new BadRequestException('Invalid email or password format');
@@ -49,7 +48,11 @@ export class AuthController {
 
     // Store session metadata in Redis (TTL: 7 days).
     const sessionMetadata = { userId, email: request.email, role: 'EMPLOYEE', capabilities: [] };
-    this.redis.setex(`session:${sessionId}`, 7 * 24 * 60 * 60, JSON.stringify(sessionMetadata));
+    await this.redis.setex(
+      `session:${sessionId}`,
+      7 * 24 * 60 * 60,
+      JSON.stringify(sessionMetadata),
+    );
 
     return {
       access_token: accessToken,

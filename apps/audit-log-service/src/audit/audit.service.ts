@@ -1,42 +1,57 @@
 import { Injectable } from '@nestjs/common';
 import { createHash } from 'crypto';
-import { randomUUID } from 'crypto';
+
+/**
+ * In-memory audit event store for Phase 1.
+ * Phase 2 will replace with PostgreSQL via PrismaClient.
+ */
+interface AuditEventRecord {
+  id: string;
+  event_type: string;
+  occurred_at: Date;
+  actor_id: string | null;
+  resource_type: string;
+  resource_id: string;
+  payload: Record<string, unknown>;
+  previous_hash: string;
+  current_hash: string;
+  sequence_number: number;
+  created_at: Date;
+}
 
 /**
  * Audit Log Service append operation (V3 §5.7, ADR-0002).
  *
  * Single-writer, hash-chained, append-only audit log.
  * - One serialized writer (prefetch=1 when consuming RabbitMQ in Phase 2)
- * - PostgreSQL transaction with locked ChainHead row
+ * - PostgreSQL transaction with locked ChainHead row (Phase 2)
  * - event_id deduplication inside the locked transaction
  * - SHA-256 hash chain: current_hash = SHA-256(canonical_payload + previous_hash)
  * - Commit transaction before acknowledging message
  *
- * Phase 1 baseline: logic in place; actual database calls deferred to when PrismaClient is wired.
+ * Phase 1 implementation: in-memory store with proper hash-chain logic.
+ * Phase 2: Replace with PostgreSQL PrismaClient while keeping the same interface.
  */
 @Injectable()
 export class AuditService {
+  private chainHead = { lastHash: '', lastEventId: null as string | null, sequence: 0 };
+  private events = new Map<string, AuditEventRecord>();
+
   /**
-   * Append an event to the hash chain.
+   * Append an event to the hash chain (V3 §5.7.2).
    *
-   * Pseudocode for Phase 2 database integration:
-   * BEGIN TRANSACTION
-   *   SELECT last_hash, last_event_id FROM chain_head FOR UPDATE (locked)
-   *   IF event.event_id already in AuditEvent THEN
-   *     ROLLBACK, return existing event
-   *   END IF
-   *   current_hash = SHA256(canonical_payload + last_hash)
-   *   INSERT AuditEvent(id, hash, previous_hash, ...) VALUES(event_id, current_hash, last_hash, ...)
-   *   UPDATE chain_head SET last_hash = current_hash, last_event_id = event.event_id
-   * COMMIT
-   * RETURN current_hash
+   * Critical (ADR-0002): Deduplication check inside the locked append transaction.
+   * This ensures RabbitMQ redelivery cannot fork the chain or leave a gap.
    *
-   * This ensures:
-   * - Redelivered events (same event_id) are deduplicated inside the transaction
-   * - Concurrent appends serialize (chain_head lock)
-   * - Hash chain cannot fork (one writer at a time)
+   * Implementation:
+   * 1. Check if event_id already exists (idempotency)
+   * 2. Calculate canonical payload for hash determinism
+   * 3. Compute current_hash = SHA-256(canonical_payload + previous_hash)
+   * 4. Append event
+   * 5. Update chain head
+   * 6. Return result
    */
-  async appendEvent(event: {
+  appendEvent(event: {
     event_id: string;
     event_type: string;
     occurred_at: string;
@@ -44,11 +59,18 @@ export class AuditService {
     resource_type: string;
     resource_id: string;
     payload: Record<string, unknown>;
-  }): Promise<{ current_hash: string; sequence_number: number }> {
-    // Phase 1 scaffold: return mock hash
-    // Phase 2: implement full transaction logic above
+  }): { current_hash: string; sequence_number: number } {
+    // Step 1: Check if already appended (inside "transaction" lock in Phase 1)
+    if (this.events.has(event.event_id)) {
+      const existing = this.events.get(event.event_id)!;
+      return {
+        current_hash: existing.current_hash,
+        sequence_number: existing.sequence_number,
+      };
+    }
 
-    const canonicalPayload = JSON.stringify({
+    // Step 2: Deterministic canonical JSON with sorted keys
+    const canonicalPayload = this.canonicalJSON({
       event_id: event.event_id,
       event_type: event.event_type,
       occurred_at: event.occurred_at,
@@ -58,35 +80,111 @@ export class AuditService {
       payload: event.payload,
     });
 
-    const previousHash = ''; // Phase 2: fetch from chain_head
+    // Step 3: Compute hash chain (V3 §5.7)
     const currentHash = createHash('sha256')
-      .update(canonicalPayload + previousHash)
+      .update(canonicalPayload + this.chainHead.lastHash)
       .digest('hex');
 
-    return { current_hash: currentHash, sequence_number: 1 };
+    // Step 4-5: Append event and update chain head (atomically in Phase 2)
+    const sequenceNumber = this.chainHead.sequence + 1;
+    const auditEvent: AuditEventRecord = {
+      id: event.event_id,
+      event_type: event.event_type,
+      occurred_at: new Date(event.occurred_at),
+      actor_id: event.actor_id,
+      resource_type: event.resource_type,
+      resource_id: event.resource_id,
+      payload: event.payload,
+      previous_hash: this.chainHead.lastHash,
+      current_hash: currentHash,
+      sequence_number: sequenceNumber,
+      created_at: new Date(),
+    };
+
+    this.events.set(event.event_id, auditEvent);
+    this.chainHead.lastHash = currentHash;
+    this.chainHead.lastEventId = event.event_id;
+    this.chainHead.sequence = sequenceNumber;
+
+    return { current_hash: currentHash, sequence_number: sequenceNumber };
   }
 
   /**
    * Get the current chain head (for verification and recovery).
    */
-  async getChainHead(): Promise<{ last_hash: string; last_event_id: string | null; sequence: number }> {
-    // Phase 1: return empty chain
-    // Phase 2: SELECT from chain_head
-    return { last_hash: '', last_event_id: null, sequence: 0 };
+  getChainHead(): {
+    last_hash: string;
+    last_event_id: string | null;
+    sequence: number;
+  } {
+    return {
+      last_hash: this.chainHead.lastHash,
+      last_event_id: this.chainHead.lastEventId,
+      sequence: this.chainHead.sequence,
+    };
+  }
+
+  /**
+   * Get a specific audit event (for verification).
+   */
+  getEvent(eventId: string): AuditEventRecord | undefined {
+    return this.events.get(eventId);
+  }
+
+  /**
+   * Verify the hash chain integrity (Phase 3 security monitoring).
+   * Walk from genesis, recompute each hash, and detect tampering.
+   */
+  verifyChainIntegrity(): boolean {
+    if (this.events.size === 0) {
+      return true; // Empty chain is valid
+    }
+
+    // Phase 1: basic linear walk (Phase 3 will add comprehensive verification)
+    let previousHash = '';
+    for (const event of Array.from(this.events.values()).sort(
+      (a, b) => a.sequence_number - b.sequence_number,
+    )) {
+      const recomputedHash = createHash('sha256')
+        .update(
+          this.canonicalJSON({
+            event_id: event.id,
+            event_type: event.event_type,
+            occurred_at: event.occurred_at.toISOString(),
+            actor_id: event.actor_id,
+            resource_type: event.resource_type,
+            resource_id: event.resource_id,
+            payload: event.payload,
+          }) + previousHash,
+        )
+        .digest('hex');
+
+      if (recomputedHash !== event.current_hash) {
+        return false; // Tampering detected
+      }
+
+      previousHash = event.current_hash;
+    }
+
+    return true;
   }
 
   /**
    * Canonical JSON serialization for hash chain.
    * Must be deterministic so the same event always produces the same hash.
+   * This ensures verification walkers recompute the same hashes.
    */
   private canonicalJSON(obj: Record<string, unknown>): string {
     // Sort keys to ensure determinism
     const sorted = Object.keys(obj)
       .sort()
-      .reduce((acc, key) => {
-        acc[key] = obj[key];
-        return acc;
-      }, {} as Record<string, unknown>);
+      .reduce(
+        (acc, key) => {
+          acc[key] = obj[key];
+          return acc;
+        },
+        {} as Record<string, unknown>,
+      );
     return JSON.stringify(sorted);
   }
 }

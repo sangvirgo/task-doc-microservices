@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
-import { compare, hash } from 'bcryptjs';
+import { compareSync, hashSync } from 'bcryptjs';
 import { randomUUID } from 'crypto';
 
 export interface TokenPair {
@@ -26,7 +26,6 @@ export interface SessionMetadata {
 @Injectable()
 export class AuthService {
   private readonly accessTokenTtl = 1800; // 30 minutes (V3 §5.1)
-  private readonly refreshTokenTtl = 7 * 24 * 60 * 60; // 7 days
 
   constructor(private readonly jwtService: JwtService) {}
 
@@ -34,15 +33,15 @@ export class AuthService {
    * Hash a password for storage. Never store plaintext.
    * V3 §5.1: hash at registration/change only; never hash on every login.
    */
-  async hashPassword(password: string): Promise<string> {
-    return hash(password, 10);
+  hashPassword(password: string): string {
+    return hashSync(password, 10);
   }
 
   /**
    * Verify a plaintext password against its hash.
    */
-  async verifyPassword(plaintext: string, hash: string): Promise<boolean> {
-    return compare(plaintext, hash);
+  verifyPassword(plaintext: string, passwordHash: string): boolean {
+    return compareSync(plaintext, passwordHash);
   }
 
   /**
