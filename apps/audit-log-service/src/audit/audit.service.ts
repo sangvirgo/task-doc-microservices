@@ -1,14 +1,11 @@
 import { Injectable } from '@nestjs/common';
 import { createHash } from 'crypto';
+import { AuditPrismaService } from '../prisma/audit-prisma.service';
 
-/**
- * In-memory audit event store for Phase 1.
- * Phase 2 will replace with PostgreSQL via PrismaClient.
- */
-interface AuditEventRecord {
+export interface AuditEventDto {
   id: string;
   event_type: string;
-  occurred_at: Date;
+  occurred_at: string;
   actor_id: string | null;
   resource_type: string;
   resource_id: string;
@@ -16,42 +13,23 @@ interface AuditEventRecord {
   previous_hash: string;
   current_hash: string;
   sequence_number: number;
-  created_at: Date;
+  created_at: string;
 }
 
 /**
  * Audit Log Service append operation (V3 §5.7, ADR-0002).
  *
  * Single-writer, hash-chained, append-only audit log.
- * - One serialized writer (prefetch=1 when consuming RabbitMQ in Phase 2)
- * - PostgreSQL transaction with locked ChainHead row (Phase 2)
+ * - PostgreSQL transaction with locked ChainHead row
  * - event_id deduplication inside the locked transaction
  * - SHA-256 hash chain: current_hash = SHA-256(canonical_payload + previous_hash)
  * - Commit transaction before acknowledging message
- *
- * Phase 1 implementation: in-memory store with proper hash-chain logic.
- * Phase 2: Replace with PostgreSQL PrismaClient while keeping the same interface.
  */
 @Injectable()
 export class AuditService {
-  private chainHead = { lastHash: '', lastEventId: null as string | null, sequence: 0 };
-  private events = new Map<string, AuditEventRecord>();
+  constructor(private readonly prisma: AuditPrismaService) {}
 
-  /**
-   * Append an event to the hash chain (V3 §5.7.2).
-   *
-   * Critical (ADR-0002): Deduplication check inside the locked append transaction.
-   * This ensures RabbitMQ redelivery cannot fork the chain or leave a gap.
-   *
-   * Implementation:
-   * 1. Check if event_id already exists (idempotency)
-   * 2. Calculate canonical payload for hash determinism
-   * 3. Compute current_hash = SHA-256(canonical_payload + previous_hash)
-   * 4. Append event
-   * 5. Update chain head
-   * 6. Return result
-   */
-  appendEvent(event: {
+  async appendEvent(event: {
     event_id: string;
     event_type: string;
     occurred_at: string;
@@ -59,92 +37,120 @@ export class AuditService {
     resource_type: string;
     resource_id: string;
     payload: Record<string, unknown>;
-  }): { current_hash: string; sequence_number: number } {
-    // Step 1: Check if already appended (inside "transaction" lock in Phase 1)
-    if (this.events.has(event.event_id)) {
-      const existing = this.events.get(event.event_id)!;
-      return {
-        current_hash: existing.current_hash,
-        sequence_number: existing.sequence_number,
-      };
-    }
+  }): Promise<{ current_hash: string; sequence_number: number }> {
+    return this.prisma.$transaction(async (tx) => {
+      const existing = await tx.auditEvent.findUnique({ where: { id: event.event_id } });
+      if (existing) {
+        return {
+          current_hash: existing.current_hash,
+          sequence_number: existing.sequence_number,
+        };
+      }
 
-    // Step 2: Deterministic canonical JSON with sorted keys
-    const canonicalPayload = this.canonicalJSON({
-      event_id: event.event_id,
-      event_type: event.event_type,
-      occurred_at: event.occurred_at,
-      actor_id: event.actor_id,
-      resource_type: event.resource_type,
-      resource_id: event.resource_id,
-      payload: event.payload,
+      // Lock chain head row (upsert ensures it exists on first run)
+      const chainHead = await tx.chainHead.upsert({
+        where: { id: 'singleton' },
+        create: { id: 'singleton', last_hash: '', sequence: 0 },
+        update: {},
+      });
+
+      const canonicalPayload = this.canonicalJSON({
+        event_id: event.event_id,
+        event_type: event.event_type,
+        occurred_at: event.occurred_at,
+        actor_id: event.actor_id,
+        resource_type: event.resource_type,
+        resource_id: event.resource_id,
+        payload: event.payload,
+      });
+
+      const currentHash = createHash('sha256')
+        .update(canonicalPayload + chainHead.last_hash)
+        .digest('hex');
+
+      const sequenceNumber = chainHead.sequence + 1;
+
+      await tx.auditEvent.create({
+        data: {
+          id: event.event_id,
+          event_type: event.event_type,
+          occurred_at: new Date(event.occurred_at),
+          actor_id: event.actor_id,
+          resource_type: event.resource_type,
+          resource_id: event.resource_id,
+          payload: event.payload as any,
+          previous_hash: chainHead.last_hash,
+          current_hash: currentHash,
+          sequence_number: sequenceNumber,
+        },
+      });
+
+      await tx.chainHead.update({
+        where: { id: 'singleton' },
+        data: {
+          last_hash: currentHash,
+          last_event_id: event.event_id,
+          sequence: sequenceNumber,
+        },
+      });
+
+      return { current_hash: currentHash, sequence_number: sequenceNumber };
     });
-
-    // Step 3: Compute hash chain (V3 §5.7)
-    const currentHash = createHash('sha256')
-      .update(canonicalPayload + this.chainHead.lastHash)
-      .digest('hex');
-
-    // Step 4-5: Append event and update chain head (atomically in Phase 2)
-    const sequenceNumber = this.chainHead.sequence + 1;
-    const auditEvent: AuditEventRecord = {
-      id: event.event_id,
-      event_type: event.event_type,
-      occurred_at: new Date(event.occurred_at),
-      actor_id: event.actor_id,
-      resource_type: event.resource_type,
-      resource_id: event.resource_id,
-      payload: event.payload,
-      previous_hash: this.chainHead.lastHash,
-      current_hash: currentHash,
-      sequence_number: sequenceNumber,
-      created_at: new Date(),
-    };
-
-    this.events.set(event.event_id, auditEvent);
-    this.chainHead.lastHash = currentHash;
-    this.chainHead.lastEventId = event.event_id;
-    this.chainHead.sequence = sequenceNumber;
-
-    return { current_hash: currentHash, sequence_number: sequenceNumber };
   }
 
-  /**
-   * Get the current chain head (for verification and recovery).
-   */
-  getChainHead(): {
+  async getChainHead(): Promise<{
     last_hash: string;
     last_event_id: string | null;
     sequence: number;
-  } {
+  }> {
+    const head = await this.prisma.chainHead.findUnique({ where: { id: 'singleton' } });
+    if (!head) {
+      return { last_hash: '', last_event_id: null, sequence: 0 };
+    }
     return {
-      last_hash: this.chainHead.lastHash,
-      last_event_id: this.chainHead.lastEventId,
-      sequence: this.chainHead.sequence,
+      last_hash: head.last_hash,
+      last_event_id: head.last_event_id,
+      sequence: head.sequence,
     };
   }
 
-  /**
-   * Get a specific audit event (for verification).
-   */
-  getEvent(eventId: string): AuditEventRecord | undefined {
-    return this.events.get(eventId);
+  async getEvent(eventId: string): Promise<AuditEventDto | null> {
+    const event = await this.prisma.auditEvent.findUnique({ where: { id: eventId } });
+    if (!event) return null;
+    return this.toDto(event);
   }
 
-  /**
-   * Verify the hash chain integrity (Phase 3 security monitoring).
-   * Walk from genesis, recompute each hash, and detect tampering.
-   */
-  verifyChainIntegrity(): boolean {
-    if (this.events.size === 0) {
-      return true; // Empty chain is valid
-    }
+  async listEvents(filters?: {
+    event_type?: string;
+    actor_id?: string;
+    resource_type?: string;
+    resource_id?: string;
+    limit?: number;
+    offset?: number;
+  }): Promise<AuditEventDto[]> {
+    const events = await this.prisma.auditEvent.findMany({
+      where: {
+        event_type: filters?.event_type,
+        actor_id: filters?.actor_id,
+        resource_type: filters?.resource_type,
+        resource_id: filters?.resource_id,
+      },
+      orderBy: { sequence_number: 'desc' },
+      take: filters?.limit || 50,
+      skip: filters?.offset || 0,
+    });
+    return events.map((e) => this.toDto(e));
+  }
 
-    // Phase 1: basic linear walk (Phase 3 will add comprehensive verification)
+  async verifyChainIntegrity(): Promise<{ valid: boolean; broken_at?: number }> {
+    const events = await this.prisma.auditEvent.findMany({
+      orderBy: { sequence_number: 'asc' },
+    });
+
+    if (events.length === 0) return { valid: true };
+
     let previousHash = '';
-    for (const event of Array.from(this.events.values()).sort(
-      (a, b) => a.sequence_number - b.sequence_number,
-    )) {
+    for (const event of events) {
       const recomputedHash = createHash('sha256')
         .update(
           this.canonicalJSON({
@@ -154,28 +160,22 @@ export class AuditService {
             actor_id: event.actor_id,
             resource_type: event.resource_type,
             resource_id: event.resource_id,
-            payload: event.payload,
+            payload: event.payload as Record<string, unknown>,
           }) + previousHash,
         )
         .digest('hex');
 
       if (recomputedHash !== event.current_hash) {
-        return false; // Tampering detected
+        return { valid: false, broken_at: event.sequence_number };
       }
 
       previousHash = event.current_hash;
     }
 
-    return true;
+    return { valid: true };
   }
 
-  /**
-   * Canonical JSON serialization for hash chain.
-   * Must be deterministic so the same event always produces the same hash.
-   * This ensures verification walkers recompute the same hashes.
-   */
   private canonicalJSON(obj: Record<string, unknown>): string {
-    // Sort keys to ensure determinism
     const sorted = Object.keys(obj)
       .sort()
       .reduce(
@@ -186,5 +186,33 @@ export class AuditService {
         {} as Record<string, unknown>,
       );
     return JSON.stringify(sorted);
+  }
+
+  private toDto(event: {
+    id: string;
+    event_type: string;
+    occurred_at: Date;
+    actor_id: string | null;
+    resource_type: string;
+    resource_id: string;
+    payload: unknown;
+    previous_hash: string;
+    current_hash: string;
+    sequence_number: number;
+    created_at: Date;
+  }): AuditEventDto {
+    return {
+      id: event.id,
+      event_type: event.event_type,
+      occurred_at: event.occurred_at.toISOString(),
+      actor_id: event.actor_id,
+      resource_type: event.resource_type,
+      resource_id: event.resource_id,
+      payload: event.payload as Record<string, unknown>,
+      previous_hash: event.previous_hash,
+      current_hash: event.current_hash,
+      sequence_number: event.sequence_number,
+      created_at: event.created_at.toISOString(),
+    };
   }
 }
