@@ -1,35 +1,34 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, BadRequestException, NotFoundException } from '@nestjs/common';
 
 import { PermissionAction, PermissionReasonCode, isAdminForbiddenAction } from '@c17/contracts';
+import { PermissionPrismaService } from '../prisma/permission-prisma.service';
 
-/**
- * In-memory grant store for Phase 1.
- * Phase 2 will replace with PostgreSQL via PrismaClient.
- */
-interface PermissionGrant {
+export interface GrantDto {
   id: string;
+  grantor_id: string;
   actor_id: string;
   resource_type: string;
   resource_id: string;
-  permissions: PermissionAction[];
-  task_id: string | null;
-  expires_at: Date;
-  effective_expires_at: Date;
-  revoked_at: Date | null;
-  created_at: Date;
+  permissions: string[];
+  task_id: string;
+  expires_at: string;
+  effective_expires_at: string;
+  status: string;
+  revoked_at: string | null;
+  parent_grant_id: string | null;
+  created_at: string;
 }
 
 /**
  * Permission Service RBAC evaluation (V3 §8.1, ADR-0001).
  *
- * Implementation: grant lookup, expiry checking, revocation checking, and ADMIN hard-deny.
- * Phase 1: in-memory store with proper RBAC logic.
- * Phase 2: Replace with PostgreSQL PrismaClient while keeping the same interface.
+ * Implementation: Prisma-backed grant lookup, expiry checking, revocation checking, and ADMIN hard-deny.
  */
 @Injectable()
 export class PermissionService {
   private readonly logger = new Logger(PermissionService.name);
-  private grants = new Map<string, PermissionGrant>();
+
+  constructor(private readonly prisma: PermissionPrismaService) {}
 
   /**
    * Check whether an actor has permission on a resource (V3 §8.1).
@@ -42,20 +41,21 @@ export class PermissionService {
    * - Action not in permissions: MISSING_CAPABILITY
    * - All other errors: PERMISSION_SERVICE_UNAVAILABLE
    */
-  check(request: {
+  async check(request: {
     actor_id: string;
     resource_type: string;
     resource_id: string;
     action: PermissionAction;
     task_id?: string | null;
-  }): {
+  }): Promise<{
     allowed: boolean;
     reason_code: PermissionReasonCode | null;
     effective_expires_at: string | null;
-  } {
+  }> {
     try {
       // Step 1: V3 §5.2.1 ADMIN content hard-deny (ADR-0004)
-      // This is enforced here in Permission Service, not only at Gateway
+      // Note: In a full implementation, this would check actor.role === 'ADMIN'
+      // For Phase 1, we rely on the user-role-management-service to prevent ADMIN from holding capabilities
       if (isAdminForbiddenAction(request.action)) {
         return {
           allowed: false,
@@ -64,9 +64,16 @@ export class PermissionService {
         };
       }
 
-      // Step 2: Look up grant for actor + resource (V3 §5.5.2)
-      const grantKey = `${request.actor_id}:${request.resource_type}:${request.resource_id}`;
-      const grant = this.grants.get(grantKey);
+      // Step 2: Look up active grant for actor + resource (V3 §5.5.2)
+      const grant = await this.prisma.grant.findFirst({
+        where: {
+          actor_id: request.actor_id,
+          resource_type: request.resource_type,
+          resource_id: request.resource_id,
+          status: 'ACTIVE',
+          revoked_at: null,
+        },
+      });
 
       if (!grant) {
         return {
@@ -76,17 +83,8 @@ export class PermissionService {
         };
       }
 
-      // Step 3: Check revocation (V3 §5.5)
-      if (grant.revoked_at) {
-        return {
-          allowed: false,
-          reason_code: PermissionReasonCode.GRANT_REVOKED,
-          effective_expires_at: grant.effective_expires_at.toISOString(),
-        };
-      }
-
-      // Step 4: Check expiration (V3 §5.5.2, ADR-0001)
-      // effective_expires_at is denormalized; check it at request time even before scheduled worker
+      // Step 3: Check expiration (V3 §5.5.2, ADR-0001)
+      // effective_expires_at is denormalized; check it at request time
       const now = new Date();
       if (now > grant.effective_expires_at) {
         return {
@@ -96,7 +94,7 @@ export class PermissionService {
         };
       }
 
-      // Step 5: Check permission is in the grant's action set
+      // Step 4: Check permission is in the grant's action set
       if (!grant.permissions.includes(request.action)) {
         return {
           allowed: false,
@@ -105,7 +103,7 @@ export class PermissionService {
         };
       }
 
-      // Step 6: Grant is valid, allow access
+      // Step 5: Grant is valid, allow access
       return {
         allowed: true,
         reason_code: null,
@@ -122,57 +120,137 @@ export class PermissionService {
     }
   }
 
-  /**
-   * Seed baseline permission grants for demo/testing (V3 §5.5).
-   * Phase 2: Migrate to database seeding.
-   */
-  seedBaselineGrants(): void {
-    const tomorrow = new Date();
-    tomorrow.setDate(tomorrow.getDate() + 1);
-
-    // Demo grant: user-1 can download document-1 until tomorrow
-    const demoGrant: PermissionGrant = {
-      id: 'grant-demo-1',
-      actor_id: 'user-1',
-      resource_type: 'DOCUMENT',
-      resource_id: 'doc-1',
-      permissions: ['DOWNLOAD', 'PREVIEW'],
-      task_id: 'task-1',
-      expires_at: tomorrow,
-      effective_expires_at: tomorrow, // V3 §5.5.2: denormalized
-      revoked_at: null,
-      created_at: new Date(),
-    };
-
-    this.grants.set('user-1:DOCUMENT:doc-1', demoGrant);
+  async createGrant(data: {
+    grantor_id: string;
+    actor_id: string;
+    resource_type: string;
+    resource_id: string;
+    permissions: string[];
+    task_id: string;
+    expires_at: Date;
+    effective_expires_at?: Date;
+    parent_grant_id?: string;
+  }): Promise<GrantDto> {
+    const grant = await this.prisma.grant.create({
+      data: {
+        grantor_id: data.grantor_id,
+        actor_id: data.actor_id,
+        resource_type: data.resource_type,
+        resource_id: data.resource_id,
+        permissions: data.permissions,
+        task_id: data.task_id,
+        expires_at: data.expires_at,
+        effective_expires_at: data.effective_expires_at || data.expires_at,
+        status: 'ACTIVE',
+        parent_grant_id: data.parent_grant_id || null,
+      },
+    });
+    return this.toDto(grant);
   }
 
-  /**
-   * Create a permission grant (Phase 2 API).
-   * Called by task-management-service when a task is created with document access.
-   */
-  createGrant(grant: PermissionGrant): void {
-    const grantKey = `${grant.actor_id}:${grant.resource_type}:${grant.resource_id}`;
-    this.grants.set(grantKey, grant);
+  async revokeGrant(
+    grant_id: string,
+    revocation_reason?: string,
+  ): Promise<GrantDto> {
+    const grant = await this.prisma.grant.findUnique({ where: { id: grant_id } });
+    if (!grant) throw new NotFoundException('Grant not found');
+
+    const updated = await this.prisma.grant.update({
+      where: { id: grant_id },
+      data: {
+        status: 'REVOKED',
+        revoked_at: new Date(),
+        revocation_reason: revocation_reason || null,
+      },
+    });
+    return this.toDto(updated);
   }
 
-  /**
-   * Revoke a permission grant.
-   * Phase 2: trigger event for audit logging.
-   */
-  revokeGrant(grantId: string): void {
-    for (const grant of this.grants.values()) {
-      if (grant.id === grantId) {
-        grant.revoked_at = new Date();
-        break;
+  async getGrant(id: string): Promise<GrantDto> {
+    const grant = await this.prisma.grant.findUnique({ where: { id } });
+    if (!grant) throw new NotFoundException('Grant not found');
+    return this.toDto(grant);
+  }
+
+  async listGrants(filters?: {
+    actor_id?: string;
+    resource_type?: string;
+    resource_id?: string;
+    status?: string;
+    task_id?: string;
+  }): Promise<GrantDto[]> {
+    const grants = await this.prisma.grant.findMany({
+      where: filters,
+      orderBy: { created_at: 'desc' },
+    });
+    return grants.map((g) => this.toDto(g));
+  }
+
+  async delegateGrant(data: {
+    parent_grant_id: string;
+    actor_id: string;
+    permissions?: string[];
+  }): Promise<GrantDto> {
+    const parent = await this.prisma.grant.findUnique({
+      where: { id: data.parent_grant_id },
+    });
+    if (!parent) throw new NotFoundException('Parent grant not found');
+    if (parent.status !== 'ACTIVE') throw new BadRequestException('Parent grant must be ACTIVE');
+    if (parent.revoked_at) throw new BadRequestException('Parent grant is revoked');
+
+    const delegatedPermissions = data.permissions || parent.permissions;
+    for (const perm of delegatedPermissions) {
+      if (!parent.permissions.includes(perm)) {
+        throw new BadRequestException(`Cannot delegate permission not held by parent: ${perm}`);
       }
     }
+
+    const delegated = await this.prisma.grant.create({
+      data: {
+        grantor_id: parent.grantor_id,
+        actor_id: data.actor_id,
+        resource_type: parent.resource_type,
+        resource_id: parent.resource_id,
+        permissions: delegatedPermissions,
+        task_id: parent.task_id,
+        expires_at: parent.expires_at,
+        effective_expires_at: parent.effective_expires_at,
+        status: 'ACTIVE',
+        parent_grant_id: data.parent_grant_id,
+      },
+    });
+    return this.toDto(delegated);
   }
 
-  /**
-   * Get all grants (for administrative review, Phase 3).
-   */
-  getAllGrants(): PermissionGrant[] {
-    return Array.from(this.grants.values());
+  private toDto(grant: {
+    id: string;
+    grantor_id: string;
+    actor_id: string;
+    resource_type: string;
+    resource_id: string;
+    permissions: string[];
+    task_id: string;
+    expires_at: Date;
+    effective_expires_at: Date;
+    status: string;
+    revoked_at: Date | null;
+    parent_grant_id: string | null;
+    created_at: Date;
+  }): GrantDto {
+    return {
+      id: grant.id,
+      grantor_id: grant.grantor_id,
+      actor_id: grant.actor_id,
+      resource_type: grant.resource_type,
+      resource_id: grant.resource_id,
+      permissions: grant.permissions,
+      task_id: grant.task_id,
+      expires_at: grant.expires_at.toISOString(),
+      effective_expires_at: grant.effective_expires_at.toISOString(),
+      status: grant.status,
+      revoked_at: grant.revoked_at?.toISOString() ?? null,
+      parent_grant_id: grant.parent_grant_id,
+      created_at: grant.created_at.toISOString(),
+    };
   }
 }

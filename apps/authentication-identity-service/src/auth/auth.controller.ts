@@ -1,63 +1,82 @@
-import { BadRequestException, Body, Controller, Post } from '@nestjs/common';
+import {
+  BadRequestException,
+  Body,
+  Controller,
+  HttpCode,
+  HttpStatus,
+  Post,
+} from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
-import Redis from 'ioredis';
+import { z } from 'zod';
 
-import { loginRequestSchema, type LoginRequest, type LoginResponse } from './login.dto';
-import { AuthService } from './auth.service';
+import { AuthService, TokenPair } from './auth.service';
 
-/**
- * Authentication API (V3 §5.1).
- *
- * POST /auth/login: email + password → access_token + refresh_token
- * (Other endpoints: /logout, /refresh, /revoke — deferred to Phase 2 if needed)
- */
+const loginSchema = z.object({
+  email: z.string().email(),
+  password: z.string().min(1),
+});
+
+const refreshSchema = z.object({
+  refresh_token: z.string().uuid(),
+});
+
+const logoutSchema = z.object({
+  refresh_token: z.string().uuid(),
+});
+
+const registerSchema = z.object({
+  email: z.string().email(),
+  password: z.string().min(8),
+  role: z.enum(['ADMIN', 'EMPLOYEE']).default('EMPLOYEE'),
+});
+
 @ApiTags('auth')
 @Controller('auth')
 export class AuthController {
-  private readonly redis: Redis;
+  constructor(private readonly authService: AuthService) {}
 
-  constructor(private readonly authService: AuthService) {
-    // Phase 1: connect to Redis at env URL
-    // Phase 2: inject via dependency with proper provider setup
-    this.redis = new Redis(process.env.REDIS_URL || 'redis://localhost:6379');
+  @Post('register')
+  @ApiOperation({ summary: 'Register a new user' })
+  async register(
+    @Body() body: z.infer<typeof registerSchema>,
+  ): Promise<{ id: string; email: string; role: string }> {
+    const parsed = registerSchema.safeParse(body);
+    if (!parsed.success) {
+      throw new BadRequestException(parsed.error.issues);
+    }
+    return this.authService.register(parsed.data.email, parsed.data.password, parsed.data.role);
   }
 
   @Post('login')
-  @ApiOperation({ summary: 'Authenticate and obtain an access token' })
-  async login(@Body() request: LoginRequest): Promise<LoginResponse> {
-    const parsed = loginRequestSchema.safeParse(request);
+  @ApiOperation({ summary: 'Authenticate and obtain tokens' })
+  @HttpCode(HttpStatus.OK)
+  async login(@Body() body: z.infer<typeof loginSchema>): Promise<TokenPair> {
+    const parsed = loginSchema.safeParse(body);
     if (!parsed.success) {
       throw new BadRequestException('Invalid email or password format');
     }
+    return this.authService.login(parsed.data.email, parsed.data.password);
+  }
 
-    // Phase 1 baseline: no actual user lookup yet (database not wired).
-    // In Phase 2, this would:
-    // - look up user by email in auth_db
-    // - verify password against stored hash
-    // - return 401 if not found or password mismatch
-    // For now, mock a successful login.
+  @Post('refresh')
+  @ApiOperation({ summary: 'Rotate a refresh token for a new token pair' })
+  @HttpCode(HttpStatus.OK)
+  async refresh(@Body() body: z.infer<typeof refreshSchema>): Promise<TokenPair> {
+    const parsed = refreshSchema.safeParse(body);
+    if (!parsed.success) {
+      throw new BadRequestException('Invalid refresh token');
+    }
+    return this.authService.refresh(parsed.data.refresh_token);
+  }
 
-    const userId = 'user-' + Math.random().toString(36).slice(2, 9);
-    const sessionId = 'session-' + Math.random().toString(36).slice(2, 9);
-
-    // Generate real JWT token with 30-minute TTL (V3 §5.1).
-    const accessToken = this.authService.generateAccessToken(userId, 'EMPLOYEE', []);
-
-    // Generate refresh token (opaque ID; token itself stored in auth_db).
-    const refreshToken = this.authService.generateRefreshToken();
-
-    // Store session metadata in Redis (TTL: 7 days).
-    const sessionMetadata = { userId, email: request.email, role: 'EMPLOYEE', capabilities: [] };
-    await this.redis.setex(
-      `session:${sessionId}`,
-      7 * 24 * 60 * 60,
-      JSON.stringify(sessionMetadata),
-    );
-
-    return {
-      access_token: accessToken,
-      refresh_token: refreshToken,
-      expires_in_seconds: 1800,
-    };
+  @Post('logout')
+  @ApiOperation({ summary: 'Revoke a refresh token and clear session' })
+  @HttpCode(HttpStatus.NO_CONTENT)
+  async logout(@Body() body: z.infer<typeof logoutSchema>): Promise<void> {
+    const parsed = logoutSchema.safeParse(body);
+    if (!parsed.success) {
+      throw new BadRequestException('Invalid refresh token');
+    }
+    await this.authService.logout(parsed.data.refresh_token);
   }
 }

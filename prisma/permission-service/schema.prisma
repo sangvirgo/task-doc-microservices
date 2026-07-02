@@ -10,30 +10,27 @@ datasource db {
 
 model Grant {
   id                   String    @id @default(uuid())
+  grantor_id           String
   actor_id             String
   resource_type        String
   resource_id          String
   permissions          String[]
-  task_id              String?
+  task_id              String
+  parent_grant_id      String?
   expires_at           DateTime
   effective_expires_at DateTime
+  status               String    @default("ACTIVE")
   revoked_at           DateTime?
+  revocation_reason    String?
   created_at           DateTime  @default(now())
 
-  @@unique([actor_id, resource_id])
+  parent   Grant?  @relation("Delegation", fields: [parent_grant_id], references: [id])
+  children Grant[] @relation("Delegation")
+
   @@index([actor_id])
   @@index([resource_id])
-  @@index([expires_at])
-}
-
-model DelegatedGrant {
-  id           String   @id @default(uuid())
-  parent_id    String
-  actor_id     String
-  permissions  String[]
-  revoked_at   DateTime?
-  created_at   DateTime @default(now())
-
-  @@index([parent_id])
-  @@index([actor_id])
+  @@index([task_id])
+  @@index([parent_grant_id])
+  @@index([effective_expires_at])
+  @@index([status])
 }
