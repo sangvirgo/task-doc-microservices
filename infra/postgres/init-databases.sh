@@ -18,4 +18,9 @@ do
   psql -v ON_ERROR_STOP=1 --username "${POSTGRES_USER}" --dbname "${POSTGRES_DB}" <<-SQL
     CREATE DATABASE ${db};
 SQL
+  # Grant schema ownership so Prisma can create tables
+  psql -v ON_ERROR_STOP=1 --username "${POSTGRES_USER}" --dbname "${db}" <<-SQL
+    GRANT ALL ON SCHEMA public TO ${POSTGRES_USER};
+    ALTER SCHEMA public OWNER TO ${POSTGRES_USER};
+SQL
 done
