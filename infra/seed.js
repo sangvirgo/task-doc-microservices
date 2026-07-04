@@ -218,7 +218,7 @@ async function seedPermission() {
         actor_id: EMP_ID,
         resource_type: 'DOCUMENT',
         resource_id: DOC_ID,
-        permissions: ['VIEW', 'DOWNLOAD'],
+        permissions: ['PREVIEW', 'DOWNLOAD'],
         task_id: TASK_ID,
         expires_at: EXPIRES,
         effective_expires_at: EXPIRES,

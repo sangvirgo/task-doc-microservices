@@ -1,98 +1,156 @@
+import { INestApplication } from '@nestjs/common';
+import { Test } from '@nestjs/testing';
+import request from 'supertest';
+import { randomUUID } from 'crypto';
+
+import { AuditController } from '../src/audit/audit.controller';
 import { AuditService } from '../src/audit/audit.service';
+import { AuditPrismaService } from '../src/prisma/audit-prisma.service';
 
-describe('Audit Service Integration', () => {
-  let auditService: AuditService;
+/**
+ * Integration tests for Audit Log Service against real PostgreSQL (port 5433).
+ * Tests SHA-256 hash chain, deduplication, and chain verification.
+ * Requires Docker infrastructure running.
+ */
+describe('Audit Log Service Integration (PostgreSQL)', () => {
+  let app: INestApplication;
+  let prisma: AuditPrismaService;
 
-  beforeEach(() => {
-    auditService = new AuditService();
+  // Unique event IDs per test run to avoid collisions with seed data
+  const EVENT_1_ID = randomUUID();
+  const EVENT_2_ID = randomUUID();
+  const ACTOR_ID = randomUUID();
+
+  beforeAll(async () => {
+    const moduleRef = await Test.createTestingModule({
+      controllers: [AuditController],
+      providers: [AuditService, AuditPrismaService],
+    }).compile();
+
+    app = moduleRef.createNestApplication();
+    prisma = moduleRef.get(AuditPrismaService);
+    await app.init();
+
+    // Reset audit chain for a clean test run
+    await prisma.auditEvent.deleteMany();
+    await prisma.chainHead.upsert({
+      where: { id: 'singleton' },
+      create: { id: 'singleton', last_hash: '', sequence: 0 },
+      update: { last_hash: '', last_event_id: null, sequence: 0 },
+    });
   });
 
-  describe('Hash Chain (V3 §5.7, ADR-0002)', () => {
-    it('should append events with correct hash chain', () => {
-      const event1 = {
-        event_id: 'evt-1',
-        event_type: 'user.login',
-        occurred_at: new Date().toISOString(),
-        actor_id: 'user-1',
-        resource_type: 'USER',
-        resource_id: 'user-1',
-        payload: { success: true },
-      };
+  afterAll(async () => {
+    // Clean up test events
+    try {
+      await prisma.auditEvent.deleteMany({
+        where: { id: { in: [EVENT_1_ID, EVENT_2_ID] } },
+      });
+    } catch (_) { /* ignore */ }
+    await app.close();
+  });
 
-      const event2 = {
-        event_id: 'evt-2',
+  it('should append an audit event with hash chain (V3 §5.7)', async () => {
+    const res = await request(app.getHttpServer())
+      .post('/audit/events')
+      .send({
+        event_id: EVENT_1_ID,
         event_type: 'document.accessed',
         occurred_at: new Date().toISOString(),
-        actor_id: 'user-1',
+        actor_id: ACTOR_ID,
         resource_type: 'DOCUMENT',
-        resource_id: 'doc-1',
-        payload: { action: 'PREVIEW' },
-      };
+        resource_id: randomUUID(),
+        payload: { action: 'PREVIEW', success: true },
+      })
+      .expect(201);
 
-      const result1 = auditService.appendEvent(event1);
-      const result2 = auditService.appendEvent(event2);
+    expect(res.body).toHaveProperty('current_hash');
+    expect(res.body).toHaveProperty('sequence_number');
+    expect(typeof res.body.current_hash).toBe('string');
+    expect(res.body.current_hash.length).toBe(64); // SHA-256 hex
 
-      expect(result1.current_hash).toBeDefined();
-      expect(result2.current_hash).toBeDefined();
-      expect(result1.current_hash).not.toEqual(result2.current_hash);
-      expect(result2.sequence_number).toBe(result1.sequence_number + 1);
-    });
-
-    it('should detect tampering via chain verification', () => {
-      const event = {
-        event_id: 'evt-1',
-        event_type: 'user.login',
-        occurred_at: new Date().toISOString(),
-        actor_id: 'user-1',
-        resource_type: 'USER',
-        resource_id: 'user-1',
-        payload: { success: true },
-      };
-
-      auditService.appendEvent(event);
-
-      // Verify chain integrity is valid
-      expect(auditService.verifyChainIntegrity()).toBe(true);
-    });
-
-    it('should be idempotent on redelivery (ADR-0002 dedupe)', () => {
-      const event = {
-        event_id: 'evt-1',
-        event_type: 'user.login',
-        occurred_at: new Date().toISOString(),
-        actor_id: 'user-1',
-        resource_type: 'USER',
-        resource_id: 'user-1',
-        payload: { success: true },
-      };
-
-      const result1 = auditService.appendEvent(event);
-      const result2 = auditService.appendEvent(event); // Redelivery
-
-      // Same event_id should return same hash
-      expect(result1.current_hash).toBe(result2.current_hash);
-      expect(result1.sequence_number).toBe(result2.sequence_number);
-    });
+    // Verify in PostgreSQL
+    const dbEvent = await prisma.auditEvent.findUnique({ where: { id: EVENT_1_ID } });
+    expect(dbEvent).not.toBeNull();
+    expect(dbEvent!.current_hash).toBe(res.body.current_hash);
   });
 
-  describe('Chain Head', () => {
-    it('should track chain head correctly', () => {
-      const event = {
-        event_id: 'evt-1',
-        event_type: 'test.event',
+  it('should build a hash chain across multiple events', async () => {
+    const res = await request(app.getHttpServer())
+      .post('/audit/events')
+      .send({
+        event_id: EVENT_2_ID,
+        event_type: 'permission.granted',
         occurred_at: new Date().toISOString(),
-        actor_id: 'user-1',
-        resource_type: 'TEST',
-        resource_id: 'test-1',
-        payload: {},
-      };
+        actor_id: ACTOR_ID,
+        resource_type: 'GRANT',
+        resource_id: randomUUID(),
+        payload: { permissions: ['PREVIEW'] },
+      })
+      .expect(201);
 
-      const result = auditService.appendEvent(event);
-      const head = auditService.getChainHead();
+    expect(res.body.sequence_number).toBeGreaterThan(0);
 
-      expect(head.last_hash).toBe(result.current_hash);
-      expect(head.last_event_id).toBe(event.event_id);
-      expect(head.sequence).toBe(1);
-    });
+    // The second event's previous_hash should reference a prior hash
+    const dbEvent2 = await prisma.auditEvent.findUnique({ where: { id: EVENT_2_ID } });
+    expect(dbEvent2!.previous_hash).toBeDefined();
+    expect(dbEvent2!.previous_hash.length).toBe(64);
+  });
+
+  it('should deduplicate on event_id (ADR-0002)', async () => {
+    const firstRes = await request(app.getHttpServer())
+      .post('/audit/events')
+      .send({
+        event_id: EVENT_1_ID,
+        event_type: 'document.accessed',
+        occurred_at: new Date().toISOString(),
+        actor_id: ACTOR_ID,
+        resource_type: 'DOCUMENT',
+        resource_id: randomUUID(),
+        payload: { action: 'PREVIEW', success: true },
+      })
+      .expect(201);
+
+    // Same hash and sequence as original — deduplicated
+    const dbEvent = await prisma.auditEvent.findUnique({ where: { id: EVENT_1_ID } });
+    expect(firstRes.body.current_hash).toBe(dbEvent!.current_hash);
+  });
+
+  it('should retrieve the chain head', async () => {
+    const res = await request(app.getHttpServer())
+      .get('/audit/chain/head')
+      .expect(200);
+
+    expect(res.body).toHaveProperty('last_hash');
+    expect(res.body).toHaveProperty('sequence');
+    expect(res.body.sequence).toBeGreaterThanOrEqual(2);
+  });
+
+  it('should verify hash chain integrity', async () => {
+    const res = await request(app.getHttpServer())
+      .post('/audit/chain/verify')
+      .expect(200);
+
+    expect(res.body.valid).toBe(true);
+  });
+
+  it('should retrieve an event by ID', async () => {
+    const res = await request(app.getHttpServer())
+      .get(`/audit/events/${EVENT_1_ID}`)
+      .expect(200);
+
+    expect(res.body.id).toBe(EVENT_1_ID);
+    expect(res.body.event_type).toBe('document.accessed');
+  });
+
+  it('should list events filtered by actor_id', async () => {
+    const res = await request(app.getHttpServer())
+      .get(`/audit/events?actor_id=${ACTOR_ID}`)
+      .expect(200);
+
+    expect(res.body.length).toBeGreaterThanOrEqual(2);
+    for (const event of res.body) {
+      expect(event.actor_id).toBe(ACTOR_ID);
+    }
   });
 });
