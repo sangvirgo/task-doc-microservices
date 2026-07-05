@@ -6,17 +6,23 @@ import {
   Get,
   HttpCode,
   HttpStatus,
+  Inject,
   Param,
   Post,
   Query,
 } from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import { z } from 'zod';
+import { randomUUID } from 'crypto';
 
 import { CurrentUser, AuthContext } from '@c17/auth-context';
+import { buildEventEnvelope } from '@c17/contracts';
+import { EVENT_PUBLISHER, type EventPublisher } from '@c17/messaging';
 
 import { DocumentsService, DocumentDto, DocumentVersionDto, RecordDto, DownloadTicketDto } from './documents.service';
 import { PermissionClient } from '../permissions/permission.client';
+import { AuditClient } from '../audit/audit.client';
+import { SecurityClient } from '../security/security.client';
 
 const createDocumentSchema = z.object({
   title: z.string().min(1),
@@ -70,6 +76,9 @@ export class DocumentsController {
   constructor(
     private readonly documentsService: DocumentsService,
     private readonly permissionClient: PermissionClient,
+    private readonly auditClient: AuditClient,
+    private readonly securityClient: SecurityClient,
+    @Inject(EVENT_PUBLISHER) private readonly eventPublisher: EventPublisher,
   ) {}
 
   @Get()
@@ -102,6 +111,26 @@ export class DocumentsController {
       creator_id: user.userId,
       security_level: parsed.data.security_level,
       retention_policy: parsed.data.retention_policy,
+    }).then(async (doc) => {
+      await this.auditClient.record({
+        event_type: 'DOCUMENT_CREATED',
+        actor_id: user.userId,
+        resource_type: 'DOCUMENT',
+        resource_id: doc.id,
+        payload: { title: doc.title, document_type: doc.document_type, security_level: doc.security_level },
+      });
+      void this.eventPublisher.publish(buildEventEnvelope({
+        event_id: randomUUID(),
+        event_type: 'document.created',
+        occurred_at: new Date().toISOString(),
+        producer: 'document-management-service',
+        correlation_id: randomUUID(),
+        actor_id: user.userId,
+        resource_type: 'DOCUMENT',
+        resource_id: doc.id,
+        payload: { title: doc.title, document_type: doc.document_type },
+      }));
+      return doc;
     });
   }
 
@@ -166,6 +195,18 @@ export class DocumentsController {
       mime_type: parsed.data.mime_type,
       kek_version: parsed.data.kek_version,
       created_by: user.userId,
+    }).then(async (version) => {
+      void this.securityClient.processDocument({
+        document_id: documentId,
+        version: version.version,
+        object_key: parsed.data.object_key,
+        checksum: parsed.data.checksum,
+        encrypted_dek: parsed.data.encrypted_dek,
+        file_size: parsed.data.file_size,
+        mime_type: parsed.data.mime_type,
+        kek_version: parsed.data.kek_version,
+      });
+      return version;
     });
   }
 
@@ -219,6 +260,15 @@ export class DocumentsController {
       actor_id: user.userId,
       object_key: version.object_key,
       expires_in_seconds: parsed.data.expires_in_seconds,
+    }).then(async (ticket) => {
+      await this.auditClient.record({
+        event_type: 'DOCUMENT_DOWNLOAD_TICKET',
+        actor_id: user.userId,
+        resource_type: 'DOCUMENT',
+        resource_id: documentId,
+        payload: { version: parsed.data.version, ticket_id: ticket.id },
+      });
+      return ticket;
     });
   }
 

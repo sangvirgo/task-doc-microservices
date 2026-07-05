@@ -6,17 +6,22 @@ import {
   Get,
   HttpCode,
   HttpStatus,
+  Inject,
   Param,
   Post,
   Query,
 } from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import { z } from 'zod';
+import { randomUUID } from 'crypto';
 
 import { CurrentUser, AuthContext } from '@c17/auth-context';
+import { buildEventEnvelope } from '@c17/contracts';
+import { EVENT_PUBLISHER, type EventPublisher } from '@c17/messaging';
 
 import { TasksService, TaskDto } from './tasks.service';
 import { PermissionClient } from '../permissions/permission.client';
+import { AuditClient } from '../audit/audit.client';
 
 const createTaskSchema = z.object({
   title: z.string().min(1),
@@ -62,6 +67,8 @@ export class TasksController {
   constructor(
     private readonly tasksService: TasksService,
     private readonly permissionClient: PermissionClient,
+    private readonly auditClient: AuditClient,
+    @Inject(EVENT_PUBLISHER) private readonly eventPublisher: EventPublisher,
   ) {}
 
   @Get()
@@ -97,6 +104,13 @@ export class TasksController {
     });
 
     if (!permCheck.allowed) {
+      await this.auditClient.record({
+        event_type: 'TASK_ACCESS_DENIED',
+        actor_id: user.userId,
+        resource_type: 'TASK',
+        resource_id: taskId,
+        payload: { action: 'TASK_PARTICIPATE', reason_code: permCheck.reason_code },
+      });
       throw new ForbiddenException(`Cannot access task: ${permCheck.reason_code}`);
     }
 
@@ -123,6 +137,26 @@ export class TasksController {
       assignee_id: parsed.data.assignee_id,
       parent_task_id: parsed.data.parent_task_id,
       deadline: parsed.data.deadline ? new Date(parsed.data.deadline) : undefined,
+    }).then(async (task) => {
+      await this.auditClient.record({
+        event_type: 'TASK_CREATED',
+        actor_id: user.userId,
+        resource_type: 'TASK',
+        resource_id: task.id,
+        payload: { title: task.title, assignee_id: task.assignee_id },
+      });
+      void this.eventPublisher.publish(buildEventEnvelope({
+        event_id: randomUUID(),
+        event_type: 'task.created',
+        occurred_at: new Date().toISOString(),
+        producer: 'task-management-service',
+        correlation_id: randomUUID(),
+        actor_id: user.userId,
+        resource_type: 'TASK',
+        resource_id: task.id,
+        payload: { title: task.title, assignee_id: task.assignee_id },
+      }));
+      return task;
     });
   }
 
