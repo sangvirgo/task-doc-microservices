@@ -43,6 +43,7 @@ export class PermissionService {
    */
   async check(request: {
     actor_id: string;
+    actor_role: string;
     resource_type: string;
     resource_id: string;
     action: PermissionAction;
@@ -54,9 +55,7 @@ export class PermissionService {
   }> {
     try {
       // Step 1: V3 §5.2.1 ADMIN content hard-deny (ADR-0004)
-      // Note: In a full implementation, this would check actor.role === 'ADMIN'
-      // For Phase 1, we rely on the user-role-management-service to prevent ADMIN from holding capabilities
-      if (isAdminForbiddenAction(request.action)) {
+      if (request.actor_role === 'ADMIN' && isAdminForbiddenAction(request.action)) {
         return {
           allowed: false,
           reason_code: PermissionReasonCode.ADMIN_CONTENT_DENIED,
@@ -148,10 +147,7 @@ export class PermissionService {
     return this.toDto(grant);
   }
 
-  async revokeGrant(
-    grant_id: string,
-    revocation_reason?: string,
-  ): Promise<GrantDto> {
+  async revokeGrant(grant_id: string, revocation_reason?: string): Promise<GrantDto> {
     const grant = await this.prisma.grant.findUnique({ where: { id: grant_id } });
     if (!grant) throw new NotFoundException('Grant not found');
 

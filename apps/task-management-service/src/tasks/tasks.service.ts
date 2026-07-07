@@ -1,4 +1,9 @@
-import { Injectable, NotFoundException, BadRequestException, ConflictException } from '@nestjs/common';
+import {
+  Injectable,
+  NotFoundException,
+  BadRequestException,
+  ConflictException,
+} from '@nestjs/common';
 import { TaskPrismaService } from '../prisma/task-prisma.service';
 
 export interface TaskDto {
@@ -79,7 +84,12 @@ export class TasksService {
     return tasks.map((t) => this.toDto(t));
   }
 
-  async updateTaskStatus(id: string, to_status: string, changed_by: string, reason?: string): Promise<TaskDto> {
+  async updateTaskStatus(
+    id: string,
+    to_status: string,
+    changed_by: string,
+    reason?: string,
+  ): Promise<TaskDto> {
     if (!VALID_STATUSES.includes(to_status)) {
       throw new BadRequestException(`Invalid status: ${to_status}`);
     }
@@ -195,7 +205,11 @@ export class TasksService {
     return this.toDto(updated);
   }
 
-  async addParticipant(task_id: string, user_id: string, role: string = 'PARTICIPANT'): Promise<TaskParticipantDto> {
+  async addParticipant(
+    task_id: string,
+    user_id: string,
+    role: string = 'PARTICIPANT',
+  ): Promise<TaskParticipantDto> {
     const task = await this.prisma.task.findUnique({ where: { id: task_id } });
     if (!task) throw new NotFoundException('Task not found');
 
@@ -214,7 +228,11 @@ export class TasksService {
     return participants.map((p) => this.participantToDto(p));
   }
 
-  async addComment(task_id: string, author_id: string, content: string): Promise<{ id: string; created_at: string }> {
+  async addComment(
+    task_id: string,
+    author_id: string,
+    content: string,
+  ): Promise<{ id: string; created_at: string }> {
     const task = await this.prisma.task.findUnique({ where: { id: task_id } });
     if (!task) throw new NotFoundException('Task not found');
 
@@ -275,7 +293,9 @@ export class TasksService {
     approved: boolean,
     comment?: string,
   ): Promise<{ id: string; status: string }> {
-    const submission = await this.prisma.taskSubmission.findUnique({ where: { id: submission_id } });
+    const submission = await this.prisma.taskSubmission.findUnique({
+      where: { id: submission_id },
+    });
     if (!submission) throw new NotFoundException('Submission not found');
 
     const newStatus = approved ? 'APPROVED' : 'REJECTED';
@@ -310,13 +330,15 @@ export class TasksService {
     return { id: updated.id, status: updated.status };
   }
 
-  async getTaskActivity(task_id: string): Promise<Array<{
-    id: string;
-    activity_type: string;
-    actor_id: string;
-    summary: string;
-    created_at: string;
-  }>> {
+  async getTaskActivity(task_id: string): Promise<
+    Array<{
+      id: string;
+      activity_type: string;
+      actor_id: string;
+      summary: string;
+      created_at: string;
+    }>
+  > {
     const activities = await this.prisma.taskActivity.findMany({
       where: { task_id },
       orderBy: { created_at: 'asc' },

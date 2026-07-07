@@ -18,6 +18,15 @@ export const envSchema = baseEnvSchema.extend({
   GATEWAY_TIMEOUT_MS: z.coerce.number().int().positive().default(10_000),
   RATE_LIMIT_WINDOW_MS: z.coerce.number().int().positive().default(60_000),
   RATE_LIMIT_MAX: z.coerce.number().int().positive().default(100),
+  AUTH_SERVICE_URL: z.string().url().default('http://localhost:3001'),
+  USER_ROLE_SERVICE_URL: z.string().url().default('http://localhost:3002'),
+  TASK_SERVICE_URL: z.string().url().default('http://localhost:3003'),
+  DOCUMENT_SERVICE_URL: z.string().url().default('http://localhost:3004'),
+  DOCUMENT_SECURITY_SERVICE_URL: z.string().url().default('http://localhost:3005'),
+  PERMISSION_SERVICE_URL: z.string().url().default('http://localhost:3006'),
+  AUDIT_SERVICE_URL: z.string().url().default('http://localhost:3007'),
+  NOTIFICATION_SERVICE_URL: z.string().url().default('http://localhost:3008'),
+  SECURITY_MONITORING_SERVICE_URL: z.string().url().default('http://localhost:3009'),
 });
 
 @Module({

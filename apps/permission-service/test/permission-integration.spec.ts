@@ -38,7 +38,9 @@ describe('Permission Service Integration (PostgreSQL)', () => {
       await prisma.grant.deleteMany({
         where: { OR: [{ actor_id: ACTOR_ID }, { grantor_id: GRANTOR_ID }] },
       });
-    } catch (_) { /* ignore */ }
+    } catch {
+      /* ignore */
+    }
     await app.close();
   });
 
@@ -70,28 +72,25 @@ describe('Permission Service Integration (PostgreSQL)', () => {
   });
 
   it('should retrieve the grant by ID', async () => {
-    const res = await request(app.getHttpServer())
-      .get(`/grants/${grantId}`)
-      .expect(200);
+    const res = await request(app.getHttpServer()).get(`/grants/${grantId}`).expect(200);
 
     expect(res.body.id).toBe(grantId);
     expect(res.body.permissions).toEqual(['PREVIEW', 'DOWNLOAD']);
   });
 
   it('should list grants filtered by actor_id', async () => {
-    const res = await request(app.getHttpServer())
-      .get(`/grants?actor_id=${ACTOR_ID}`)
-      .expect(200);
+    const res = await request(app.getHttpServer()).get(`/grants?actor_id=${ACTOR_ID}`).expect(200);
 
     expect(res.body.length).toBeGreaterThanOrEqual(1);
     expect(res.body[0].actor_id).toBe(ACTOR_ID);
   });
 
-  it('should check permission (ADMIN_CONTENT_DENIED for all content actions)', async () => {
+  it('should allow a non-admin actor with a matching active grant', async () => {
     const res = await request(app.getHttpServer())
       .post('/internal/permissions/check')
       .send({
         actor_id: ACTOR_ID,
+        actor_role: 'EMPLOYEE',
         resource_type: 'DOCUMENT',
         resource_id: RESOURCE_ID,
         action: 'PREVIEW',
@@ -99,7 +98,23 @@ describe('Permission Service Integration (PostgreSQL)', () => {
       })
       .expect(200);
 
-    // All known actions are admin-forbidden in current implementation
+    expect(res.body.allowed).toBe(true);
+    expect(res.body.reason_code).toBeNull();
+  });
+
+  it('should hard-deny an ADMIN for content-adjacent actions', async () => {
+    const res = await request(app.getHttpServer())
+      .post('/internal/permissions/check')
+      .send({
+        actor_id: ACTOR_ID,
+        actor_role: 'ADMIN',
+        resource_type: 'DOCUMENT',
+        resource_id: RESOURCE_ID,
+        action: 'PREVIEW',
+        correlation_id: randomUUID(),
+      })
+      .expect(200);
+
     expect(res.body.allowed).toBe(false);
     expect(res.body.reason_code).toBe('ADMIN_CONTENT_DENIED');
   });

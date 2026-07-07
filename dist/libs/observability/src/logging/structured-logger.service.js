@@ -19,7 +19,7 @@ exports.StructuredLogger = exports.REDACTED_PATHS = void 0;
 exports.createPinoLogger = createPinoLogger;
 const common_1 = require("@nestjs/common");
 const pino_1 = __importDefault(require("pino"));
-const config_1 = require("../../../config/src");
+const config_1 = require("@c17/config");
 const correlation_context_1 = require("../correlation/correlation-context");
 exports.REDACTED_PATHS = [
     'password',

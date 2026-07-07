@@ -5,7 +5,11 @@ import { AppConfigModule, baseEnvSchema } from '@c17/config';
 import { ObservabilityModule } from '@c17/observability';
 import { MessagingModule } from '@c17/messaging';
 
-import { DocumentsController, RecordsController, TransferPackagesController } from './documents/documents.controller';
+import {
+  DocumentsController,
+  RecordsController,
+  TransferPackagesController,
+} from './documents/documents.controller';
 import { DocumentsService } from './documents/documents.service';
 import { DocumentPrismaService } from './prisma/document-prisma.service';
 import { PermissionClient } from './permissions/permission.client';
@@ -36,6 +40,12 @@ export const envSchema = baseEnvSchema.extend({
     }),
   ],
   controllers: [DocumentsController, RecordsController, TransferPackagesController],
-  providers: [DocumentPrismaService, DocumentsService, PermissionClient, AuditClient, SecurityClient],
+  providers: [
+    DocumentPrismaService,
+    DocumentsService,
+    PermissionClient,
+    AuditClient,
+    SecurityClient,
+  ],
 })
 export class AppModule {}

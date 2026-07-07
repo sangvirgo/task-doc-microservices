@@ -19,7 +19,13 @@ import { CurrentUser, AuthContext } from '@c17/auth-context';
 import { buildEventEnvelope } from '@c17/contracts';
 import { EVENT_PUBLISHER, type EventPublisher } from '@c17/messaging';
 
-import { DocumentsService, DocumentDto, DocumentVersionDto, RecordDto, DownloadTicketDto } from './documents.service';
+import {
+  DocumentsService,
+  DocumentDto,
+  DocumentVersionDto,
+  RecordDto,
+  DownloadTicketDto,
+} from './documents.service';
 import { PermissionClient } from '../permissions/permission.client';
 import { AuditClient } from '../audit/audit.client';
 import { SecurityClient } from '../security/security.client';
@@ -104,43 +110,55 @@ export class DocumentsController {
       throw new BadRequestException(parsed.error.issues);
     }
 
-    return this.documentsService.createDocument({
-      title: parsed.data.title,
-      document_type: parsed.data.document_type,
-      owner_id: parsed.data.owner_id,
-      creator_id: user.userId,
-      security_level: parsed.data.security_level,
-      retention_policy: parsed.data.retention_policy,
-    }).then(async (doc) => {
-      await this.auditClient.record({
-        event_type: 'DOCUMENT_CREATED',
-        actor_id: user.userId,
-        resource_type: 'DOCUMENT',
-        resource_id: doc.id,
-        payload: { title: doc.title, document_type: doc.document_type, security_level: doc.security_level },
+    return this.documentsService
+      .createDocument({
+        title: parsed.data.title,
+        document_type: parsed.data.document_type,
+        owner_id: parsed.data.owner_id,
+        creator_id: user.userId,
+        security_level: parsed.data.security_level,
+        retention_policy: parsed.data.retention_policy,
+      })
+      .then(async (doc) => {
+        await this.auditClient.record({
+          event_type: 'DOCUMENT_CREATED',
+          actor_id: user.userId,
+          resource_type: 'DOCUMENT',
+          resource_id: doc.id,
+          payload: {
+            title: doc.title,
+            document_type: doc.document_type,
+            security_level: doc.security_level,
+          },
+        });
+        void this.eventPublisher.publish(
+          buildEventEnvelope({
+            event_id: randomUUID(),
+            event_type: 'document.created',
+            occurred_at: new Date().toISOString(),
+            producer: 'document-management-service',
+            correlation_id: randomUUID(),
+            actor_id: user.userId,
+            resource_type: 'DOCUMENT',
+            resource_id: doc.id,
+            payload: { title: doc.title, document_type: doc.document_type },
+          }),
+        );
+        return doc;
       });
-      void this.eventPublisher.publish(buildEventEnvelope({
-        event_id: randomUUID(),
-        event_type: 'document.created',
-        occurred_at: new Date().toISOString(),
-        producer: 'document-management-service',
-        correlation_id: randomUUID(),
-        actor_id: user.userId,
-        resource_type: 'DOCUMENT',
-        resource_id: doc.id,
-        payload: { title: doc.title, document_type: doc.document_type },
-      }));
-      return doc;
-    });
   }
 
   @Get(':id')
   @ApiOperation({ summary: 'Get document metadata' })
-  async getDocument(@Param('id') documentId: string, @CurrentUser() user?: AuthContext): Promise<DocumentDto> {
+  async getDocument(
+    @Param('id') documentId: string,
+    @CurrentUser() user?: AuthContext,
+  ): Promise<DocumentDto> {
     if (!user) throw new ForbiddenException('Authentication required');
 
     const permCheck = await this.permissionClient.check({
       actor_id: user.userId,
+      actor_role: user.role,
       resource_type: 'DOCUMENT',
       resource_id: documentId,
       action: 'PREVIEW',
@@ -160,6 +178,7 @@ export class DocumentsController {
 
     const permCheck = await this.permissionClient.check({
       actor_id: user.userId,
+      actor_role: user.role,
       resource_type: 'DOCUMENT',
       resource_id: documentId,
       action: 'PREVIEW',
@@ -186,7 +205,7 @@ export class DocumentsController {
       throw new BadRequestException(parsed.error.issues);
     }
 
-    return this.documentsService.createDocumentVersion({
+    const version = await this.documentsService.createDocumentVersion({
       document_id: documentId,
       object_key: parsed.data.object_key,
       checksum: parsed.data.checksum,
@@ -195,19 +214,20 @@ export class DocumentsController {
       mime_type: parsed.data.mime_type,
       kek_version: parsed.data.kek_version,
       created_by: user.userId,
-    }).then(async (version) => {
-      void this.securityClient.processDocument({
-        document_id: documentId,
-        version: version.version,
-        object_key: parsed.data.object_key,
-        checksum: parsed.data.checksum,
-        encrypted_dek: parsed.data.encrypted_dek,
-        file_size: parsed.data.file_size,
-        mime_type: parsed.data.mime_type,
-        kek_version: parsed.data.kek_version,
-      });
-      return version;
     });
+
+    void this.securityClient.processDocument({
+      document_id: documentId,
+      version: version.version,
+      object_key: parsed.data.object_key,
+      checksum: parsed.data.checksum,
+      encrypted_dek: parsed.data.encrypted_dek,
+      file_size: parsed.data.file_size,
+      mime_type: parsed.data.mime_type,
+      kek_version: parsed.data.kek_version,
+    });
+
+    return version;
   }
 
   @Get(':id/versions')
@@ -243,6 +263,7 @@ export class DocumentsController {
 
     const permCheck = await this.permissionClient.check({
       actor_id: user.userId,
+      actor_role: user.role,
       resource_type: 'DOCUMENT',
       resource_id: documentId,
       action: 'DOWNLOAD',
@@ -254,26 +275,30 @@ export class DocumentsController {
 
     const version = await this.documentsService.getDocumentVersion(documentId, parsed.data.version);
 
-    return this.documentsService.createDownloadTicket({
-      document_id: documentId,
-      version: parsed.data.version,
-      actor_id: user.userId,
-      object_key: version.object_key,
-      expires_in_seconds: parsed.data.expires_in_seconds,
-    }).then(async (ticket) => {
-      await this.auditClient.record({
-        event_type: 'DOCUMENT_DOWNLOAD_TICKET',
+    return this.documentsService
+      .createDownloadTicket({
+        document_id: documentId,
+        version: parsed.data.version,
         actor_id: user.userId,
-        resource_type: 'DOCUMENT',
-        resource_id: documentId,
-        payload: { version: parsed.data.version, ticket_id: ticket.id },
+        object_key: version.object_key,
+        expires_in_seconds: parsed.data.expires_in_seconds,
+      })
+      .then(async (ticket) => {
+        await this.auditClient.record({
+          event_type: 'DOCUMENT_DOWNLOAD_TICKET',
+          actor_id: user.userId,
+          resource_type: 'DOCUMENT',
+          resource_id: documentId,
+          payload: { version: parsed.data.version, ticket_id: ticket.id },
+        });
+        return ticket;
       });
-      return ticket;
-    });
   }
 
   @Get(':id/download')
-  @ApiOperation({ summary: 'Get download ticket for current version (deprecated, use /download-ticket)' })
+  @ApiOperation({
+    summary: 'Get download ticket for current version (deprecated, use /download-ticket)',
+  })
   async getDocumentDownload(
     @Param('id') documentId: string,
     @CurrentUser() user?: AuthContext,
@@ -282,6 +307,7 @@ export class DocumentsController {
 
     const permCheck = await this.permissionClient.check({
       actor_id: user.userId,
+      actor_role: user.role,
       resource_type: 'DOCUMENT',
       resource_id: documentId,
       action: 'DOWNLOAD',
@@ -292,7 +318,10 @@ export class DocumentsController {
     }
 
     const document = await this.documentsService.getDocument(documentId);
-    const version = await this.documentsService.getDocumentVersion(documentId, document.current_version);
+    const version = await this.documentsService.getDocumentVersion(
+      documentId,
+      document.current_version,
+    );
 
     return this.documentsService.createDownloadTicket({
       document_id: documentId,
@@ -362,7 +391,11 @@ export class RecordsController {
       throw new BadRequestException(parsed.error.issues);
     }
 
-    return this.documentsService.addDocumentToRecord(recordId, parsed.data.document_id, parsed.data.document_version_id);
+    return this.documentsService.addDocumentToRecord(
+      recordId,
+      parsed.data.document_id,
+      parsed.data.document_version_id,
+    );
   }
 
   @Post(':id/seal')
@@ -410,10 +443,7 @@ export class TransferPackagesController {
   @Post(':id/submit')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Submit package for archival' })
-  async submitPackage(
-    @Param('id') packageId: string,
-    @CurrentUser() user?: AuthContext,
-  ) {
+  async submitPackage(@Param('id') packageId: string, @CurrentUser() user?: AuthContext) {
     if (!user) throw new ForbiddenException('Authentication required');
     return this.documentsService.submitTransferPackage(packageId);
   }

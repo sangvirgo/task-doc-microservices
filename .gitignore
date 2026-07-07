@@ -37,7 +37,11 @@ pnpm-debug.log*
 # Local infrastructure volumes
 .docker-data/
 tmp/
-uploads/
+temp/
+.tmp/
+uploads/tmp/
+*.pid
+*.pid.lock
 
 # Editor and OS
 .DS_Store

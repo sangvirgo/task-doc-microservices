@@ -1,4 +1,15 @@
-import { BadRequestException, Body, Controller, Post, HttpCode, HttpStatus, Get, Param, Delete, Query } from '@nestjs/common';
+import {
+  BadRequestException,
+  Body,
+  Controller,
+  Post,
+  HttpCode,
+  HttpStatus,
+  Get,
+  Param,
+  Delete,
+  Query,
+} from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import { z } from 'zod';
 
@@ -56,6 +67,7 @@ export class PermissionsController {
     const req = parsed.data;
     return this.permissionService.check({
       actor_id: req.actor_id,
+      actor_role: req.actor_role,
       resource_type: req.resource_type,
       resource_id: req.resource_id,
       action: req.action,

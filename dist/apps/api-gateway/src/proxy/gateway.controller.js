@@ -14,21 +14,48 @@ var __param = (this && this.__param) || function (paramIndex, decorator) {
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.GatewayController = void 0;
 const common_1 = require("@nestjs/common");
-const observability_1 = require("../../../../libs/observability/src");
+const observability_1 = require("@c17/observability");
 const jwt_auth_guard_1 = require("../auth/jwt-auth.guard");
 function getRoutes() {
     return [
-        { prefix: '/api/auth', target: `http://localhost:${process.env.AUTH_SERVICE_PORT || '3001'}` },
-        { prefix: '/api/users', target: `http://localhost:${process.env.USER_ROLE_SERVICE_PORT || '3002'}` },
-        { prefix: '/api/tasks', target: `http://localhost:${process.env.TASK_SERVICE_PORT || '3003'}` },
-        { prefix: '/api/documents', target: `http://localhost:${process.env.DOCUMENT_SERVICE_PORT || '3004'}` },
-        { prefix: '/api/records', target: `http://localhost:${process.env.DOCUMENT_SERVICE_PORT || '3004'}` },
-        { prefix: '/api/transfer-packages', target: `http://localhost:${process.env.DOCUMENT_SERVICE_PORT || '3004'}` },
-        { prefix: '/api/security', target: `http://localhost:${process.env.DOCUMENT_SECURITY_PORT || '3005'}` },
-        { prefix: '/api/permissions', target: `http://localhost:${process.env.PERMISSION_SERVICE_PORT || '3006'}` },
-        { prefix: '/api/audit', target: `http://localhost:${process.env.AUDIT_SERVICE_PORT || '3007'}` },
-        { prefix: '/api/notifications', target: `http://localhost:${process.env.NOTIFICATION_SERVICE_PORT || '3008'}` },
-        { prefix: '/api/monitoring', target: `http://localhost:${process.env.SECURITY_MONITORING_PORT || '3009'}` },
+        { prefix: '/api/auth', target: process.env.AUTH_SERVICE_URL || 'http://localhost:3001' },
+        {
+            prefix: '/api/users',
+            target: process.env.USER_ROLE_SERVICE_URL || 'http://localhost:3002',
+        },
+        { prefix: '/api/tasks', target: process.env.TASK_SERVICE_URL || 'http://localhost:3003' },
+        {
+            prefix: '/api/documents',
+            target: process.env.DOCUMENT_SERVICE_URL || 'http://localhost:3004',
+        },
+        {
+            prefix: '/api/records',
+            target: process.env.DOCUMENT_SERVICE_URL || 'http://localhost:3004',
+        },
+        {
+            prefix: '/api/transfer-packages',
+            target: process.env.DOCUMENT_SERVICE_URL || 'http://localhost:3004',
+        },
+        {
+            prefix: '/api/security',
+            target: process.env.DOCUMENT_SECURITY_SERVICE_URL || 'http://localhost:3005',
+        },
+        {
+            prefix: '/api/permissions',
+            target: process.env.PERMISSION_SERVICE_URL || 'http://localhost:3006',
+        },
+        {
+            prefix: '/api/audit',
+            target: process.env.AUDIT_SERVICE_URL || 'http://localhost:3007',
+        },
+        {
+            prefix: '/api/notifications',
+            target: process.env.NOTIFICATION_SERVICE_URL || 'http://localhost:3008',
+        },
+        {
+            prefix: '/api/monitoring',
+            target: process.env.SECURITY_MONITORING_SERVICE_URL || 'http://localhost:3009',
+        },
     ];
 }
 const DEFAULT_TIMEOUT_MS = Number(process.env.GATEWAY_TIMEOUT_MS || 10_000);
@@ -78,12 +105,15 @@ let GatewayController = class GatewayController {
             const targetPath = req.originalUrl.slice(route.prefix.length) || '/';
             const targetUrl = `${route.target}${targetPath}`;
             const headers = {};
-            if (req.headers['content-type'])
-                headers['content-type'] = req.headers['content-type'];
-            if (req.headers['accept'])
-                headers['accept'] = req.headers['accept'];
-            if (req.headers['authorization'])
-                headers['authorization'] = req.headers['authorization'];
+            const requestContentType = req.headers['content-type'];
+            const accept = req.headers['accept'];
+            const authorization = req.headers['authorization'];
+            if (typeof requestContentType === 'string')
+                headers['content-type'] = requestContentType;
+            if (typeof accept === 'string')
+                headers['accept'] = accept;
+            if (typeof authorization === 'string')
+                headers['authorization'] = authorization;
             const correlationId = (0, observability_1.getCorrelationId)();
             if (correlationId)
                 headers['x-correlation-id'] = correlationId;
@@ -145,7 +175,7 @@ let GatewayController = class GatewayController {
 exports.GatewayController = GatewayController;
 __decorate([
     (0, jwt_auth_guard_1.Public)(),
-    (0, common_1.All)('api/auth/*path'),
+    (0, common_1.All)(['api/auth', 'api/auth/*path']),
     __param(0, (0, common_1.Req)()),
     __param(1, (0, common_1.Res)()),
     __metadata("design:type", Function),
@@ -153,7 +183,7 @@ __decorate([
     __metadata("design:returntype", Promise)
 ], GatewayController.prototype, "proxyAuth", null);
 __decorate([
-    (0, common_1.All)('api/users/*path'),
+    (0, common_1.All)(['api/users', 'api/users/*path']),
     __param(0, (0, common_1.Req)()),
     __param(1, (0, common_1.Res)()),
     __metadata("design:type", Function),
@@ -161,7 +191,7 @@ __decorate([
     __metadata("design:returntype", Promise)
 ], GatewayController.prototype, "proxyUsers", null);
 __decorate([
-    (0, common_1.All)('api/tasks/*path'),
+    (0, common_1.All)(['api/tasks', 'api/tasks/*path']),
     __param(0, (0, common_1.Req)()),
     __param(1, (0, common_1.Res)()),
     __metadata("design:type", Function),
@@ -169,7 +199,7 @@ __decorate([
     __metadata("design:returntype", Promise)
 ], GatewayController.prototype, "proxyTasks", null);
 __decorate([
-    (0, common_1.All)('api/documents/*path'),
+    (0, common_1.All)(['api/documents', 'api/documents/*path']),
     __param(0, (0, common_1.Req)()),
     __param(1, (0, common_1.Res)()),
     __metadata("design:type", Function),
@@ -177,7 +207,7 @@ __decorate([
     __metadata("design:returntype", Promise)
 ], GatewayController.prototype, "proxyDocuments", null);
 __decorate([
-    (0, common_1.All)('api/records/*path'),
+    (0, common_1.All)(['api/records', 'api/records/*path']),
     __param(0, (0, common_1.Req)()),
     __param(1, (0, common_1.Res)()),
     __metadata("design:type", Function),
@@ -185,7 +215,7 @@ __decorate([
     __metadata("design:returntype", Promise)
 ], GatewayController.prototype, "proxyRecords", null);
 __decorate([
-    (0, common_1.All)('api/transfer-packages/*path'),
+    (0, common_1.All)(['api/transfer-packages', 'api/transfer-packages/*path']),
     __param(0, (0, common_1.Req)()),
     __param(1, (0, common_1.Res)()),
     __metadata("design:type", Function),
@@ -193,7 +223,7 @@ __decorate([
     __metadata("design:returntype", Promise)
 ], GatewayController.prototype, "proxyTransferPackages", null);
 __decorate([
-    (0, common_1.All)('api/security/*path'),
+    (0, common_1.All)(['api/security', 'api/security/*path']),
     __param(0, (0, common_1.Req)()),
     __param(1, (0, common_1.Res)()),
     __metadata("design:type", Function),
@@ -201,7 +231,7 @@ __decorate([
     __metadata("design:returntype", Promise)
 ], GatewayController.prototype, "proxySecurity", null);
 __decorate([
-    (0, common_1.All)('api/permissions/*path'),
+    (0, common_1.All)(['api/permissions', 'api/permissions/*path']),
     __param(0, (0, common_1.Req)()),
     __param(1, (0, common_1.Res)()),
     __metadata("design:type", Function),
@@ -209,7 +239,7 @@ __decorate([
     __metadata("design:returntype", Promise)
 ], GatewayController.prototype, "proxyPermissions", null);
 __decorate([
-    (0, common_1.All)('api/audit/*path'),
+    (0, common_1.All)(['api/audit', 'api/audit/*path']),
     __param(0, (0, common_1.Req)()),
     __param(1, (0, common_1.Res)()),
     __metadata("design:type", Function),
@@ -217,7 +247,7 @@ __decorate([
     __metadata("design:returntype", Promise)
 ], GatewayController.prototype, "proxyAudit", null);
 __decorate([
-    (0, common_1.All)('api/notifications/*path'),
+    (0, common_1.All)(['api/notifications', 'api/notifications/*path']),
     __param(0, (0, common_1.Req)()),
     __param(1, (0, common_1.Res)()),
     __metadata("design:type", Function),
@@ -225,7 +255,7 @@ __decorate([
     __metadata("design:returntype", Promise)
 ], GatewayController.prototype, "proxyNotifications", null);
 __decorate([
-    (0, common_1.All)('api/monitoring/*path'),
+    (0, common_1.All)(['api/monitoring', 'api/monitoring/*path']),
     __param(0, (0, common_1.Req)()),
     __param(1, (0, common_1.Res)()),
     __metadata("design:type", Function),

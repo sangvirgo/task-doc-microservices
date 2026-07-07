@@ -30,7 +30,10 @@ export interface SecurityRuleDto {
 export class MonitoringService {
   constructor(private readonly prisma: SecurityMonitoringPrismaService) {}
 
-  async recordEvent(rule_id: string, actor_id: string): Promise<{ triggered: boolean; alert_id?: string }> {
+  async recordEvent(
+    rule_id: string,
+    actor_id: string,
+  ): Promise<{ triggered: boolean; alert_id?: string }> {
     const rule = await this.prisma.securityRule.findUnique({ where: { id: rule_id } });
     if (!rule || !rule.enabled) return { triggered: false };
 
@@ -130,9 +133,16 @@ export class MonitoringService {
   }
 
   private toAlertDto(alert: {
-    id: string; rule_id: string; severity: string; actor_id: string | null;
-    description: string; metadata: unknown; status: string;
-    resolved_at: Date | null; resolved_by: string | null; created_at: Date;
+    id: string;
+    rule_id: string;
+    severity: string;
+    actor_id: string | null;
+    description: string;
+    metadata: unknown;
+    status: string;
+    resolved_at: Date | null;
+    resolved_by: string | null;
+    created_at: Date;
   }): SecurityAlertDto {
     return {
       id: alert.id,
@@ -149,9 +159,15 @@ export class MonitoringService {
   }
 
   private toRuleDto(rule: {
-    id: string; name: string; description: string | null; rule_type: string;
-    threshold: number; window_minutes: number; enabled: boolean;
-    action: string; created_at: Date;
+    id: string;
+    name: string;
+    description: string | null;
+    rule_type: string;
+    threshold: number;
+    window_minutes: number;
+    enabled: boolean;
+    action: string;
+    created_at: Date;
   }): SecurityRuleDto {
     return {
       id: rule.id,

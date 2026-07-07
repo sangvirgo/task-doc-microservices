@@ -2,10 +2,12 @@ node_modules
 dist
 coverage
 .git
-.github
-.codegraph
-docs
+*.log
+logs
+tmp
+temp
 .env
 .env.*
-!.env.example
-*.log
+docs/evidence
+docs/handoff
+.gitignore

@@ -14,9 +14,7 @@ const common_1 = require("@nestjs/common");
 const core_1 = require("@nestjs/core");
 const jwt_1 = require("@nestjs/jwt");
 exports.IS_PUBLIC_KEY = 'isPublic';
-const Public = () => (_target, _propertyKey, descriptor) => {
-    Reflect.defineMetadata(exports.IS_PUBLIC_KEY, true, descriptor?.value ?? _target);
-};
+const Public = () => (0, common_1.SetMetadata)(exports.IS_PUBLIC_KEY, true);
 exports.Public = Public;
 const PUBLIC_PATHS = ['/health', '/docs'];
 let JwtAuthGuard = class JwtAuthGuard {
@@ -60,7 +58,7 @@ let JwtAuthGuard = class JwtAuthGuard {
         if (!auth)
             return null;
         const [type, token] = auth.split(' ');
-        return type === 'Bearer' ? token ?? null : null;
+        return type === 'Bearer' ? (token ?? null) : null;
     }
 };
 exports.JwtAuthGuard = JwtAuthGuard;

@@ -24,6 +24,7 @@ export class PermissionClient {
    */
   async check(request: {
     actor_id: string;
+    actor_role: string;
     resource_type: string;
     resource_id: string;
     action: string;

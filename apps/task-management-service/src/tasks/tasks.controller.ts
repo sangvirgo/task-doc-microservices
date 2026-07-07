@@ -89,15 +89,13 @@ export class TasksController {
 
   @Get(':id')
   @ApiOperation({ summary: 'Get a task by ID (permission-checked)' })
-  async getTask(
-    @Param('id') taskId: string,
-    @CurrentUser() user?: AuthContext,
-  ): Promise<TaskDto> {
+  async getTask(@Param('id') taskId: string, @CurrentUser() user?: AuthContext): Promise<TaskDto> {
     if (!user) throw new ForbiddenException('Authentication required');
 
     // V3 §5.10.1: Check participation via Permission Service
     const permCheck = await this.permissionClient.check({
       actor_id: user.userId,
+      actor_role: user.role,
       resource_type: 'TASK',
       resource_id: taskId,
       action: 'TASK_PARTICIPATE',
@@ -130,34 +128,38 @@ export class TasksController {
       throw new BadRequestException(parsed.error.issues);
     }
 
-    return this.tasksService.createTask({
-      title: parsed.data.title,
-      description: parsed.data.description,
-      creator_id: user.userId,
-      assignee_id: parsed.data.assignee_id,
-      parent_task_id: parsed.data.parent_task_id,
-      deadline: parsed.data.deadline ? new Date(parsed.data.deadline) : undefined,
-    }).then(async (task) => {
-      await this.auditClient.record({
-        event_type: 'TASK_CREATED',
-        actor_id: user.userId,
-        resource_type: 'TASK',
-        resource_id: task.id,
-        payload: { title: task.title, assignee_id: task.assignee_id },
+    return this.tasksService
+      .createTask({
+        title: parsed.data.title,
+        description: parsed.data.description,
+        creator_id: user.userId,
+        assignee_id: parsed.data.assignee_id,
+        parent_task_id: parsed.data.parent_task_id,
+        deadline: parsed.data.deadline ? new Date(parsed.data.deadline) : undefined,
+      })
+      .then(async (task) => {
+        await this.auditClient.record({
+          event_type: 'TASK_CREATED',
+          actor_id: user.userId,
+          resource_type: 'TASK',
+          resource_id: task.id,
+          payload: { title: task.title, assignee_id: task.assignee_id },
+        });
+        void this.eventPublisher.publish(
+          buildEventEnvelope({
+            event_id: randomUUID(),
+            event_type: 'task.created',
+            occurred_at: new Date().toISOString(),
+            producer: 'task-management-service',
+            correlation_id: randomUUID(),
+            actor_id: user.userId,
+            resource_type: 'TASK',
+            resource_id: task.id,
+            payload: { title: task.title, assignee_id: task.assignee_id },
+          }),
+        );
+        return task;
       });
-      void this.eventPublisher.publish(buildEventEnvelope({
-        event_id: randomUUID(),
-        event_type: 'task.created',
-        occurred_at: new Date().toISOString(),
-        producer: 'task-management-service',
-        correlation_id: randomUUID(),
-        actor_id: user.userId,
-        resource_type: 'TASK',
-        resource_id: task.id,
-        payload: { title: task.title, assignee_id: task.assignee_id },
-      }));
-      return task;
-    });
   }
 
   @Post(':id/status')
@@ -178,6 +180,7 @@ export class TasksController {
     // Check permission to modify task
     const permCheck = await this.permissionClient.check({
       actor_id: user.userId,
+      actor_role: user.role,
       resource_type: 'TASK',
       resource_id: taskId,
       action: 'TASK_MODIFY',
@@ -187,7 +190,12 @@ export class TasksController {
       throw new ForbiddenException(`Cannot modify task: ${permCheck.reason_code}`);
     }
 
-    return this.tasksService.updateTaskStatus(taskId, parsed.data.status, user.userId, parsed.data.reason);
+    return this.tasksService.updateTaskStatus(
+      taskId,
+      parsed.data.status,
+      user.userId,
+      parsed.data.reason,
+    );
   }
 
   @Post(':id/assign')
@@ -208,6 +216,7 @@ export class TasksController {
     // Check permission to modify task
     const permCheck = await this.permissionClient.check({
       actor_id: user.userId,
+      actor_role: user.role,
       resource_type: 'TASK',
       resource_id: taskId,
       action: 'TASK_MODIFY',
@@ -323,7 +332,12 @@ export class TasksController {
       throw new BadRequestException(parsed.error.issues);
     }
 
-    return this.tasksService.reviewSubmission(submissionId, user.userId, parsed.data.approved, parsed.data.comment);
+    return this.tasksService.reviewSubmission(
+      submissionId,
+      user.userId,
+      parsed.data.approved,
+      parsed.data.comment,
+    );
   }
 
   @Get(':id/activity')

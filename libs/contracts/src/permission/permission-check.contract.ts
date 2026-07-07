@@ -2,6 +2,7 @@ import { z } from 'zod';
 
 import { PermissionAction, ResourceType } from './permission-actions';
 import { PermissionReasonCode } from './permission-reason-codes';
+import { SystemRole } from '../roles';
 
 export const PERMISSION_CHECK_PATH = '/internal/permissions/check';
 
@@ -19,6 +20,7 @@ export const PERMISSION_CHECK_TIMEOUT_MS = 2000;
 export const permissionCheckRequestSchema = z
   .object({
     actor_id: z.string().uuid(),
+    actor_role: z.nativeEnum(SystemRole),
     resource_type: z.nativeEnum(ResourceType),
     resource_id: z.string().uuid(),
     action: z.nativeEnum(PermissionAction),

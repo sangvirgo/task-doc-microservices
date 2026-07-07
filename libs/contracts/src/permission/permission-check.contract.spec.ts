@@ -1,9 +1,11 @@
 import { permissionCheckRequestSchema } from './permission-check.contract';
 import { PermissionAction, ResourceType } from './permission-actions';
+import { SystemRole } from '../roles';
 
 describe('permission check request contract', () => {
   const valid = {
     actor_id: '11111111-1111-4111-8111-111111111111',
+    actor_role: SystemRole.EMPLOYEE,
     resource_type: ResourceType.DOCUMENT,
     resource_id: '22222222-2222-4222-8222-222222222222',
     action: PermissionAction.DOWNLOAD,

@@ -15,7 +15,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.HealthController = void 0;
 const common_1 = require("@nestjs/common");
 const swagger_1 = require("@nestjs/swagger");
-const config_1 = require("../../../config/src");
+const config_1 = require("@c17/config");
 let HealthController = class HealthController {
     serviceName;
     constructor(serviceName) {

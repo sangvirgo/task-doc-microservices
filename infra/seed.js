@@ -29,18 +29,18 @@ function loadEnv() {
 loadEnv();
 
 // ── Fixed IDs (idempotent) ──────────────────────────────────────────────────
-const ADMIN_ID  = '00000000-0000-4000-a000-000000000001';
-const EMP_ID    = '00000000-0000-4000-a000-000000000002';
-const TASK_ID   = '00000000-0000-4000-b000-000000000001';
-const DOC_ID    = '00000000-0000-4000-c000-000000000001';
-const GRANT_ID  = '00000000-0000-4000-d000-000000000001';
+const ADMIN_ID = '00000000-0000-4000-a000-000000000001';
+const EMP_ID = '00000000-0000-4000-a000-000000000002';
+const TASK_ID = '00000000-0000-4000-b000-000000000001';
+const DOC_ID = '00000000-0000-4000-c000-000000000001';
+const GRANT_ID = '00000000-0000-4000-d000-000000000001';
 const RECORD_ID = '00000000-0000-4000-c000-000000000010';
-const RULE_ID   = '00000000-0000-4000-e000-000000000001';
+const RULE_ID = '00000000-0000-4000-e000-000000000001';
 
 const ADMIN_EMAIL = 'admin@c17.local';
-const EMP_EMAIL   = 'employee@c17.local';
-const ADMIN_PASS  = hashSync('Admin123!', 10);
-const EMP_PASS    = hashSync('Employee123!', 10);
+const EMP_EMAIL = 'employee@c17.local';
+const ADMIN_PASS = hashSync('Admin123!', 10);
+const EMP_PASS = hashSync('Employee123!', 10);
 
 const NOW = new Date();
 const EXPIRES = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000); // +30 days
@@ -53,7 +53,11 @@ function prismaClient(clientPkg, urlEnvKey) {
 
 async function disconnect(clients) {
   for (const c of clients) {
-    try { await c.$disconnect(); } catch (_) { /* ignore */ }
+    try {
+      await c.$disconnect();
+    } catch (_) {
+      /* ignore */
+    }
   }
 }
 
@@ -64,7 +68,7 @@ async function seedAuth() {
   try {
     for (const u of [
       { id: ADMIN_ID, email: ADMIN_EMAIL, password_hash: ADMIN_PASS, role: 'ADMIN' },
-      { id: EMP_ID,   email: EMP_EMAIL,   password_hash: EMP_PASS,   role: 'EMPLOYEE' },
+      { id: EMP_ID, email: EMP_EMAIL, password_hash: EMP_PASS, role: 'EMPLOYEE' },
     ]) {
       await prisma.user.upsert({
         where: { email: u.email },
@@ -74,7 +78,10 @@ async function seedAuth() {
     }
     console.log('  auth_db: 2 users seeded');
     return prisma;
-  } catch (e) { console.error('  auth_db ERROR:', e.message); return prisma; }
+  } catch (e) {
+    console.error('  auth_db ERROR:', e.message);
+    return prisma;
+  }
 }
 
 async function seedUserRole() {
@@ -82,7 +89,7 @@ async function seedUserRole() {
   try {
     for (const u of [
       { id: ADMIN_ID, email: ADMIN_EMAIL, role: 'ADMIN' },
-      { id: EMP_ID,   email: EMP_EMAIL,   role: 'EMPLOYEE' },
+      { id: EMP_ID, email: EMP_EMAIL, role: 'EMPLOYEE' },
     ]) {
       await prisma.user.upsert({
         where: { id: u.id },
@@ -98,7 +105,10 @@ async function seedUserRole() {
     });
     console.log('  user_role_db: 2 users + 1 capability seeded');
     return prisma;
-  } catch (e) { console.error('  user_role_db ERROR:', e.message); return prisma; }
+  } catch (e) {
+    console.error('  user_role_db ERROR:', e.message);
+    return prisma;
+  }
 }
 
 async function seedTask() {
@@ -127,19 +137,33 @@ async function seedTask() {
     const commentId = '00000000-0000-4000-b000-000000000010';
     await prisma.taskComment.upsert({
       where: { id: commentId },
-      create: { id: commentId, task_id: TASK_ID, author_id: ADMIN_ID, content: 'Please review the attached documents before the deadline.' },
+      create: {
+        id: commentId,
+        task_id: TASK_ID,
+        author_id: ADMIN_ID,
+        content: 'Please review the attached documents before the deadline.',
+      },
       update: {},
     });
     // Status history
     const histId = '00000000-0000-4000-b000-000000000020';
     await prisma.taskStatusHistory.upsert({
       where: { id: histId },
-      create: { id: histId, task_id: TASK_ID, from_status: 'CREATED', to_status: 'IN_PROGRESS', changed_by: ADMIN_ID },
+      create: {
+        id: histId,
+        task_id: TASK_ID,
+        from_status: 'CREATED',
+        to_status: 'IN_PROGRESS',
+        changed_by: ADMIN_ID,
+      },
       update: {},
     });
     console.log('  task_db: 1 task + participant + comment + history seeded');
     return prisma;
-  } catch (e) { console.error('  task_db ERROR:', e.message); return prisma; }
+  } catch (e) {
+    console.error('  task_db ERROR:', e.message);
+    return prisma;
+  }
 }
 
 async function seedDocument() {
@@ -190,7 +214,10 @@ async function seedDocument() {
     });
     console.log('  document_db: 1 document + version + record seeded');
     return prisma;
-  } catch (e) { console.error('  document_db ERROR:', e.message); return prisma; }
+  } catch (e) {
+    console.error('  document_db ERROR:', e.message);
+    return prisma;
+  }
 }
 
 async function seedDocumentSecurity() {
@@ -204,7 +231,10 @@ async function seedDocumentSecurity() {
     });
     console.log('  document_security_db: KEK v1 seeded');
     return prisma;
-  } catch (e) { console.error('  document_security_db ERROR:', e.message); return prisma; }
+  } catch (e) {
+    console.error('  document_security_db ERROR:', e.message);
+    return prisma;
+  }
 }
 
 async function seedPermission() {
@@ -228,7 +258,10 @@ async function seedPermission() {
     });
     console.log('  permission_db: 1 grant seeded');
     return prisma;
-  } catch (e) { console.error('  permission_db ERROR:', e.message); return prisma; }
+  } catch (e) {
+    console.error('  permission_db ERROR:', e.message);
+    return prisma;
+  }
 }
 
 async function seedAudit() {
@@ -242,7 +275,10 @@ async function seedAudit() {
     });
     console.log('  audit_db: chain head initialized');
     return prisma;
-  } catch (e) { console.error('  audit_db ERROR:', e.message); return prisma; }
+  } catch (e) {
+    console.error('  audit_db ERROR:', e.message);
+    return prisma;
+  }
 }
 
 async function seedNotification() {
@@ -251,8 +287,22 @@ async function seedNotification() {
     const notifId1 = '00000000-0000-4000-f000-000000000001';
     const notifId2 = '00000000-0000-4000-f000-000000000002';
     for (const n of [
-      { id: notifId1, recipient_id: ADMIN_ID, type: 'SYSTEM', title: 'Welcome', body: 'Welcome to C17 Document Management, Admin.', channel: 'IN_APP' },
-      { id: notifId2, recipient_id: EMP_ID, type: 'SYSTEM', title: 'Welcome', body: 'Welcome to C17 Document Management. You have been assigned the ARCHIVE_SUBMIT capability.', channel: 'IN_APP' },
+      {
+        id: notifId1,
+        recipient_id: ADMIN_ID,
+        type: 'SYSTEM',
+        title: 'Welcome',
+        body: 'Welcome to C17 Document Management, Admin.',
+        channel: 'IN_APP',
+      },
+      {
+        id: notifId2,
+        recipient_id: EMP_ID,
+        type: 'SYSTEM',
+        title: 'Welcome',
+        body: 'Welcome to C17 Document Management. You have been assigned the ARCHIVE_SUBMIT capability.',
+        channel: 'IN_APP',
+      },
     ]) {
       await prisma.notification.upsert({
         where: { id: n.id },
@@ -261,10 +311,7 @@ async function seedNotification() {
       });
     }
     // Preferences
-    for (const p of [
-      { user_id: ADMIN_ID },
-      { user_id: EMP_ID },
-    ]) {
+    for (const p of [{ user_id: ADMIN_ID }, { user_id: EMP_ID }]) {
       await prisma.notificationPreference.upsert({
         where: { user_id: p.user_id },
         create: p,
@@ -273,18 +320,25 @@ async function seedNotification() {
     }
     console.log('  notification_db: 2 notifications + 2 preferences seeded');
     return prisma;
-  } catch (e) { console.error('  notification_db ERROR:', e.message); return prisma; }
+  } catch (e) {
+    console.error('  notification_db ERROR:', e.message);
+    return prisma;
+  }
 }
 
 async function seedSecurityMonitoring() {
-  const prisma = prismaClient('@prisma/client-security-monitoring', 'SECURITY_MONITORING_DATABASE_URL');
+  const prisma = prismaClient(
+    '@prisma/client-security-monitoring',
+    'SECURITY_MONITORING_DATABASE_URL',
+  );
   try {
     await prisma.securityRule.upsert({
       where: { name: 'excessive-permission-checks' },
       create: {
         id: RULE_ID,
         name: 'excessive-permission-checks',
-        description: 'Triggers when a user makes too many permission check requests in a short window.',
+        description:
+          'Triggers when a user makes too many permission check requests in a short window.',
         rule_type: 'RATE_LIMIT',
         threshold: 10,
         window_minutes: 5,
@@ -295,7 +349,10 @@ async function seedSecurityMonitoring() {
     });
     console.log('  security_monitoring_db: 1 rule seeded');
     return prisma;
-  } catch (e) { console.error('  security_monitoring_db ERROR:', e.message); return prisma; }
+  } catch (e) {
+    console.error('  security_monitoring_db ERROR:', e.message);
+    return prisma;
+  }
 }
 
 // ── Main ────────────────────────────────────────────────────────────────────

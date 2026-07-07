@@ -13,10 +13,23 @@ x-service-base: &service-base
   environment: &service-env
     NODE_ENV: ${NODE_ENV:-development}
     LOG_LEVEL: ${LOG_LEVEL:-info}
+    JWT_SECRET: ${JWT_SECRET:-dev-secret-min-32-chars-required-000000}
+    JWT_TTL_SECONDS: ${JWT_TTL_SECONDS:-1800}
     RABBITMQ_URL: amqp://${RABBITMQ_USER:-c17}:${RABBITMQ_PASSWORD:?set RABBITMQ_PASSWORD}@rabbitmq:5672
-  depends_on:
+    MESSAGING_IN_MEMORY: 'false'
+  depends_on: &rabbitmq-dependency
     rabbitmq:
       condition: service_healthy
+  healthcheck: &app-healthcheck
+    test:
+      [
+        'CMD-SHELL',
+        "node -e \"fetch('http://127.0.0.1:' + process.env.PORT + '/health').then((response) => process.exit(response.ok ? 0 : 1)).catch(() => process.exit(1))\"",
+      ]
+    interval: 15s
+    timeout: 10s
+    retries: 10
+    start_period: 30s
 
 services:
   # ---------------------------------------------------------------------------
@@ -102,7 +115,6 @@ services:
       test: ['CMD', 'clamdcheck.sh']
       interval: 30s
       timeout: 20s
-      # ClamAV downloads its signature database on first start; that takes minutes.
       start_period: 300s
       retries: 10
 
@@ -120,6 +132,34 @@ services:
     environment:
       <<: *service-env
       PORT: 3000
+      AUTH_SERVICE_URL: http://authentication-identity-service:3001
+      USER_ROLE_SERVICE_URL: http://user-role-management-service:3002
+      TASK_SERVICE_URL: http://task-management-service:3003
+      DOCUMENT_SERVICE_URL: http://document-management-service:3004
+      DOCUMENT_SECURITY_SERVICE_URL: http://document-security-service:3005
+      PERMISSION_SERVICE_URL: http://permission-service:3006
+      AUDIT_SERVICE_URL: http://audit-log-service:3007
+      NOTIFICATION_SERVICE_URL: http://notification-service:3008
+      SECURITY_MONITORING_SERVICE_URL: http://security-monitoring-service:3009
+    depends_on:
+      authentication-identity-service:
+        condition: service_healthy
+      user-role-management-service:
+        condition: service_healthy
+      task-management-service:
+        condition: service_healthy
+      document-management-service:
+        condition: service_healthy
+      document-security-service:
+        condition: service_healthy
+      permission-service:
+        condition: service_healthy
+      audit-log-service:
+        condition: service_healthy
+      notification-service:
+        condition: service_healthy
+      security-monitoring-service:
+        condition: service_healthy
     ports:
       - '3000:3000'
 
@@ -133,6 +173,14 @@ services:
     environment:
       <<: *service-env
       PORT: 3001
+      AUTH_DATABASE_URL: postgresql://${POSTGRES_USER:-c17}:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}@postgres:5432/auth_db
+      REDIS_URL: redis://redis:6379
+    depends_on:
+      <<: *rabbitmq-dependency
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
     ports:
       - '3001:3001'
 
@@ -146,6 +194,11 @@ services:
     environment:
       <<: *service-env
       PORT: 3002
+      USER_ROLE_DATABASE_URL: postgresql://${POSTGRES_USER:-c17}:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}@postgres:5432/user_role_db
+    depends_on:
+      <<: *rabbitmq-dependency
+      postgres:
+        condition: service_healthy
     ports:
       - '3002:3002'
 
@@ -159,6 +212,19 @@ services:
     environment:
       <<: *service-env
       PORT: 3003
+      TASK_DATABASE_URL: postgresql://${POSTGRES_USER:-c17}:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}@postgres:5432/task_db
+      PERMISSION_SERVICE_URL: http://permission-service:3006
+      AUDIT_SERVICE_URL: http://audit-log-service:3007
+      PERMISSION_CHECK_TIMEOUT_MS: ${PERMISSION_CHECK_TIMEOUT_MS:-2000}
+      AUDIT_TIMEOUT_MS: ${AUDIT_TIMEOUT_MS:-2000}
+    depends_on:
+      <<: *rabbitmq-dependency
+      postgres:
+        condition: service_healthy
+      permission-service:
+        condition: service_healthy
+      audit-log-service:
+        condition: service_healthy
     ports:
       - '3003:3003'
 
@@ -172,6 +238,23 @@ services:
     environment:
       <<: *service-env
       PORT: 3004
+      DOCUMENT_DATABASE_URL: postgresql://${POSTGRES_USER:-c17}:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}@postgres:5432/document_db
+      PERMISSION_SERVICE_URL: http://permission-service:3006
+      AUDIT_SERVICE_URL: http://audit-log-service:3007
+      DOCUMENT_SECURITY_URL: http://document-security-service:3005
+      PERMISSION_CHECK_TIMEOUT_MS: ${PERMISSION_CHECK_TIMEOUT_MS:-2000}
+      AUDIT_TIMEOUT_MS: ${AUDIT_TIMEOUT_MS:-2000}
+      SECURITY_TIMEOUT_MS: ${SECURITY_TIMEOUT_MS:-5000}
+    depends_on:
+      <<: *rabbitmq-dependency
+      postgres:
+        condition: service_healthy
+      permission-service:
+        condition: service_healthy
+      audit-log-service:
+        condition: service_healthy
+      document-security-service:
+        condition: service_healthy
     ports:
       - '3004:3004'
 
@@ -185,6 +268,22 @@ services:
     environment:
       <<: *service-env
       PORT: 3005
+      DOCUMENT_SECURITY_DATABASE_URL: postgresql://${POSTGRES_USER:-c17}:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}@postgres:5432/document_security_db
+      MINIO_ENDPOINT: minio
+      MINIO_PORT: 9000
+      MINIO_ACCESS_KEY: ${MINIO_ACCESS_KEY:?set MINIO_ACCESS_KEY}
+      MINIO_SECRET_KEY: ${MINIO_SECRET_KEY:?set MINIO_SECRET_KEY}
+      MINIO_USE_SSL: 'false'
+      CLAMAV_HOST: clamav
+      CLAMAV_PORT: 3310
+    depends_on:
+      <<: *rabbitmq-dependency
+      postgres:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+      clamav:
+        condition: service_healthy
     ports:
       - '3005:3005'
 
@@ -198,6 +297,11 @@ services:
     environment:
       <<: *service-env
       PORT: 3006
+      PERMISSION_DATABASE_URL: postgresql://${POSTGRES_USER:-c17}:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}@postgres:5432/permission_db
+    depends_on:
+      <<: *rabbitmq-dependency
+      postgres:
+        condition: service_healthy
     ports:
       - '3006:3006'
 
@@ -213,6 +317,11 @@ services:
     environment:
       <<: *service-env
       PORT: 3007
+      AUDIT_DATABASE_URL: postgresql://${POSTGRES_USER:-c17}:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}@postgres:5432/audit_db
+    depends_on:
+      <<: *rabbitmq-dependency
+      postgres:
+        condition: service_healthy
     ports:
       - '3007:3007'
     deploy:
@@ -228,6 +337,11 @@ services:
     environment:
       <<: *service-env
       PORT: 3008
+      NOTIFICATION_DATABASE_URL: postgresql://${POSTGRES_USER:-c17}:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}@postgres:5432/notification_db
+    depends_on:
+      <<: *rabbitmq-dependency
+      postgres:
+        condition: service_healthy
     ports:
       - '3008:3008'
 
@@ -241,6 +355,11 @@ services:
     environment:
       <<: *service-env
       PORT: 3009
+      SECURITY_MONITORING_DATABASE_URL: postgresql://${POSTGRES_USER:-c17}:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}@postgres:5432/security_monitoring_db
+    depends_on:
+      <<: *rabbitmq-dependency
+      postgres:
+        condition: service_healthy
     ports:
       - '3009:3009'
 

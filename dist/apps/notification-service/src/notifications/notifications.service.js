@@ -25,7 +25,7 @@ let NotificationsService = class NotificationsService {
                 title: data.title,
                 body: data.body,
                 channel: data.channel || 'IN_APP',
-                metadata: data.metadata,
+                metadata: data.metadata === undefined ? undefined : data.metadata,
             },
         });
         return this.toDto(notification);
@@ -69,7 +69,12 @@ let NotificationsService = class NotificationsService {
             create: { user_id, email_enabled: true, in_app_enabled: true },
             update: {},
         });
-        return { id: prefs.id, user_id: prefs.user_id, email_enabled: prefs.email_enabled, in_app_enabled: prefs.in_app_enabled };
+        return {
+            id: prefs.id,
+            user_id: prefs.user_id,
+            email_enabled: prefs.email_enabled,
+            in_app_enabled: prefs.in_app_enabled,
+        };
     }
     async updatePreferences(user_id, data) {
         const prefs = await this.prisma.notificationPreference.upsert({
@@ -84,7 +89,12 @@ let NotificationsService = class NotificationsService {
                 ...(data.in_app_enabled !== undefined ? { in_app_enabled: data.in_app_enabled } : {}),
             },
         });
-        return { id: prefs.id, user_id: prefs.user_id, email_enabled: prefs.email_enabled, in_app_enabled: prefs.in_app_enabled };
+        return {
+            id: prefs.id,
+            user_id: prefs.user_id,
+            email_enabled: prefs.email_enabled,
+            in_app_enabled: prefs.in_app_enabled,
+        };
     }
     toDto(notification) {
         return {

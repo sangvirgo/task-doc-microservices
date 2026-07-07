@@ -179,8 +179,8 @@ let DocumentsService = class DocumentsService {
                 record_id: data.record_id,
                 submitter_id: data.submitter_id,
                 status: 'DRAFT',
-                manifest: data.manifest,
-                metadata: data.metadata,
+                manifest: data.manifest === undefined ? undefined : data.manifest,
+                metadata: data.metadata === undefined ? undefined : data.metadata,
             },
         });
         return {

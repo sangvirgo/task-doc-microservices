@@ -207,7 +207,9 @@ let TasksService = class TasksService {
         };
     }
     async reviewSubmission(submission_id, reviewer_id, approved, comment) {
-        const submission = await this.prisma.taskSubmission.findUnique({ where: { id: submission_id } });
+        const submission = await this.prisma.taskSubmission.findUnique({
+            where: { id: submission_id },
+        });
         if (!submission)
             throw new common_1.NotFoundException('Submission not found');
         const newStatus = approved ? 'APPROVED' : 'REJECTED';

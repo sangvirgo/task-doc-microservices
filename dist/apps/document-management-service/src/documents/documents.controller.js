@@ -17,9 +17,9 @@ const common_1 = require("@nestjs/common");
 const swagger_1 = require("@nestjs/swagger");
 const zod_1 = require("zod");
 const crypto_1 = require("crypto");
-const auth_context_1 = require("../../../../libs/auth-context/src");
-const contracts_1 = require("../../../../libs/contracts/src");
-const messaging_1 = require("../../../../libs/messaging/src");
+const auth_context_1 = require("@c17/auth-context");
+const contracts_1 = require("@c17/contracts");
+const messaging_1 = require("@c17/messaging");
 const documents_service_1 = require("./documents.service");
 const permission_client_1 = require("../permissions/permission.client");
 const audit_client_1 = require("../audit/audit.client");
@@ -82,20 +82,26 @@ let DocumentsController = class DocumentsController {
         if (!parsed.success) {
             throw new common_1.BadRequestException(parsed.error.issues);
         }
-        return this.documentsService.createDocument({
+        return this.documentsService
+            .createDocument({
             title: parsed.data.title,
             document_type: parsed.data.document_type,
             owner_id: parsed.data.owner_id,
             creator_id: user.userId,
             security_level: parsed.data.security_level,
             retention_policy: parsed.data.retention_policy,
-        }).then(async (doc) => {
+        })
+            .then(async (doc) => {
             await this.auditClient.record({
                 event_type: 'DOCUMENT_CREATED',
                 actor_id: user.userId,
                 resource_type: 'DOCUMENT',
                 resource_id: doc.id,
-                payload: { title: doc.title, document_type: doc.document_type, security_level: doc.security_level },
+                payload: {
+                    title: doc.title,
+                    document_type: doc.document_type,
+                    security_level: doc.security_level,
+                },
             });
             void this.eventPublisher.publish((0, contracts_1.buildEventEnvelope)({
                 event_id: (0, crypto_1.randomUUID)(),
@@ -116,6 +122,7 @@ let DocumentsController = class DocumentsController {
             throw new common_1.ForbiddenException('Authentication required');
         const permCheck = await this.permissionClient.check({
             actor_id: user.userId,
+            actor_role: user.role,
             resource_type: 'DOCUMENT',
             resource_id: documentId,
             action: 'PREVIEW',
@@ -130,6 +137,7 @@ let DocumentsController = class DocumentsController {
             throw new common_1.ForbiddenException('Authentication required');
         const permCheck = await this.permissionClient.check({
             actor_id: user.userId,
+            actor_role: user.role,
             resource_type: 'DOCUMENT',
             resource_id: documentId,
             action: 'PREVIEW',
@@ -146,7 +154,7 @@ let DocumentsController = class DocumentsController {
         if (!parsed.success) {
             throw new common_1.BadRequestException(parsed.error.issues);
         }
-        return this.documentsService.createDocumentVersion({
+        const version = await this.documentsService.createDocumentVersion({
             document_id: documentId,
             object_key: parsed.data.object_key,
             checksum: parsed.data.checksum,
@@ -155,19 +163,18 @@ let DocumentsController = class DocumentsController {
             mime_type: parsed.data.mime_type,
             kek_version: parsed.data.kek_version,
             created_by: user.userId,
-        }).then(async (version) => {
-            void this.securityClient.processDocument({
-                document_id: documentId,
-                version: version.version,
-                object_key: parsed.data.object_key,
-                checksum: parsed.data.checksum,
-                encrypted_dek: parsed.data.encrypted_dek,
-                file_size: parsed.data.file_size,
-                mime_type: parsed.data.mime_type,
-                kek_version: parsed.data.kek_version,
-            });
-            return version;
         });
+        void this.securityClient.processDocument({
+            document_id: documentId,
+            version: version.version,
+            object_key: parsed.data.object_key,
+            checksum: parsed.data.checksum,
+            encrypted_dek: parsed.data.encrypted_dek,
+            file_size: parsed.data.file_size,
+            mime_type: parsed.data.mime_type,
+            kek_version: parsed.data.kek_version,
+        });
+        return version;
     }
     async getVersions(documentId) {
         return this.documentsService.getDocumentVersions(documentId);
@@ -187,6 +194,7 @@ let DocumentsController = class DocumentsController {
         }
         const permCheck = await this.permissionClient.check({
             actor_id: user.userId,
+            actor_role: user.role,
             resource_type: 'DOCUMENT',
             resource_id: documentId,
             action: 'DOWNLOAD',
@@ -195,13 +203,15 @@ let DocumentsController = class DocumentsController {
             throw new common_1.ForbiddenException(`Download denied: ${permCheck.reason_code}`);
         }
         const version = await this.documentsService.getDocumentVersion(documentId, parsed.data.version);
-        return this.documentsService.createDownloadTicket({
+        return this.documentsService
+            .createDownloadTicket({
             document_id: documentId,
             version: parsed.data.version,
             actor_id: user.userId,
             object_key: version.object_key,
             expires_in_seconds: parsed.data.expires_in_seconds,
-        }).then(async (ticket) => {
+        })
+            .then(async (ticket) => {
             await this.auditClient.record({
                 event_type: 'DOCUMENT_DOWNLOAD_TICKET',
                 actor_id: user.userId,
@@ -217,6 +227,7 @@ let DocumentsController = class DocumentsController {
             throw new common_1.ForbiddenException('Authentication required');
         const permCheck = await this.permissionClient.check({
             actor_id: user.userId,
+            actor_role: user.role,
             resource_type: 'DOCUMENT',
             resource_id: documentId,
             action: 'DOWNLOAD',
@@ -312,7 +323,9 @@ __decorate([
 ], DocumentsController.prototype, "createDownloadTicket", null);
 __decorate([
     (0, common_1.Get)(':id/download'),
-    (0, swagger_1.ApiOperation)({ summary: 'Get download ticket for current version (deprecated, use /download-ticket)' }),
+    (0, swagger_1.ApiOperation)({
+        summary: 'Get download ticket for current version (deprecated, use /download-ticket)',
+    }),
     __param(0, (0, common_1.Param)('id')),
     __param(1, (0, auth_context_1.CurrentUser)()),
     __metadata("design:type", Function),

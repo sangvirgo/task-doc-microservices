@@ -1,4 +1,6 @@
 import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
+import type { Prisma } from '@prisma/client-document';
+
 import { DocumentPrismaService } from '../prisma/document-prisma.service';
 
 export interface DocumentDto {
@@ -56,7 +58,6 @@ export interface DownloadTicketDto {
   expires_at: string;
   object_key: string;
 }
-
 
 @Injectable()
 export class DocumentsService {
@@ -223,10 +224,7 @@ export class DocumentsService {
     return this.recordToDto(record);
   }
 
-  async listRecords(filters?: {
-    creator_id?: string;
-    status?: string;
-  }): Promise<RecordDto[]> {
+  async listRecords(filters?: { creator_id?: string; status?: string }): Promise<RecordDto[]> {
     const records = await this.prisma.record.findMany({
       where: filters,
       include: { entries: true },
@@ -288,8 +286,10 @@ export class DocumentsService {
         record_id: data.record_id,
         submitter_id: data.submitter_id,
         status: 'DRAFT',
-        manifest: data.manifest as any,
-        metadata: data.metadata as any,
+        manifest:
+          data.manifest === undefined ? undefined : (data.manifest as Prisma.InputJsonValue),
+        metadata:
+          data.metadata === undefined ? undefined : (data.metadata as Prisma.InputJsonValue),
       },
     });
 
@@ -334,7 +334,8 @@ export class DocumentsService {
   }> {
     const pkg = await this.prisma.transferPackage.findUnique({ where: { id: package_id } });
     if (!pkg) throw new NotFoundException('Transfer package not found');
-    if (pkg.status !== 'SUBMITTED') throw new BadRequestException('Package must be SUBMITTED for review');
+    if (pkg.status !== 'SUBMITTED')
+      throw new BadRequestException('Package must be SUBMITTED for review');
 
     const newStatus = approved ? 'ACCEPTED' : 'REJECTED';
     const updated = await this.prisma.transferPackage.update({

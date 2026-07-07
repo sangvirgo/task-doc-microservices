@@ -5,10 +5,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 
-import {
-  isContentAdjacentCapability,
-  type Capability,
-} from '@c17/contracts';
+import { isContentAdjacentCapability, type Capability } from '@c17/contracts';
 
 import { UserRolePrismaService } from '../prisma/user-role-prisma.service';
 
@@ -25,11 +22,7 @@ export interface UserDto {
 export class UsersService {
   constructor(private readonly prisma: UserRolePrismaService) {}
 
-  async createUser(data: {
-    id: string;
-    email: string;
-    role: string;
-  }): Promise<UserDto> {
+  async createUser(data: { id: string; email: string; role: string }): Promise<UserDto> {
     const existing = await this.prisma.user.findUnique({ where: { email: data.email } });
     if (existing) {
       throw new ConflictException('Email already exists');
@@ -123,16 +116,14 @@ export class UsersService {
     return this.getUser(userId);
   }
 
-  private toDto(
-    user: {
-      id: string;
-      email: string;
-      role: string;
-      locked_at: Date | null;
-      created_at: Date;
-      Capability: Array<{ capability: string }>;
-    },
-  ): UserDto {
+  private toDto(user: {
+    id: string;
+    email: string;
+    role: string;
+    locked_at: Date | null;
+    created_at: Date;
+    Capability: Array<{ capability: string }>;
+  }): UserDto {
     return {
       id: user.id,
       email: user.email,

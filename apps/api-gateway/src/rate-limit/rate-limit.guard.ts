@@ -59,7 +59,8 @@ export class RateLimitGuard implements CanActivate {
 
   private getKey(request: Request): string {
     // Use authenticated user ID if available, otherwise IP
-    const user = (request as unknown as Record<string, unknown>)['user'] as { userId: string } | undefined;
+    const user = (request as unknown as Record<string, unknown>)['user'] as
+      { userId: string } | undefined;
     if (user?.userId) return `user:${user.userId}`;
     return `ip:${request.ip || request.socket.remoteAddress || 'unknown'}`;
   }

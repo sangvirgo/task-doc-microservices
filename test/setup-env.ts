@@ -15,14 +15,19 @@ process.env.RABBITMQ_URL = process.env.RABBITMQ_URL ?? 'amqp://guest:guest@local
 // Database URLs for integration tests (local Docker infrastructure on port 5433)
 const PG_BASE = 'postgresql://c17:replace-me-local-only@localhost:5433';
 process.env.AUTH_DATABASE_URL = process.env.AUTH_DATABASE_URL ?? `${PG_BASE}/auth_db`;
-process.env.USER_ROLE_DATABASE_URL = process.env.USER_ROLE_DATABASE_URL ?? `${PG_BASE}/user_role_db`;
+process.env.USER_ROLE_DATABASE_URL =
+  process.env.USER_ROLE_DATABASE_URL ?? `${PG_BASE}/user_role_db`;
 process.env.TASK_DATABASE_URL = process.env.TASK_DATABASE_URL ?? `${PG_BASE}/task_db`;
 process.env.DOCUMENT_DATABASE_URL = process.env.DOCUMENT_DATABASE_URL ?? `${PG_BASE}/document_db`;
-process.env.DOCUMENT_SECURITY_DATABASE_URL = process.env.DOCUMENT_SECURITY_DATABASE_URL ?? `${PG_BASE}/document_security_db`;
-process.env.PERMISSION_DATABASE_URL = process.env.PERMISSION_DATABASE_URL ?? `${PG_BASE}/permission_db`;
+process.env.DOCUMENT_SECURITY_DATABASE_URL =
+  process.env.DOCUMENT_SECURITY_DATABASE_URL ?? `${PG_BASE}/document_security_db`;
+process.env.PERMISSION_DATABASE_URL =
+  process.env.PERMISSION_DATABASE_URL ?? `${PG_BASE}/permission_db`;
 process.env.AUDIT_DATABASE_URL = process.env.AUDIT_DATABASE_URL ?? `${PG_BASE}/audit_db`;
-process.env.NOTIFICATION_DATABASE_URL = process.env.NOTIFICATION_DATABASE_URL ?? `${PG_BASE}/notification_db`;
-process.env.SECURITY_MONITORING_DATABASE_URL = process.env.SECURITY_MONITORING_DATABASE_URL ?? `${PG_BASE}/security_monitoring_db`;
+process.env.NOTIFICATION_DATABASE_URL =
+  process.env.NOTIFICATION_DATABASE_URL ?? `${PG_BASE}/notification_db`;
+process.env.SECURITY_MONITORING_DATABASE_URL =
+  process.env.SECURITY_MONITORING_DATABASE_URL ?? `${PG_BASE}/security_monitoring_db`;
 
 // Redis
 process.env.REDIS_URL = process.env.REDIS_URL ?? 'redis://localhost:6379';

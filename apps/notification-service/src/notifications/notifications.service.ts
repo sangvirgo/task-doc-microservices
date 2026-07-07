@@ -1,4 +1,6 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
+import type { Prisma } from '@prisma/client-notification';
+
 import { NotificationPrismaService } from '../prisma/notification-prisma.service';
 
 export interface NotificationDto {
@@ -39,7 +41,8 @@ export class NotificationsService {
         title: data.title,
         body: data.body,
         channel: data.channel || 'IN_APP',
-        metadata: data.metadata as any,
+        metadata:
+          data.metadata === undefined ? undefined : (data.metadata as Prisma.InputJsonValue),
       },
     });
     return this.toDto(notification);
@@ -87,7 +90,12 @@ export class NotificationsService {
       create: { user_id, email_enabled: true, in_app_enabled: true },
       update: {},
     });
-    return { id: prefs.id, user_id: prefs.user_id, email_enabled: prefs.email_enabled, in_app_enabled: prefs.in_app_enabled };
+    return {
+      id: prefs.id,
+      user_id: prefs.user_id,
+      email_enabled: prefs.email_enabled,
+      in_app_enabled: prefs.in_app_enabled,
+    };
   }
 
   async updatePreferences(
@@ -106,7 +114,12 @@ export class NotificationsService {
         ...(data.in_app_enabled !== undefined ? { in_app_enabled: data.in_app_enabled } : {}),
       },
     });
-    return { id: prefs.id, user_id: prefs.user_id, email_enabled: prefs.email_enabled, in_app_enabled: prefs.in_app_enabled };
+    return {
+      id: prefs.id,
+      user_id: prefs.user_id,
+      email_enabled: prefs.email_enabled,
+      in_app_enabled: prefs.in_app_enabled,
+    };
   }
 
   private toDto(notification: {

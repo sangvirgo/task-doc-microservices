@@ -26,17 +26,44 @@ interface ServiceRoute {
  */
 function getRoutes(): ServiceRoute[] {
   return [
-    { prefix: '/api/auth',               target: `http://localhost:${process.env.AUTH_SERVICE_PORT || '3001'}` },
-    { prefix: '/api/users',              target: `http://localhost:${process.env.USER_ROLE_SERVICE_PORT || '3002'}` },
-    { prefix: '/api/tasks',              target: `http://localhost:${process.env.TASK_SERVICE_PORT || '3003'}` },
-    { prefix: '/api/documents',          target: `http://localhost:${process.env.DOCUMENT_SERVICE_PORT || '3004'}` },
-    { prefix: '/api/records',            target: `http://localhost:${process.env.DOCUMENT_SERVICE_PORT || '3004'}` },
-    { prefix: '/api/transfer-packages',  target: `http://localhost:${process.env.DOCUMENT_SERVICE_PORT || '3004'}` },
-    { prefix: '/api/security',           target: `http://localhost:${process.env.DOCUMENT_SECURITY_PORT || '3005'}` },
-    { prefix: '/api/permissions',        target: `http://localhost:${process.env.PERMISSION_SERVICE_PORT || '3006'}` },
-    { prefix: '/api/audit',              target: `http://localhost:${process.env.AUDIT_SERVICE_PORT || '3007'}` },
-    { prefix: '/api/notifications',      target: `http://localhost:${process.env.NOTIFICATION_SERVICE_PORT || '3008'}` },
-    { prefix: '/api/monitoring',         target: `http://localhost:${process.env.SECURITY_MONITORING_PORT || '3009'}` },
+    { prefix: '/api/auth', target: process.env.AUTH_SERVICE_URL || 'http://localhost:3001' },
+    {
+      prefix: '/api/users',
+      target: process.env.USER_ROLE_SERVICE_URL || 'http://localhost:3002',
+    },
+    { prefix: '/api/tasks', target: process.env.TASK_SERVICE_URL || 'http://localhost:3003' },
+    {
+      prefix: '/api/documents',
+      target: process.env.DOCUMENT_SERVICE_URL || 'http://localhost:3004',
+    },
+    {
+      prefix: '/api/records',
+      target: process.env.DOCUMENT_SERVICE_URL || 'http://localhost:3004',
+    },
+    {
+      prefix: '/api/transfer-packages',
+      target: process.env.DOCUMENT_SERVICE_URL || 'http://localhost:3004',
+    },
+    {
+      prefix: '/api/security',
+      target: process.env.DOCUMENT_SECURITY_SERVICE_URL || 'http://localhost:3005',
+    },
+    {
+      prefix: '/api/permissions',
+      target: process.env.PERMISSION_SERVICE_URL || 'http://localhost:3006',
+    },
+    {
+      prefix: '/api/audit',
+      target: process.env.AUDIT_SERVICE_URL || 'http://localhost:3007',
+    },
+    {
+      prefix: '/api/notifications',
+      target: process.env.NOTIFICATION_SERVICE_URL || 'http://localhost:3008',
+    },
+    {
+      prefix: '/api/monitoring',
+      target: process.env.SECURITY_MONITORING_SERVICE_URL || 'http://localhost:3009',
+    },
   ];
 }
 
@@ -58,57 +85,57 @@ export class GatewayController {
 
   /** Auth endpoints are public — no JWT required */
   @Public()
-  @All('api/auth/*path')
+  @All(['api/auth', 'api/auth/*path'])
   async proxyAuth(@Req() req: Request, @Res() res: Response): Promise<void> {
     await this.proxy(req, res);
   }
 
-  @All('api/users/*path')
+  @All(['api/users', 'api/users/*path'])
   async proxyUsers(@Req() req: Request, @Res() res: Response): Promise<void> {
     await this.proxy(req, res);
   }
 
-  @All('api/tasks/*path')
+  @All(['api/tasks', 'api/tasks/*path'])
   async proxyTasks(@Req() req: Request, @Res() res: Response): Promise<void> {
     await this.proxy(req, res);
   }
 
-  @All('api/documents/*path')
+  @All(['api/documents', 'api/documents/*path'])
   async proxyDocuments(@Req() req: Request, @Res() res: Response): Promise<void> {
     await this.proxy(req, res);
   }
 
-  @All('api/records/*path')
+  @All(['api/records', 'api/records/*path'])
   async proxyRecords(@Req() req: Request, @Res() res: Response): Promise<void> {
     await this.proxy(req, res);
   }
 
-  @All('api/transfer-packages/*path')
+  @All(['api/transfer-packages', 'api/transfer-packages/*path'])
   async proxyTransferPackages(@Req() req: Request, @Res() res: Response): Promise<void> {
     await this.proxy(req, res);
   }
 
-  @All('api/security/*path')
+  @All(['api/security', 'api/security/*path'])
   async proxySecurity(@Req() req: Request, @Res() res: Response): Promise<void> {
     await this.proxy(req, res);
   }
 
-  @All('api/permissions/*path')
+  @All(['api/permissions', 'api/permissions/*path'])
   async proxyPermissions(@Req() req: Request, @Res() res: Response): Promise<void> {
     await this.proxy(req, res);
   }
 
-  @All('api/audit/*path')
+  @All(['api/audit', 'api/audit/*path'])
   async proxyAudit(@Req() req: Request, @Res() res: Response): Promise<void> {
     await this.proxy(req, res);
   }
 
-  @All('api/notifications/*path')
+  @All(['api/notifications', 'api/notifications/*path'])
   async proxyNotifications(@Req() req: Request, @Res() res: Response): Promise<void> {
     await this.proxy(req, res);
   }
 
-  @All('api/monitoring/*path')
+  @All(['api/monitoring', 'api/monitoring/*path'])
   async proxyMonitoring(@Req() req: Request, @Res() res: Response): Promise<void> {
     await this.proxy(req, res);
   }
@@ -126,9 +153,12 @@ export class GatewayController {
       const targetUrl = `${route.target}${targetPath}`;
 
       const headers: Record<string, string> = {};
-      if (req.headers['content-type']) headers['content-type'] = req.headers['content-type'] as string;
-      if (req.headers['accept']) headers['accept'] = req.headers['accept'] as string;
-      if (req.headers['authorization']) headers['authorization'] = req.headers['authorization'] as string;
+      const requestContentType = req.headers['content-type'];
+      const accept = req.headers['accept'];
+      const authorization = req.headers['authorization'];
+      if (typeof requestContentType === 'string') headers['content-type'] = requestContentType;
+      if (typeof accept === 'string') headers['accept'] = accept;
+      if (typeof authorization === 'string') headers['authorization'] = authorization;
 
       // Propagate correlation ID
       const correlationId = getCorrelationId();
@@ -136,8 +166,7 @@ export class GatewayController {
 
       // Forward authenticated user context as internal headers
       const user = (req as unknown as Record<string, unknown>)['user'] as
-        | { userId: string; role: string; capabilities: string[] }
-        | undefined;
+        { userId: string; role: string; capabilities: string[] } | undefined;
       if (user) {
         headers['x-user-id'] = user.userId;
         headers['x-user-role'] = user.role;

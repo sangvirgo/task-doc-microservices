@@ -17,9 +17,9 @@ const common_1 = require("@nestjs/common");
 const swagger_1 = require("@nestjs/swagger");
 const zod_1 = require("zod");
 const crypto_1 = require("crypto");
-const auth_context_1 = require("../../../../libs/auth-context/src");
-const contracts_1 = require("../../../../libs/contracts/src");
-const messaging_1 = require("../../../../libs/messaging/src");
+const auth_context_1 = require("@c17/auth-context");
+const contracts_1 = require("@c17/contracts");
+const messaging_1 = require("@c17/messaging");
 const tasks_service_1 = require("./tasks.service");
 const permission_client_1 = require("../permissions/permission.client");
 const audit_client_1 = require("../audit/audit.client");
@@ -74,6 +74,7 @@ let TasksController = class TasksController {
             throw new common_1.ForbiddenException('Authentication required');
         const permCheck = await this.permissionClient.check({
             actor_id: user.userId,
+            actor_role: user.role,
             resource_type: 'TASK',
             resource_id: taskId,
             action: 'TASK_PARTICIPATE',
@@ -97,14 +98,16 @@ let TasksController = class TasksController {
         if (!parsed.success) {
             throw new common_1.BadRequestException(parsed.error.issues);
         }
-        return this.tasksService.createTask({
+        return this.tasksService
+            .createTask({
             title: parsed.data.title,
             description: parsed.data.description,
             creator_id: user.userId,
             assignee_id: parsed.data.assignee_id,
             parent_task_id: parsed.data.parent_task_id,
             deadline: parsed.data.deadline ? new Date(parsed.data.deadline) : undefined,
-        }).then(async (task) => {
+        })
+            .then(async (task) => {
             await this.auditClient.record({
                 event_type: 'TASK_CREATED',
                 actor_id: user.userId,
@@ -135,6 +138,7 @@ let TasksController = class TasksController {
         }
         const permCheck = await this.permissionClient.check({
             actor_id: user.userId,
+            actor_role: user.role,
             resource_type: 'TASK',
             resource_id: taskId,
             action: 'TASK_MODIFY',
@@ -153,6 +157,7 @@ let TasksController = class TasksController {
         }
         const permCheck = await this.permissionClient.check({
             actor_id: user.userId,
+            actor_role: user.role,
             resource_type: 'TASK',
             resource_id: taskId,
             action: 'TASK_MODIFY',

@@ -46,7 +46,9 @@ describe('Audit Log Service Integration (PostgreSQL)', () => {
       await prisma.auditEvent.deleteMany({
         where: { id: { in: [EVENT_1_ID, EVENT_2_ID] } },
       });
-    } catch (_) { /* ignore */ }
+    } catch {
+      /* ignore */
+    }
     await app.close();
   });
 
@@ -117,9 +119,7 @@ describe('Audit Log Service Integration (PostgreSQL)', () => {
   });
 
   it('should retrieve the chain head', async () => {
-    const res = await request(app.getHttpServer())
-      .get('/audit/chain/head')
-      .expect(200);
+    const res = await request(app.getHttpServer()).get('/audit/chain/head').expect(200);
 
     expect(res.body).toHaveProperty('last_hash');
     expect(res.body).toHaveProperty('sequence');
@@ -127,17 +127,13 @@ describe('Audit Log Service Integration (PostgreSQL)', () => {
   });
 
   it('should verify hash chain integrity', async () => {
-    const res = await request(app.getHttpServer())
-      .post('/audit/chain/verify')
-      .expect(200);
+    const res = await request(app.getHttpServer()).post('/audit/chain/verify').expect(200);
 
     expect(res.body.valid).toBe(true);
   });
 
   it('should retrieve an event by ID', async () => {
-    const res = await request(app.getHttpServer())
-      .get(`/audit/events/${EVENT_1_ID}`)
-      .expect(200);
+    const res = await request(app.getHttpServer()).get(`/audit/events/${EVENT_1_ID}`).expect(200);
 
     expect(res.body.id).toBe(EVENT_1_ID);
     expect(res.body.event_type).toBe('document.accessed');

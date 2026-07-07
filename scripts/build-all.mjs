@@ -20,16 +20,26 @@ if (applications.length === 0) {
 }
 
 let failed = 0;
+const pnpmExecPath = process.env.npm_execpath;
+
+if (!pnpmExecPath) {
+  console.error('npm_execpath is not set; cannot locate pnpm for nested builds');
+  process.exit(1);
+}
 
 for (const application of applications) {
   process.stdout.write(`building ${application} ... `);
   try {
-    execFileSync('nest', ['build', application], { stdio: 'pipe', shell: true });
+    execFileSync(process.execPath, [pnpmExecPath, 'exec', 'nest', 'build', application], {
+      stdio: 'pipe',
+    });
     process.stdout.write('ok\n');
   } catch (error) {
     failed += 1;
     process.stdout.write('FAILED\n');
-    process.stderr.write(String(error.stdout ?? '') + String(error.stderr ?? '') + '\n');
+    process.stderr.write(
+      `${error.message ?? 'build failed'}\n${String(error.stdout ?? '')}${String(error.stderr ?? '')}\n`,
+    );
   }
 }
 

@@ -49,8 +49,8 @@ export class SecurityClient {
           object_key: params.object_key,
           checksum: params.checksum,
           encrypted_dek: params.encrypted_dek,
-          iv: 'placeholder-iv',          // Placeholder: real IV comes from client-side encryption
-          auth_tag: 'placeholder-tag',   // Placeholder: real auth tag comes from client-side encryption
+          iv: 'placeholder-iv', // Placeholder: real IV comes from client-side encryption
+          auth_tag: 'placeholder-tag', // Placeholder: real auth tag comes from client-side encryption
           file_size: params.file_size,
           mime_type: params.mime_type,
           kek_version: params.kek_version,

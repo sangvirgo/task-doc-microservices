@@ -92,7 +92,10 @@ export class MonitoringController {
 
   @Put('rules/:id/toggle')
   @ApiOperation({ summary: 'Enable or disable a rule' })
-  async toggleRule(@Param('id') id: string, @Body() body: z.infer<typeof toggleRuleSchema>): Promise<SecurityRuleDto> {
+  async toggleRule(
+    @Param('id') id: string,
+    @Body() body: z.infer<typeof toggleRuleSchema>,
+  ): Promise<SecurityRuleDto> {
     const parsed = toggleRuleSchema.safeParse(body);
     if (!parsed.success) throw new BadRequestException(parsed.error.issues);
     return this.monitoringService.toggleRule(id, parsed.data.enabled);

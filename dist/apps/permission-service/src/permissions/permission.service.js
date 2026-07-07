@@ -12,7 +12,7 @@ var PermissionService_1;
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.PermissionService = void 0;
 const common_1 = require("@nestjs/common");
-const contracts_1 = require("../../../../libs/contracts/src");
+const contracts_1 = require("@c17/contracts");
 const permission_prisma_service_1 = require("../prisma/permission-prisma.service");
 let PermissionService = PermissionService_1 = class PermissionService {
     prisma;
@@ -22,7 +22,7 @@ let PermissionService = PermissionService_1 = class PermissionService {
     }
     async check(request) {
         try {
-            if ((0, contracts_1.isAdminForbiddenAction)(request.action)) {
+            if (request.actor_role === 'ADMIN' && (0, contracts_1.isAdminForbiddenAction)(request.action)) {
                 return {
                     allowed: false,
                     reason_code: contracts_1.PermissionReasonCode.ADMIN_CONTENT_DENIED,

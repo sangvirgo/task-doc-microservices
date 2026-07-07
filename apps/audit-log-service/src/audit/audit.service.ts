@@ -1,5 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { createHash } from 'crypto';
+import type { Prisma } from '@prisma/client-audit';
+
 import { AuditPrismaService } from '../prisma/audit-prisma.service';
 
 export interface AuditEventDto {
@@ -78,7 +80,7 @@ export class AuditService {
           actor_id: event.actor_id,
           resource_type: event.resource_type,
           resource_id: event.resource_id,
-          payload: event.payload as any,
+          payload: event.payload as Prisma.InputJsonValue,
           previous_hash: chainHead.last_hash,
           current_hash: currentHash,
           sequence_number: sequenceNumber,
@@ -160,7 +162,7 @@ export class AuditService {
             actor_id: event.actor_id,
             resource_type: event.resource_type,
             resource_id: event.resource_id,
-            payload: event.payload as Record<string, unknown>,
+            payload: event.payload,
           }) + previousHash,
         )
         .digest('hex');

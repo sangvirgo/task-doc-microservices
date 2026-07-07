@@ -11,6 +11,11 @@
   "scripts": {
     "build": "node scripts/build-all.mjs",
     "build:app": "nest build",
+    "db:generate": "node scripts/prisma-generate-all.mjs",
+    "db:migrate": "node scripts/prisma-command-all.mjs migrate dev --skip-generate",
+    "db:deploy": "node scripts/prisma-command-all.mjs migrate deploy",
+    "db:reset:test": "node scripts/prisma-command-all.mjs db push --force-reset --skip-generate",
+    "db:seed": "node infra/seed.js",
     "start:dev": "nest start --watch",
     "smoke": "node scripts/health-smoke.mjs",
     "format": "prettier --write \"apps/**/*.ts\" \"libs/**/*.ts\"",

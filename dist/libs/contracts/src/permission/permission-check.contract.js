@@ -6,11 +6,13 @@ exports.allowed = allowed;
 const zod_1 = require("zod");
 const permission_actions_1 = require("./permission-actions");
 const permission_reason_codes_1 = require("./permission-reason-codes");
+const roles_1 = require("../roles");
 exports.PERMISSION_CHECK_PATH = '/internal/permissions/check';
 exports.PERMISSION_CHECK_TIMEOUT_MS = 2000;
 exports.permissionCheckRequestSchema = zod_1.z
     .object({
     actor_id: zod_1.z.string().uuid(),
+    actor_role: zod_1.z.nativeEnum(roles_1.SystemRole),
     resource_type: zod_1.z.nativeEnum(permission_actions_1.ResourceType),
     resource_id: zod_1.z.string().uuid(),
     action: zod_1.z.nativeEnum(permission_actions_1.PermissionAction),

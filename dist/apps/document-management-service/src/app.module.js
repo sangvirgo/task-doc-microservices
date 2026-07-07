@@ -9,9 +9,9 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.AppModule = exports.envSchema = exports.SERVICE = void 0;
 const common_1 = require("@nestjs/common");
 const zod_1 = require("zod");
-const config_1 = require("../../../libs/config/src");
-const observability_1 = require("../../../libs/observability/src");
-const messaging_1 = require("../../../libs/messaging/src");
+const config_1 = require("@c17/config");
+const observability_1 = require("@c17/observability");
+const messaging_1 = require("@c17/messaging");
 const documents_controller_1 = require("./documents/documents.controller");
 const documents_service_1 = require("./documents/documents.service");
 const document_prisma_service_1 = require("./prisma/document-prisma.service");
@@ -43,7 +43,13 @@ exports.AppModule = AppModule = __decorate([
             }),
         ],
         controllers: [documents_controller_1.DocumentsController, documents_controller_1.RecordsController, documents_controller_1.TransferPackagesController],
-        providers: [document_prisma_service_1.DocumentPrismaService, documents_service_1.DocumentsService, permission_client_1.PermissionClient, audit_client_1.AuditClient, security_client_1.SecurityClient],
+        providers: [
+            document_prisma_service_1.DocumentPrismaService,
+            documents_service_1.DocumentsService,
+            permission_client_1.PermissionClient,
+            audit_client_1.AuditClient,
+            security_client_1.SecurityClient,
+        ],
     })
 ], AppModule);
 //# sourceMappingURL=app.module.js.map

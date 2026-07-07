@@ -43,7 +43,9 @@ export class SecurityController {
 
   @Post('process')
   @ApiOperation({ summary: 'Process a document through the security pipeline' })
-  async processDocument(@Body() body: z.infer<typeof processDocumentSchema>): Promise<EncryptionRecordDto> {
+  async processDocument(
+    @Body() body: z.infer<typeof processDocumentSchema>,
+  ): Promise<EncryptionRecordDto> {
     const parsed = processDocumentSchema.safeParse(body);
     if (!parsed.success) throw new BadRequestException(parsed.error.issues);
     return this.securityService.processDocument(parsed.data);
@@ -61,7 +63,12 @@ export class SecurityController {
     if (!parsed.success) throw new BadRequestException(parsed.error.issues);
     const versionNum = parseInt(version, 10);
     if (isNaN(versionNum)) throw new BadRequestException('Invalid version number');
-    return this.securityService.updateScanResult(documentId, versionNum, parsed.data.scan_status, parsed.data.scan_result);
+    return this.securityService.updateScanResult(
+      documentId,
+      versionNum,
+      parsed.data.scan_status,
+      parsed.data.scan_result,
+    );
   }
 
   @Post(':documentId/versions/:version/sign')

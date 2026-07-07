@@ -44,7 +44,9 @@ describe('Auth Service Integration (PostgreSQL + Redis)', () => {
     // Clean up test user
     try {
       await prisma.user.deleteMany({ where: { email: TEST_EMAIL } });
-    } catch (_) { /* ignore */ }
+    } catch {
+      /* ignore */
+    }
     await app.close();
   });
 

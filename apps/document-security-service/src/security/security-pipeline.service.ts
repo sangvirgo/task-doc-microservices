@@ -35,7 +35,8 @@ export class SecurityPipelineService {
     const existing = await this.prisma.encryptionRecord.findUnique({
       where: { document_id_version: { document_id: data.document_id, version: data.version } },
     });
-    if (existing) throw new BadRequestException('Encryption record already exists for this version');
+    if (existing)
+      throw new BadRequestException('Encryption record already exists for this version');
 
     const record = await this.prisma.encryptionRecord.create({
       data: {
@@ -82,7 +83,8 @@ export class SecurityPipelineService {
       where: { document_id_version: { document_id, version } },
     });
     if (!record) throw new NotFoundException('Encryption record not found');
-    if (record.scan_status !== 'CLEAN') throw new BadRequestException('Document must pass scan before signing');
+    if (record.scan_status !== 'CLEAN')
+      throw new BadRequestException('Document must pass scan before signing');
 
     const updated = await this.prisma.encryptionRecord.update({
       where: { document_id_version: { document_id, version } },
