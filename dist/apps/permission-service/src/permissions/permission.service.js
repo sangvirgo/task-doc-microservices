@@ -12,7 +12,7 @@ var PermissionService_1;
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.PermissionService = void 0;
 const common_1 = require("@nestjs/common");
-const contracts_1 = require("@c17/contracts");
+const contracts_1 = require("../../../../libs/contracts/src");
 const permission_prisma_service_1 = require("../prisma/permission-prisma.service");
 let PermissionService = PermissionService_1 = class PermissionService {
     prisma;

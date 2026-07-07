@@ -16,7 +16,7 @@ exports.PermissionsController = void 0;
 const common_1 = require("@nestjs/common");
 const swagger_1 = require("@nestjs/swagger");
 const zod_1 = require("zod");
-const contracts_1 = require("@c17/contracts");
+const contracts_1 = require("../../../../libs/contracts/src");
 const permission_service_1 = require("./permission.service");
 const createGrantSchema = zod_1.z.object({
     grantor_id: zod_1.z.string().uuid(),

@@ -183,7 +183,7 @@ export class TasksController {
       actor_role: user.role,
       resource_type: 'TASK',
       resource_id: taskId,
-      action: 'TASK_MODIFY',
+      action: 'TASK_UPDATE',
     });
 
     if (!permCheck.allowed) {
@@ -219,7 +219,7 @@ export class TasksController {
       actor_role: user.role,
       resource_type: 'TASK',
       resource_id: taskId,
-      action: 'TASK_MODIFY',
+      action: 'TASK_ASSIGN',
     });
 
     if (!permCheck.allowed) {

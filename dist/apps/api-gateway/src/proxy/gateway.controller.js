@@ -14,47 +14,64 @@ var __param = (this && this.__param) || function (paramIndex, decorator) {
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.GatewayController = void 0;
 const common_1 = require("@nestjs/common");
-const observability_1 = require("@c17/observability");
+const observability_1 = require("../../../../libs/observability/src");
 const jwt_auth_guard_1 = require("../auth/jwt-auth.guard");
 function getRoutes() {
     return [
-        { prefix: '/api/auth', target: process.env.AUTH_SERVICE_URL || 'http://localhost:3001' },
+        {
+            prefix: '/api/auth',
+            target: process.env.AUTH_SERVICE_URL || 'http://localhost:3001',
+            upstreamBasePath: '/auth',
+        },
         {
             prefix: '/api/users',
             target: process.env.USER_ROLE_SERVICE_URL || 'http://localhost:3002',
+            upstreamBasePath: '/users',
         },
-        { prefix: '/api/tasks', target: process.env.TASK_SERVICE_URL || 'http://localhost:3003' },
+        {
+            prefix: '/api/tasks',
+            target: process.env.TASK_SERVICE_URL || 'http://localhost:3003',
+            upstreamBasePath: '/tasks',
+        },
         {
             prefix: '/api/documents',
             target: process.env.DOCUMENT_SERVICE_URL || 'http://localhost:3004',
+            upstreamBasePath: '/documents',
         },
         {
             prefix: '/api/records',
             target: process.env.DOCUMENT_SERVICE_URL || 'http://localhost:3004',
+            upstreamBasePath: '/records',
         },
         {
             prefix: '/api/transfer-packages',
             target: process.env.DOCUMENT_SERVICE_URL || 'http://localhost:3004',
+            upstreamBasePath: '/transfer-packages',
         },
         {
             prefix: '/api/security',
             target: process.env.DOCUMENT_SECURITY_SERVICE_URL || 'http://localhost:3005',
+            upstreamBasePath: '/security',
         },
         {
             prefix: '/api/permissions',
             target: process.env.PERMISSION_SERVICE_URL || 'http://localhost:3006',
+            upstreamBasePath: '',
         },
         {
             prefix: '/api/audit',
             target: process.env.AUDIT_SERVICE_URL || 'http://localhost:3007',
+            upstreamBasePath: '/audit',
         },
         {
             prefix: '/api/notifications',
             target: process.env.NOTIFICATION_SERVICE_URL || 'http://localhost:3008',
+            upstreamBasePath: '/notifications',
         },
         {
             prefix: '/api/monitoring',
             target: process.env.SECURITY_MONITORING_SERVICE_URL || 'http://localhost:3009',
+            upstreamBasePath: '/monitoring',
         },
     ];
 }
@@ -102,8 +119,8 @@ let GatewayController = class GatewayController {
             return;
         }
         try {
-            const targetPath = req.originalUrl.slice(route.prefix.length) || '/';
-            const targetUrl = `${route.target}${targetPath}`;
+            const targetPath = req.originalUrl.slice(route.prefix.length);
+            const targetUrl = `${route.target}${route.upstreamBasePath}${targetPath || ''}`;
             const headers = {};
             const requestContentType = req.headers['content-type'];
             const accept = req.headers['accept'];

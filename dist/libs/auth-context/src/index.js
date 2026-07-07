@@ -15,5 +15,6 @@ var __exportStar = (this && this.__exportStar) || function(m, exports) {
 };
 Object.defineProperty(exports, "__esModule", { value: true });
 __exportStar(require("./auth-context"), exports);
+__exportStar(require("./auth-context.middleware"), exports);
 __exportStar(require("./current-user.decorator"), exports);
 //# sourceMappingURL=index.js.map

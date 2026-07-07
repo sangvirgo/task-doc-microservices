@@ -17,9 +17,9 @@ const common_1 = require("@nestjs/common");
 const swagger_1 = require("@nestjs/swagger");
 const zod_1 = require("zod");
 const crypto_1 = require("crypto");
-const auth_context_1 = require("@c17/auth-context");
-const contracts_1 = require("@c17/contracts");
-const messaging_1 = require("@c17/messaging");
+const auth_context_1 = require("../../../../libs/auth-context/src");
+const contracts_1 = require("../../../../libs/contracts/src");
+const messaging_1 = require("../../../../libs/messaging/src");
 const tasks_service_1 = require("./tasks.service");
 const permission_client_1 = require("../permissions/permission.client");
 const audit_client_1 = require("../audit/audit.client");
@@ -141,7 +141,7 @@ let TasksController = class TasksController {
             actor_role: user.role,
             resource_type: 'TASK',
             resource_id: taskId,
-            action: 'TASK_MODIFY',
+            action: 'TASK_UPDATE',
         });
         if (!permCheck.allowed) {
             throw new common_1.ForbiddenException(`Cannot modify task: ${permCheck.reason_code}`);
@@ -160,7 +160,7 @@ let TasksController = class TasksController {
             actor_role: user.role,
             resource_type: 'TASK',
             resource_id: taskId,
-            action: 'TASK_MODIFY',
+            action: 'TASK_ASSIGN',
         });
         if (!permCheck.allowed) {
             throw new common_1.ForbiddenException(`Cannot modify task: ${permCheck.reason_code}`);

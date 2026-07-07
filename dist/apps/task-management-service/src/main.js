@@ -4,6 +4,7 @@ exports.DEFAULT_PORT = void 0;
 require("reflect-metadata");
 const core_1 = require("@nestjs/core");
 const swagger_1 = require("@nestjs/swagger");
+const auth_context_1 = require("../../../libs/auth-context/src");
 const observability_1 = require("../../../libs/observability/src");
 const app_module_1 = require("./app.module");
 exports.DEFAULT_PORT = 3003;
@@ -12,6 +13,7 @@ async function bootstrap() {
     const logger = app.get(observability_1.StructuredLogger);
     app.useLogger(logger);
     app.enableShutdownHooks();
+    app.use(auth_context_1.attachAuthContextFromHeaders);
     swagger_1.SwaggerModule.setup('docs', app, swagger_1.SwaggerModule.createDocument(app, new swagger_1.DocumentBuilder()
         .setTitle('Task Management Service')
         .setDescription('Owns tasks, the task hierarchy, participation, comments, and TaskActivity.')

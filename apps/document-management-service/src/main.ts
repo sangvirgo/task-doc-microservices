@@ -3,6 +3,7 @@ import 'reflect-metadata';
 import { NestFactory } from '@nestjs/core';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 
+import { attachAuthContextFromHeaders } from '@c17/auth-context';
 import { StructuredLogger } from '@c17/observability';
 
 import { AppModule, SERVICE } from './app.module';
@@ -15,6 +16,7 @@ async function bootstrap(): Promise<void> {
   const logger = app.get(StructuredLogger);
   app.useLogger(logger);
   app.enableShutdownHooks();
+  app.use(attachAuthContextFromHeaders);
 
   SwaggerModule.setup(
     'docs',
