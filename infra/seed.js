@@ -80,7 +80,7 @@ async function seedAuth() {
     return prisma;
   } catch (e) {
     console.error('  auth_db ERROR:', e.message);
-    return prisma;
+    throw e;
   }
 }
 
@@ -107,7 +107,7 @@ async function seedUserRole() {
     return prisma;
   } catch (e) {
     console.error('  user_role_db ERROR:', e.message);
-    return prisma;
+    throw e;
   }
 }
 
@@ -162,7 +162,7 @@ async function seedTask() {
     return prisma;
   } catch (e) {
     console.error('  task_db ERROR:', e.message);
-    return prisma;
+    throw e;
   }
 }
 
@@ -216,7 +216,7 @@ async function seedDocument() {
     return prisma;
   } catch (e) {
     console.error('  document_db ERROR:', e.message);
-    return prisma;
+    throw e;
   }
 }
 
@@ -233,7 +233,7 @@ async function seedDocumentSecurity() {
     return prisma;
   } catch (e) {
     console.error('  document_security_db ERROR:', e.message);
-    return prisma;
+    throw e;
   }
 }
 
@@ -260,7 +260,7 @@ async function seedPermission() {
     return prisma;
   } catch (e) {
     console.error('  permission_db ERROR:', e.message);
-    return prisma;
+    throw e;
   }
 }
 
@@ -271,13 +271,13 @@ async function seedAudit() {
     await prisma.chainHead.upsert({
       where: { id: 'singleton' },
       create: { id: 'singleton', last_hash: '', sequence: 0 },
-      update: {},
+      update: { last_hash: '', last_event_id: null, sequence: 0 },
     });
     console.log('  audit_db: chain head initialized');
     return prisma;
   } catch (e) {
     console.error('  audit_db ERROR:', e.message);
-    return prisma;
+    throw e;
   }
 }
 
@@ -322,7 +322,7 @@ async function seedNotification() {
     return prisma;
   } catch (e) {
     console.error('  notification_db ERROR:', e.message);
-    return prisma;
+    throw e;
   }
 }
 
@@ -351,7 +351,7 @@ async function seedSecurityMonitoring() {
     return prisma;
   } catch (e) {
     console.error('  security_monitoring_db ERROR:', e.message);
-    return prisma;
+    throw e;
   }
 }
 

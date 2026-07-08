@@ -14,7 +14,7 @@
     "db:generate": "node scripts/prisma-generate-all.mjs",
     "db:migrate": "node scripts/prisma-command-all.mjs migrate dev --skip-generate",
     "db:deploy": "node scripts/prisma-command-all.mjs migrate deploy",
-    "db:reset:test": "node scripts/prisma-command-all.mjs db push --force-reset --skip-generate",
+    "db:reset:test": "NODE_ENV=test node scripts/reset-e2e-state.mjs --skip-seed",
     "db:seed": "node infra/seed.js",
     "start:dev": "nest start --watch",
     "smoke": "node scripts/health-smoke.mjs",
@@ -24,7 +24,8 @@
     "test": "jest",
     "test:watch": "jest --watch",
     "test:cov": "jest --coverage",
-    "test:e2e": "jest --config ./test/jest-e2e.config.ts --runInBand"
+    "test:e2e:reset": "NODE_ENV=test node scripts/reset-e2e-state.mjs",
+    "test:e2e": "pnpm test:e2e:reset && jest --config ./test/jest-e2e.config.ts --runInBand"
   },
   "dependencies": {
     "@nestjs/common": "11.1.28",
