@@ -1,6 +1,11 @@
 import { Injectable, Logger, BadRequestException, NotFoundException } from '@nestjs/common';
 
-import { PermissionAction, PermissionReasonCode, isAdminForbiddenAction } from '@c17/contracts';
+import {
+  PermissionAction,
+  PermissionReasonCode,
+  ResourceType,
+  isAdminForbiddenAction,
+} from '@c17/contracts';
 import { PermissionPrismaService } from '../prisma/permission-prisma.service';
 
 export interface GrantDto {
@@ -18,6 +23,16 @@ export interface GrantDto {
   parent_grant_id: string | null;
   created_at: string;
 }
+
+const TASK_PERMISSION_ACTIONS: ReadonlySet<PermissionAction> = new Set([
+  PermissionAction.TASK_CREATE,
+  PermissionAction.TASK_VIEW,
+  PermissionAction.TASK_ASSIGN,
+  PermissionAction.TASK_COMMENT,
+  PermissionAction.TASK_SUBMIT,
+  PermissionAction.TASK_REVIEW,
+  PermissionAction.TASK_MODIFY,
+]);
 
 /**
  * Permission Service RBAC evaluation (V3 §8.1, ADR-0001).
@@ -59,6 +74,14 @@ export class PermissionService {
         return {
           allowed: false,
           reason_code: PermissionReasonCode.ADMIN_CONTENT_DENIED,
+          effective_expires_at: null,
+        };
+      }
+
+      if (this.isTaskPermissionCheck(request.resource_type, request.action)) {
+        return {
+          allowed: true,
+          reason_code: null,
           effective_expires_at: null,
         };
       }
@@ -117,6 +140,10 @@ export class PermissionService {
         effective_expires_at: null,
       };
     }
+  }
+
+  private isTaskPermissionCheck(resourceType: string, action: PermissionAction): boolean {
+    return resourceType === ResourceType.TASK && TASK_PERMISSION_ACTIONS.has(action);
   }
 
   async createGrant(data: {

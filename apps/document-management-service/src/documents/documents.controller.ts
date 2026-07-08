@@ -18,6 +18,7 @@ import { randomUUID } from 'crypto';
 import { CurrentUser, AuthContext } from '@c17/auth-context';
 import { buildEventEnvelope } from '@c17/contracts';
 import { EVENT_PUBLISHER, type EventPublisher } from '@c17/messaging';
+import { getCorrelationId } from '@c17/observability';
 
 import {
   DocumentsService,
@@ -162,6 +163,7 @@ export class DocumentsController {
       resource_type: 'DOCUMENT',
       resource_id: documentId,
       action: 'PREVIEW',
+      correlation_id: getCorrelationId() ?? randomUUID(),
     });
 
     if (!permCheck.allowed) {
@@ -182,6 +184,7 @@ export class DocumentsController {
       resource_type: 'DOCUMENT',
       resource_id: documentId,
       action: 'PREVIEW',
+      correlation_id: getCorrelationId() ?? randomUUID(),
     });
 
     if (!permCheck.allowed) {
@@ -267,6 +270,7 @@ export class DocumentsController {
       resource_type: 'DOCUMENT',
       resource_id: documentId,
       action: 'DOWNLOAD',
+      correlation_id: getCorrelationId() ?? randomUUID(),
     });
 
     if (!permCheck.allowed) {
@@ -311,6 +315,7 @@ export class DocumentsController {
       resource_type: 'DOCUMENT',
       resource_id: documentId,
       action: 'DOWNLOAD',
+      correlation_id: getCorrelationId() ?? randomUUID(),
     });
 
     if (!permCheck.allowed) {

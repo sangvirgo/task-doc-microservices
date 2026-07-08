@@ -1,6 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { randomUUID } from 'crypto';
 
 import {
   denied,
@@ -31,28 +30,22 @@ export class PermissionClient {
    * Check if actor has permission on a resource.
    * Fails closed: any error returns a denial.
    */
-  async check(
-    request: Omit<PermissionCheckRequest, 'correlation_id'>,
-  ): Promise<PermissionCheckResponse> {
+  async check(request: PermissionCheckRequest): Promise<PermissionCheckResponse> {
     try {
       const controller = new AbortController();
       const timeout = setTimeout(() => controller.abort(), this.checkTimeoutMs);
-      const payload: PermissionCheckRequest = {
-        ...request,
-        correlation_id: randomUUID(),
-      };
 
       const response = await fetch(`${this.permissionServiceUrl}/internal/permissions/check`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
+        body: JSON.stringify(request),
         signal: controller.signal,
       });
 
       clearTimeout(timeout);
 
       if (!response.ok) {
-        this.logger.error(`Permission check failed: ${response.status}`, payload);
+        this.logger.error(`Permission check failed: ${response.status}`, request);
         // Fail-closed: return denial on HTTP error
         return {
           allowed: false,

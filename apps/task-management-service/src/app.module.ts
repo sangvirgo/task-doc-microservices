@@ -10,6 +10,7 @@ import { TasksService } from './tasks/tasks.service';
 import { PermissionClient } from './permissions/permission.client';
 import { AuditClient } from './audit/audit.client';
 import { TaskPrismaService } from './prisma/task-prisma.service';
+import { UserRoleClient } from './users/user-role.client';
 
 export const SERVICE = 'task-management-service';
 
@@ -18,6 +19,8 @@ export const envSchema = baseEnvSchema.extend({
   TASK_DATABASE_URL: z.string().url(),
   PERMISSION_SERVICE_URL: z.string().url().default('http://localhost:3006'),
   PERMISSION_CHECK_TIMEOUT_MS: z.coerce.number().int().positive().default(2000),
+  USER_ROLE_SERVICE_URL: z.string().url().default('http://localhost:3002'),
+  USER_ROLE_LOOKUP_TIMEOUT_MS: z.coerce.number().int().positive().default(2000),
   AUDIT_SERVICE_URL: z.string().url().default('http://localhost:3007'),
   AUDIT_TIMEOUT_MS: z.coerce.number().int().positive().default(2000),
   RABBITMQ_URL: z.string().url().default('amqp://guest:guest@localhost:5672'),
@@ -33,6 +36,6 @@ export const envSchema = baseEnvSchema.extend({
     }),
   ],
   controllers: [TasksController],
-  providers: [TaskPrismaService, TasksService, PermissionClient, AuditClient],
+  providers: [TaskPrismaService, TasksService, PermissionClient, AuditClient, UserRoleClient],
 })
 export class AppModule {}

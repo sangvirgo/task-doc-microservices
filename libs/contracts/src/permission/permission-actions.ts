@@ -18,12 +18,14 @@ export const PermissionAction = {
   SHARE: 'SHARE',
   TRANSFER: 'TRANSFER',
   DISPOSE: 'DISPOSE',
-  // Task participation and comments
-  TASK_UPDATE: 'TASK_UPDATE',
+  // Task operations
+  TASK_CREATE: 'TASK_CREATE',
+  TASK_VIEW: 'TASK_VIEW',
   TASK_ASSIGN: 'TASK_ASSIGN',
-  TASK_PARTICIPATE: 'TASK_PARTICIPATE',
-  COMMENT_LIST: 'COMMENT_LIST',
-  COMMENT_CREATE: 'COMMENT_CREATE',
+  TASK_COMMENT: 'TASK_COMMENT',
+  TASK_SUBMIT: 'TASK_SUBMIT',
+  TASK_REVIEW: 'TASK_REVIEW',
+  TASK_MODIFY: 'TASK_MODIFY',
   // Archive custody
   ARCHIVE_SUBMIT: 'ARCHIVE_SUBMIT',
   ARCHIVE_RECEIVE: 'ARCHIVE_RECEIVE',
@@ -43,9 +45,13 @@ export const PERMISSION_ACTIONS: readonly PermissionAction[] = Object.values(Per
  * before it is added.
  */
 export const ADMIN_FORBIDDEN_ACTIONS: ReadonlySet<PermissionAction> = new Set<PermissionAction>([
-  PermissionAction.TASK_PARTICIPATE, // task participation
-  PermissionAction.COMMENT_LIST, // comment access (list)
-  PermissionAction.COMMENT_CREATE, // comment access (create)
+  PermissionAction.TASK_CREATE, // task creation
+  PermissionAction.TASK_VIEW, // task detail and activity
+  PermissionAction.TASK_ASSIGN, // assignee and participant mutation
+  PermissionAction.TASK_COMMENT, // comment read/write
+  PermissionAction.TASK_SUBMIT, // task submission
+  PermissionAction.TASK_REVIEW, // review decision
+  PermissionAction.TASK_MODIFY, // status, block, unblock
   PermissionAction.PREVIEW, // document preview
   PermissionAction.DOWNLOAD, // document download
   PermissionAction.UPDATE, // document update

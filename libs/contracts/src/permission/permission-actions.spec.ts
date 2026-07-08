@@ -4,9 +4,13 @@ describe('ADMIN forbidden actions', () => {
   // V3 §5.2.1 states this list exhaustively. Restating it here means a future edit to the source
   // list has to be a deliberate change to the rule, not a quiet one.
   const forbiddenByPlan = [
-    PermissionAction.TASK_PARTICIPATE,
-    PermissionAction.COMMENT_LIST,
-    PermissionAction.COMMENT_CREATE,
+    PermissionAction.TASK_CREATE,
+    PermissionAction.TASK_VIEW,
+    PermissionAction.TASK_ASSIGN,
+    PermissionAction.TASK_COMMENT,
+    PermissionAction.TASK_SUBMIT,
+    PermissionAction.TASK_REVIEW,
+    PermissionAction.TASK_MODIFY,
     PermissionAction.PREVIEW,
     PermissionAction.DOWNLOAD,
     PermissionAction.UPDATE,

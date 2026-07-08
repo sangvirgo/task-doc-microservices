@@ -119,6 +119,40 @@ describe('Permission Service Integration (PostgreSQL)', () => {
     expect(res.body.reason_code).toBe('ADMIN_CONTENT_DENIED');
   });
 
+  it('should allow EMPLOYEE task actions without using the ADMIN deny list', async () => {
+    const res = await request(app.getHttpServer())
+      .post('/internal/permissions/check')
+      .send({
+        actor_id: ACTOR_ID,
+        actor_role: 'EMPLOYEE',
+        resource_type: 'TASK',
+        resource_id: RESOURCE_ID,
+        action: 'TASK_VIEW',
+        correlation_id: randomUUID(),
+      })
+      .expect(200);
+
+    expect(res.body.allowed).toBe(true);
+    expect(res.body.reason_code).toBeNull();
+  });
+
+  it('should hard-deny an ADMIN for task actions', async () => {
+    const res = await request(app.getHttpServer())
+      .post('/internal/permissions/check')
+      .send({
+        actor_id: ACTOR_ID,
+        actor_role: 'ADMIN',
+        resource_type: 'TASK',
+        resource_id: RESOURCE_ID,
+        action: 'TASK_CREATE',
+        correlation_id: randomUUID(),
+      })
+      .expect(200);
+
+    expect(res.body.allowed).toBe(false);
+    expect(res.body.reason_code).toBe('ADMIN_CONTENT_DENIED');
+  });
+
   it('should delegate a grant to another actor', async () => {
     const delegateeId = randomUUID();
 

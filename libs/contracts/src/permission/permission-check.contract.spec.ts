@@ -37,4 +37,26 @@ describe('permission check request contract', () => {
       false,
     );
   });
+
+  it('accepts canonical task actions', () => {
+    const actions = [
+      PermissionAction.TASK_CREATE,
+      PermissionAction.TASK_VIEW,
+      PermissionAction.TASK_ASSIGN,
+      PermissionAction.TASK_COMMENT,
+      PermissionAction.TASK_SUBMIT,
+      PermissionAction.TASK_REVIEW,
+      PermissionAction.TASK_MODIFY,
+    ];
+
+    for (const action of actions) {
+      expect(
+        permissionCheckRequestSchema.safeParse({
+          ...valid,
+          resource_type: ResourceType.TASK,
+          action,
+        }).success,
+      ).toBe(true);
+    }
+  });
 });

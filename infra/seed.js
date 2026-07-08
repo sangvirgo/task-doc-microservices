@@ -121,7 +121,7 @@ async function seedTask() {
         title: 'Review Q3 Archive Package',
         description: 'Review and approve the Q3 document archive transfer package.',
         status: 'IN_PROGRESS',
-        creator_id: ADMIN_ID,
+        creator_id: EMP_ID,
         assignee_id: EMP_ID,
         deadline: EXPIRES,
       },
@@ -140,7 +140,7 @@ async function seedTask() {
       create: {
         id: commentId,
         task_id: TASK_ID,
-        author_id: ADMIN_ID,
+        author_id: EMP_ID,
         content: 'Please review the attached documents before the deadline.',
       },
       update: {},
@@ -154,7 +154,7 @@ async function seedTask() {
         task_id: TASK_ID,
         from_status: 'CREATED',
         to_status: 'IN_PROGRESS',
-        changed_by: ADMIN_ID,
+        changed_by: EMP_ID,
       },
       update: {},
     });

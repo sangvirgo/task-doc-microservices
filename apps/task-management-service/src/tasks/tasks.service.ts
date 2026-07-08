@@ -3,6 +3,7 @@ import {
   NotFoundException,
   BadRequestException,
   ConflictException,
+  ForbiddenException,
 } from '@nestjs/common';
 import { TaskPrismaService } from '../prisma/task-prisma.service';
 
@@ -30,6 +31,14 @@ export interface TaskParticipantDto {
   added_at: string;
 }
 
+export interface TaskCommentDto {
+  id: string;
+  task_id: string;
+  author_id: string;
+  content: string;
+  created_at: string;
+}
+
 const VALID_STATUSES = ['CREATED', 'IN_PROGRESS', 'REVIEW', 'COMPLETED', 'CANCELLED', 'BLOCKED'];
 
 @Injectable()
@@ -44,43 +53,76 @@ export class TasksService {
     parent_task_id?: string;
     deadline?: Date;
   }): Promise<TaskDto> {
-    const task = await this.prisma.task.create({
-      data: {
-        title: data.title,
-        description: data.description || null,
-        creator_id: data.creator_id,
-        assignee_id: data.assignee_id || null,
-        parent_task_id: data.parent_task_id || null,
-        deadline: data.deadline || null,
-        status: 'CREATED',
-      },
-    });
+    if (data.parent_task_id) {
+      const parent = await this.requireTask(data.parent_task_id);
+      if (parent.assignee_id !== data.creator_id) {
+        throw new ForbiddenException('Only the current parent assignee may create a child task');
+      }
+    }
 
-    // Add creator as a participant
-    await this.prisma.taskParticipant.create({
-      data: {
-        task_id: task.id,
-        user_id: data.creator_id,
-        role: 'CREATOR',
-      },
+    const task = await this.prisma.$transaction(async (tx) => {
+      const created = await tx.task.create({
+        data: {
+          title: data.title,
+          description: data.description || null,
+          creator_id: data.creator_id,
+          assignee_id: data.assignee_id || null,
+          parent_task_id: data.parent_task_id || null,
+          deadline: data.deadline || null,
+          status: 'CREATED',
+        },
+      });
+
+      await tx.taskParticipant.create({
+        data: {
+          task_id: created.id,
+          user_id: data.creator_id,
+          role: 'CREATOR',
+        },
+      });
+
+      if (data.assignee_id && data.assignee_id !== data.creator_id) {
+        await tx.taskParticipant.upsert({
+          where: { task_id_user_id: { task_id: created.id, user_id: data.assignee_id } },
+          update: { role: 'ASSIGNEE' },
+          create: {
+            task_id: created.id,
+            user_id: data.assignee_id,
+            role: 'ASSIGNEE',
+          },
+        });
+      }
+
+      return created;
     });
 
     return this.toDto(task);
   }
 
-  async getTask(id: string): Promise<TaskDto> {
-    const task = await this.prisma.task.findUnique({ where: { id } });
-    if (!task) throw new NotFoundException('Task not found');
+  async getTask(id: string, actor_id: string): Promise<TaskDto> {
+    await this.assertDirectParticipant(id, actor_id);
+    const task = await this.requireTask(id);
     return this.toDto(task);
   }
 
-  async listTasks(filters?: {
-    creator_id?: string;
-    assignee_id?: string;
-    status?: string;
-    parent_task_id?: string;
-  }): Promise<TaskDto[]> {
-    const tasks = await this.prisma.task.findMany({ where: filters });
+  async listTasks(
+    actor_id: string,
+    filters?: {
+      creator_id?: string;
+      assignee_id?: string;
+      status?: string;
+      parent_task_id?: string;
+    },
+  ): Promise<TaskDto[]> {
+    const tasks = await this.prisma.task.findMany({
+      where: {
+        participants: { some: { user_id: actor_id } },
+        creator_id: filters?.creator_id,
+        assignee_id: filters?.assignee_id,
+        status: filters?.status,
+        parent_task_id: filters?.parent_task_id,
+      },
+    });
     return tasks.map((t) => this.toDto(t));
   }
 
@@ -94,8 +136,8 @@ export class TasksService {
       throw new BadRequestException(`Invalid status: ${to_status}`);
     }
 
-    const task = await this.prisma.task.findUnique({ where: { id } });
-    if (!task) throw new NotFoundException('Task not found');
+    const task = await this.requireTask(id);
+    this.assertCanModifyTask(task, changed_by);
 
     const updated = await this.prisma.task.update({
       where: { id },
@@ -128,8 +170,8 @@ export class TasksService {
   }
 
   async assignTask(id: string, assignee_id: string, assigned_by: string): Promise<TaskDto> {
-    const task = await this.prisma.task.findUnique({ where: { id } });
-    if (!task) throw new NotFoundException('Task not found');
+    const task = await this.requireTask(id);
+    this.assertCreator(task, assigned_by);
 
     const updated = await this.prisma.task.update({
       where: { id },
@@ -161,8 +203,8 @@ export class TasksService {
   }
 
   async blockTask(id: string, blocked_reason: string, blocked_by: string): Promise<TaskDto> {
-    const task = await this.prisma.task.findUnique({ where: { id } });
-    if (!task) throw new NotFoundException('Task not found');
+    const task = await this.requireTask(id);
+    this.assertCanModifyTask(task, blocked_by);
 
     const updated = await this.prisma.task.update({
       where: { id },
@@ -183,8 +225,8 @@ export class TasksService {
   }
 
   async unblockTask(id: string, unblocked_by: string): Promise<TaskDto> {
-    const task = await this.prisma.task.findUnique({ where: { id } });
-    if (!task) throw new NotFoundException('Task not found');
+    const task = await this.requireTask(id);
+    this.assertCanModifyTask(task, unblocked_by);
     if (!task.blocked) throw new BadRequestException('Task is not blocked');
 
     const updated = await this.prisma.task.update({
@@ -208,10 +250,11 @@ export class TasksService {
   async addParticipant(
     task_id: string,
     user_id: string,
+    added_by: string,
     role: string = 'PARTICIPANT',
   ): Promise<TaskParticipantDto> {
-    const task = await this.prisma.task.findUnique({ where: { id: task_id } });
-    if (!task) throw new NotFoundException('Task not found');
+    const task = await this.requireTask(task_id);
+    this.assertCreator(task, added_by);
 
     try {
       const participant = await this.prisma.taskParticipant.create({
@@ -223,9 +266,25 @@ export class TasksService {
     }
   }
 
-  async getParticipants(task_id: string): Promise<TaskParticipantDto[]> {
+  async getParticipants(task_id: string, actor_id: string): Promise<TaskParticipantDto[]> {
+    await this.assertDirectParticipant(task_id, actor_id);
     const participants = await this.prisma.taskParticipant.findMany({ where: { task_id } });
     return participants.map((p) => this.participantToDto(p));
+  }
+
+  async getComments(task_id: string, actor_id: string): Promise<TaskCommentDto[]> {
+    await this.assertDirectParticipant(task_id, actor_id);
+    const comments = await this.prisma.taskComment.findMany({
+      where: { task_id },
+      orderBy: { created_at: 'asc' },
+    });
+    return comments.map((comment) => ({
+      id: comment.id,
+      task_id: comment.task_id,
+      author_id: comment.author_id,
+      content: comment.content,
+      created_at: comment.created_at.toISOString(),
+    }));
   }
 
   async addComment(
@@ -233,8 +292,8 @@ export class TasksService {
     author_id: string,
     content: string,
   ): Promise<{ id: string; created_at: string }> {
-    const task = await this.prisma.task.findUnique({ where: { id: task_id } });
-    if (!task) throw new NotFoundException('Task not found');
+    await this.assertDirectParticipant(task_id, author_id);
+    await this.requireTask(task_id);
 
     const comment = await this.prisma.taskComment.create({
       data: { task_id, author_id, content },
@@ -258,8 +317,10 @@ export class TasksService {
     author_id: string,
     content: string,
   ): Promise<{ id: string; status: string; created_at: string }> {
-    const task = await this.prisma.task.findUnique({ where: { id: task_id } });
-    if (!task) throw new NotFoundException('Task not found');
+    const task = await this.requireTask(task_id);
+    if (task.assignee_id !== author_id) {
+      throw new ForbiddenException('Only the current assignee may submit');
+    }
 
     const submission = await this.prisma.taskSubmission.create({
       data: {
@@ -297,6 +358,8 @@ export class TasksService {
       where: { id: submission_id },
     });
     if (!submission) throw new NotFoundException('Submission not found');
+    const task = await this.requireTask(submission.task_id);
+    this.assertCreator(task, reviewer_id);
 
     const newStatus = approved ? 'APPROVED' : 'REJECTED';
     const updated = await this.prisma.taskSubmission.update({
@@ -330,7 +393,10 @@ export class TasksService {
     return { id: updated.id, status: updated.status };
   }
 
-  async getTaskActivity(task_id: string): Promise<
+  async getTaskActivity(
+    task_id: string,
+    actor_id: string,
+  ): Promise<
     Array<{
       id: string;
       activity_type: string;
@@ -339,6 +405,7 @@ export class TasksService {
       created_at: string;
     }>
   > {
+    await this.assertDirectParticipant(task_id, actor_id);
     const activities = await this.prisma.taskActivity.findMany({
       where: { task_id },
       orderBy: { created_at: 'asc' },
@@ -398,5 +465,49 @@ export class TasksService {
       role: p.role,
       added_at: p.added_at.toISOString(),
     };
+  }
+
+  private async requireTask(id: string): Promise<{
+    id: string;
+    title: string;
+    description: string | null;
+    status: string;
+    creator_id: string;
+    assignee_id: string | null;
+    parent_task_id: string | null;
+    deadline: Date | null;
+    blocked: boolean;
+    blocked_reason: string | null;
+    result: string | null;
+    created_at: Date;
+    updated_at: Date;
+  }> {
+    const task = await this.prisma.task.findUnique({ where: { id } });
+    if (!task) throw new NotFoundException('Task not found');
+    return task;
+  }
+
+  private async assertDirectParticipant(task_id: string, user_id: string): Promise<void> {
+    const participant = await this.prisma.taskParticipant.findUnique({
+      where: { task_id_user_id: { task_id, user_id } },
+    });
+    if (!participant) {
+      throw new ForbiddenException('Direct task participation is required');
+    }
+  }
+
+  private assertCanModifyTask(
+    task: { creator_id: string; assignee_id: string | null },
+    user_id: string,
+  ): void {
+    if (task.creator_id !== user_id && task.assignee_id !== user_id) {
+      throw new ForbiddenException('Only the task creator or current assignee may modify the task');
+    }
+  }
+
+  private assertCreator(task: { creator_id: string }, user_id: string): void {
+    if (task.creator_id !== user_id) {
+      throw new ForbiddenException('Only the task creator may perform this action');
+    }
   }
 }
