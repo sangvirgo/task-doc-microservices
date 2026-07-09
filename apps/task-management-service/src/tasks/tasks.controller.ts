@@ -25,6 +25,17 @@ import { PermissionClient } from '../permissions/permission.client';
 import { AuditClient } from '../audit/audit.client';
 import { UserRoleClient } from '../users/user-role.client';
 
+const lifecycleStatusSchema = z.enum([
+  'CREATED',
+  'ASSIGNED',
+  'IN_PROGRESS',
+  'WAITING_REVIEW',
+  'APPROVED',
+  'NEED_REVISION',
+  'REJECTED',
+  'CANCELLED',
+]);
+
 const createTaskSchema = z.object({
   title: z.string().min(1),
   description: z.string().optional(),
@@ -34,7 +45,7 @@ const createTaskSchema = z.object({
 });
 
 const updateStatusSchema = z.object({
-  status: z.string().min(1),
+  status: lifecycleStatusSchema,
   reason: z.string().optional(),
 });
 
@@ -54,10 +65,29 @@ const submissionSchema = z.object({
   content: z.string().min(1),
 });
 
-const reviewSchema = z.object({
-  approved: z.boolean(),
-  comment: z.string().optional(),
-});
+const reviewSchema = z
+  .object({
+    approved: z.boolean().optional(),
+    decision: z.enum(['APPROVED', 'NEED_REVISION', 'REJECTED']).optional(),
+    comment: z.string().optional(),
+  })
+  .superRefine((value, ctx) => {
+    if (value.approved === undefined && !value.decision) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'Either approved or decision is required',
+        path: ['approved'],
+      });
+    }
+
+    if (value.approved !== undefined && value.decision) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'Use approved or decision, not both',
+        path: ['decision'],
+      });
+    }
+  });
 
 /**
  * Task Management API (V3 §5.3, §5.10).
@@ -339,10 +369,11 @@ export class TasksController {
       throw new BadRequestException(parsed.error.issues);
     }
     await this.assertPermission(user, PermissionAction.TASK_REVIEW, submissionId);
+    const decision = parsed.data.decision ?? (parsed.data.approved ? 'APPROVED' : 'REJECTED');
     return this.tasksService.reviewSubmission(
       submissionId,
       user.userId,
-      parsed.data.approved,
+      decision,
       parsed.data.comment,
     );
   }

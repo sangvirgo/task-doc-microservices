@@ -168,15 +168,24 @@ describe('Task authorization integration (PostgreSQL)', () => {
     assigneeId?: string | null;
     explicitParticipantId?: string;
     parentTaskId?: string | null;
+    status?: string;
+    deadline?: Date | null;
+    blocked?: boolean;
+    blockedReason?: string | null;
+    previousStatus?: string | null;
   }): Promise<string> {
     const task = await prisma.task.create({
       data: {
         title: 'Task under test',
         description: 'Seeded task',
-        status: 'IN_PROGRESS',
+        status: options?.status ?? 'IN_PROGRESS',
         creator_id: options?.creatorId ?? EMPLOYEE_ID,
         assignee_id: options?.assigneeId ?? SECOND_EMPLOYEE_ID,
         parent_task_id: options?.parentTaskId ?? null,
+        deadline: options?.deadline ?? null,
+        blocked: options?.blocked ?? false,
+        blocked_reason: options?.blockedReason ?? null,
+        previous_status: options?.previousStatus ?? null,
       },
     });
 
@@ -188,7 +197,10 @@ describe('Task authorization integration (PostgreSQL)', () => {
       },
     });
 
-    if (options?.assigneeId ?? SECOND_EMPLOYEE_ID) {
+    if (
+      (options?.assigneeId ?? SECOND_EMPLOYEE_ID) &&
+      (options?.assigneeId ?? SECOND_EMPLOYEE_ID) !== (options?.creatorId ?? EMPLOYEE_ID)
+    ) {
       await prisma.taskParticipant.create({
         data: {
           task_id: task.id,
@@ -386,7 +398,7 @@ describe('Task authorization integration (PostgreSQL)', () => {
   });
 
   it('allows task creator review', async () => {
-    const taskId = await seedTask();
+    const taskId = await seedTask({ status: 'WAITING_REVIEW' });
     const submission = await prisma.taskSubmission.create({
       data: {
         task_id: taskId,
@@ -406,7 +418,7 @@ describe('Task authorization integration (PostgreSQL)', () => {
   });
 
   it('denies non-creator review', async () => {
-    const taskId = await seedTask();
+    const taskId = await seedTask({ status: 'WAITING_REVIEW' });
     const submission = await prisma.taskSubmission.create({
       data: {
         task_id: taskId,
@@ -451,5 +463,156 @@ describe('Task authorization integration (PostgreSQL)', () => {
       .set(authHeaders(EMPLOYEE_ID, 'EMPLOYEE'));
 
     expect(res.status).toBe(403);
+  });
+
+  it('rejects an invalid lifecycle transition', async () => {
+    const taskId = await seedTask({ status: 'CREATED', assigneeId: EMPLOYEE_ID });
+
+    const res = await request(app.getHttpServer())
+      .post(`/tasks/${taskId}/status`)
+      .set(authHeaders(EMPLOYEE_ID, 'EMPLOYEE'))
+      .send({ status: 'APPROVED' });
+
+    expect(res.status).toBe(400);
+  });
+
+  it('allows NEED_REVISION to return to IN_PROGRESS', async () => {
+    const taskId = await seedTask({ status: 'WAITING_REVIEW', assigneeId: SECOND_EMPLOYEE_ID });
+    const submission = await prisma.taskSubmission.create({
+      data: {
+        task_id: taskId,
+        author_id: SECOND_EMPLOYEE_ID,
+        content: 'Needs revision',
+        status: 'PENDING',
+      },
+    });
+
+    const reviewRes = await request(app.getHttpServer())
+      .post(`/tasks/submissions/${submission.id}/review`)
+      .set(authHeaders(EMPLOYEE_ID, 'EMPLOYEE'))
+      .send({ decision: 'NEED_REVISION', comment: 'Please revise' });
+
+    expect(reviewRes.status).toBe(200);
+
+    const res = await request(app.getHttpServer())
+      .post(`/tasks/${taskId}/status`)
+      .set(authHeaders(SECOND_EMPLOYEE_ID, 'EMPLOYEE'))
+      .send({ status: 'IN_PROGRESS' });
+
+    expect(res.status).toBe(200);
+    expect(res.body.status).toBe('IN_PROGRESS');
+  });
+
+  it('denies parent approval while a child task is not APPROVED', async () => {
+    const parentTaskId = await seedTask({
+      status: 'WAITING_REVIEW',
+      assigneeId: SECOND_EMPLOYEE_ID,
+    });
+    const parentSubmission = await prisma.taskSubmission.create({
+      data: {
+        task_id: parentTaskId,
+        author_id: SECOND_EMPLOYEE_ID,
+        content: 'Parent submission',
+        status: 'PENDING',
+      },
+    });
+    await seedTask({
+      creatorId: SECOND_EMPLOYEE_ID,
+      assigneeId: EMPLOYEE_ID,
+      parentTaskId,
+      status: 'IN_PROGRESS',
+    });
+
+    const res = await request(app.getHttpServer())
+      .post(`/tasks/submissions/${parentSubmission.id}/review`)
+      .set(authHeaders(EMPLOYEE_ID, 'EMPLOYEE'))
+      .send({ approved: true, comment: 'Blocked by child' });
+
+    expect(res.status).toBe(400);
+  });
+
+  it('allows parent approval after all child tasks are APPROVED', async () => {
+    const parentTaskId = await seedTask({
+      status: 'WAITING_REVIEW',
+      assigneeId: SECOND_EMPLOYEE_ID,
+    });
+    const parentSubmission = await prisma.taskSubmission.create({
+      data: {
+        task_id: parentTaskId,
+        author_id: SECOND_EMPLOYEE_ID,
+        content: 'Parent submission',
+        status: 'PENDING',
+      },
+    });
+    await seedTask({
+      creatorId: SECOND_EMPLOYEE_ID,
+      assigneeId: EMPLOYEE_ID,
+      parentTaskId,
+      status: 'APPROVED',
+    });
+
+    const res = await request(app.getHttpServer())
+      .post(`/tasks/submissions/${parentSubmission.id}/review`)
+      .set(authHeaders(EMPLOYEE_ID, 'EMPLOYEE'))
+      .send({ approved: true, comment: 'Approved' });
+
+    expect(res.status).toBe(200);
+    const parentTask = await prisma.task.findUniqueOrThrow({ where: { id: parentTaskId } });
+    expect(parentTask.status).toBe('APPROVED');
+  });
+
+  it('blocks without replacing lifecycle status and unblocking restores the prior state', async () => {
+    const taskId = await seedTask({ status: 'IN_PROGRESS', assigneeId: SECOND_EMPLOYEE_ID });
+
+    const blockRes = await request(app.getHttpServer())
+      .post(`/tasks/${taskId}/block`)
+      .set(authHeaders(SECOND_EMPLOYEE_ID, 'EMPLOYEE'))
+      .send({ reason: 'Waiting on dependency' });
+
+    expect(blockRes.status).toBe(200);
+    expect(blockRes.body.status).toBe('IN_PROGRESS');
+    expect(blockRes.body.blocked).toBe(true);
+    expect(blockRes.body.blocked_reason).toBe('Waiting on dependency');
+
+    const blockedTask = await prisma.task.findUniqueOrThrow({ where: { id: taskId } });
+    expect(blockedTask.status).toBe('IN_PROGRESS');
+    expect(blockedTask.previous_status).toBe('IN_PROGRESS');
+
+    const unblockRes = await request(app.getHttpServer())
+      .post(`/tasks/${taskId}/unblock`)
+      .set(authHeaders(SECOND_EMPLOYEE_ID, 'EMPLOYEE'));
+
+    expect(unblockRes.status).toBe(200);
+    expect(unblockRes.body.status).toBe('IN_PROGRESS');
+    expect(unblockRes.body.blocked).toBe(false);
+    expect(unblockRes.body.blocked_reason).toBeNull();
+
+    const unblockedTask = await prisma.task.findUniqueOrThrow({ where: { id: taskId } });
+    expect(unblockedTask.previous_status).toBeNull();
+  });
+
+  it('derives is_overdue and keeps it false for terminal tasks', async () => {
+    const overdueTaskId = await seedTask({
+      deadline: new Date('2026-07-27T00:00:00.000Z'),
+      status: 'IN_PROGRESS',
+    });
+    const approvedTaskId = await seedTask({
+      deadline: new Date('2026-07-27T00:00:00.000Z'),
+      status: 'APPROVED',
+    });
+
+    const overdueRes = await request(app.getHttpServer())
+      .get(`/tasks/${overdueTaskId}`)
+      .set(authHeaders(EMPLOYEE_ID, 'EMPLOYEE'));
+
+    expect(overdueRes.status).toBe(200);
+    expect(overdueRes.body.is_overdue).toBe(true);
+
+    const approvedRes = await request(app.getHttpServer())
+      .get(`/tasks/${approvedTaskId}`)
+      .set(authHeaders(EMPLOYEE_ID, 'EMPLOYEE'));
+
+    expect(approvedRes.status).toBe(200);
+    expect(approvedRes.body.is_overdue).toBe(false);
   });
 });

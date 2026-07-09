@@ -7,6 +7,57 @@ import {
 } from '@nestjs/common';
 import { TaskPrismaService } from '../prisma/task-prisma.service';
 
+const CANONICAL_STATUSES = [
+  'CREATED',
+  'ASSIGNED',
+  'IN_PROGRESS',
+  'WAITING_REVIEW',
+  'APPROVED',
+  'NEED_REVISION',
+  'REJECTED',
+  'CANCELLED',
+] as const;
+
+const TERMINAL_STATUSES = new Set<TaskStatus>(['APPROVED', 'REJECTED', 'CANCELLED']);
+const RESOLVED_STATUSES = new Set<TaskStatus>(['APPROVED', 'REJECTED', 'CANCELLED']);
+const REVIEW_DECISIONS = ['APPROVED', 'NEED_REVISION', 'REJECTED'] as const;
+
+const STATUS_TRANSITIONS: Record<TaskStatus, readonly TaskStatus[]> = {
+  CREATED: ['ASSIGNED', 'CANCELLED'],
+  ASSIGNED: ['IN_PROGRESS', 'CANCELLED'],
+  IN_PROGRESS: ['WAITING_REVIEW', 'CANCELLED'],
+  WAITING_REVIEW: ['APPROVED', 'NEED_REVISION', 'REJECTED', 'CANCELLED'],
+  APPROVED: [],
+  NEED_REVISION: ['IN_PROGRESS', 'CANCELLED'],
+  REJECTED: [],
+  CANCELLED: [],
+};
+
+type TaskStatus = (typeof CANONICAL_STATUSES)[number];
+type ReviewDecision = (typeof REVIEW_DECISIONS)[number];
+
+type TaskRecord = {
+  id: string;
+  title: string;
+  description: string | null;
+  status: string;
+  creator_id: string;
+  assignee_id: string | null;
+  parent_task_id: string | null;
+  deadline: Date | null;
+  blocked: boolean;
+  blocked_reason: string | null;
+  previous_status: string | null;
+  result: string | null;
+  created_at: Date;
+  updated_at: Date;
+};
+
+type TaskTransaction = Pick<
+  TaskPrismaService,
+  'task' | 'taskStatusHistory' | 'taskActivity' | 'taskParticipant' | 'taskSubmission'
+>;
+
 export interface TaskDto {
   id: string;
   title: string;
@@ -19,6 +70,7 @@ export interface TaskDto {
   blocked: boolean;
   blocked_reason: string | null;
   result: string | null;
+  is_overdue: boolean;
   created_at: string;
   updated_at: string;
 }
@@ -39,8 +91,6 @@ export interface TaskCommentDto {
   created_at: string;
 }
 
-const VALID_STATUSES = ['CREATED', 'IN_PROGRESS', 'REVIEW', 'COMPLETED', 'CANCELLED', 'BLOCKED'];
-
 @Injectable()
 export class TasksService {
   constructor(private readonly prisma: TaskPrismaService) {}
@@ -60,6 +110,7 @@ export class TasksService {
       }
     }
 
+    const initialStatus: TaskStatus = data.assignee_id ? 'ASSIGNED' : 'CREATED';
     const task = await this.prisma.$transaction(async (tx) => {
       const created = await tx.task.create({
         data: {
@@ -69,7 +120,7 @@ export class TasksService {
           assignee_id: data.assignee_id || null,
           parent_task_id: data.parent_task_id || null,
           deadline: data.deadline || null,
-          status: 'CREATED',
+          status: initialStatus,
         },
       });
 
@@ -123,7 +174,7 @@ export class TasksService {
         parent_task_id: filters?.parent_task_id,
       },
     });
-    return tasks.map((t) => this.toDto(t));
+    return tasks.map((task) => this.toDto(task));
   }
 
   async updateTaskStatus(
@@ -132,39 +183,42 @@ export class TasksService {
     changed_by: string,
     reason?: string,
   ): Promise<TaskDto> {
-    if (!VALID_STATUSES.includes(to_status)) {
-      throw new BadRequestException(`Invalid status: ${to_status}`);
+    const nextStatus = this.parseStatus(to_status);
+    const task = await this.requireTask(id);
+
+    this.assertNotBlocked(task);
+    this.assertTransitionAllowed(task.status, nextStatus);
+
+    if (nextStatus === 'CANCELLED') {
+      this.assertCreator(task, changed_by);
+    } else if (nextStatus !== 'IN_PROGRESS') {
+      throw new BadRequestException(
+        `Status ${nextStatus} must be changed through the dedicated task workflow`,
+      );
     }
 
-    const task = await this.requireTask(id);
-    this.assertCanModifyTask(task, changed_by);
+    if (nextStatus === 'IN_PROGRESS') {
+      if (task.assignee_id !== changed_by) {
+        throw new ForbiddenException('Only the current assignee may resume or start work');
+      }
+      if (task.status !== 'ASSIGNED' && task.status !== 'NEED_REVISION') {
+        throw new BadRequestException(
+          `Invalid lifecycle transition: ${task.status} -> ${nextStatus}`,
+        );
+      }
+    }
 
-    const updated = await this.prisma.task.update({
-      where: { id },
-      data: { status: to_status, previous_status: task.status },
-    });
-
-    // Record status change
-    await this.prisma.taskStatusHistory.create({
-      data: {
-        task_id: id,
-        from_status: task.status,
-        to_status,
+    const updated = await this.prisma.$transaction(async (tx) =>
+      this.applyLifecycleChange(
+        tx,
+        task,
+        nextStatus,
         changed_by,
-        reason: reason || null,
-      },
-    });
-
-    // Record activity
-    await this.prisma.taskActivity.create({
-      data: {
-        task_id: id,
-        activity_type: 'STATUS_CHANGE',
-        actor_id: changed_by,
-        summary: `Status changed from ${task.status} to ${to_status}`,
-        metadata: { from_status: task.status, to_status, reason },
-      },
-    });
+        reason,
+        'STATUS_CHANGE',
+        `Status changed from ${task.status} to ${nextStatus}`,
+      ),
+    );
 
     return this.toDto(updated);
   }
@@ -172,31 +226,55 @@ export class TasksService {
   async assignTask(id: string, assignee_id: string, assigned_by: string): Promise<TaskDto> {
     const task = await this.requireTask(id);
     this.assertCreator(task, assigned_by);
+    this.assertNotBlocked(task);
+    this.assertNotTerminal(task.status);
 
-    const updated = await this.prisma.task.update({
-      where: { id },
-      data: { assignee_id },
-    });
+    const updated = await this.prisma.$transaction(async (tx) => {
+      const nextTask = await tx.task.update({
+        where: { id },
+        data: {
+          assignee_id,
+          status: 'ASSIGNED',
+        },
+      });
 
-    // Add assignee as participant if not already
-    await this.prisma.taskParticipant.upsert({
-      where: { task_id_user_id: { task_id: id, user_id: assignee_id } },
-      update: {},
-      create: {
-        task_id: id,
-        user_id: assignee_id,
-        role: 'ASSIGNEE',
-      },
-    });
+      await tx.taskParticipant.upsert({
+        where: { task_id_user_id: { task_id: id, user_id: assignee_id } },
+        update: { role: 'ASSIGNEE' },
+        create: {
+          task_id: id,
+          user_id: assignee_id,
+          role: 'ASSIGNEE',
+        },
+      });
 
-    // Record activity
-    await this.prisma.taskActivity.create({
-      data: {
-        task_id: id,
-        activity_type: 'ASSIGNMENT',
-        actor_id: assigned_by,
-        summary: `Task assigned to ${assignee_id}`,
-      },
+      if (task.status !== 'ASSIGNED') {
+        await tx.taskStatusHistory.create({
+          data: {
+            task_id: id,
+            from_status: task.status,
+            to_status: 'ASSIGNED',
+            changed_by: assigned_by,
+            reason: null,
+          },
+        });
+      }
+
+      await tx.taskActivity.create({
+        data: {
+          task_id: id,
+          activity_type: 'ASSIGNMENT',
+          actor_id: assigned_by,
+          summary: `Task assigned to ${assignee_id}`,
+          metadata: {
+            assignee_id,
+            from_status: task.status,
+            to_status: nextTask.status,
+          },
+        },
+      });
+
+      return nextTask;
     });
 
     return this.toDto(updated);
@@ -205,19 +283,32 @@ export class TasksService {
   async blockTask(id: string, blocked_reason: string, blocked_by: string): Promise<TaskDto> {
     const task = await this.requireTask(id);
     this.assertCanModifyTask(task, blocked_by);
+    this.assertNotTerminal(task.status);
+
+    const normalizedReason = blocked_reason.trim();
+    if (!normalizedReason) {
+      throw new BadRequestException('Blocked reason is required');
+    }
+    if (task.blocked) {
+      throw new BadRequestException('Task is already blocked');
+    }
 
     const updated = await this.prisma.task.update({
       where: { id },
-      data: { blocked: true, blocked_reason, status: 'BLOCKED' },
+      data: {
+        blocked: true,
+        blocked_reason: normalizedReason,
+        previous_status: task.status,
+      },
     });
 
-    // Record activity
     await this.prisma.taskActivity.create({
       data: {
         task_id: id,
         activity_type: 'BLOCKED',
         actor_id: blocked_by,
-        summary: `Task blocked: ${blocked_reason}`,
+        summary: `Task blocked: ${normalizedReason}`,
+        metadata: { blocked_reason: normalizedReason, previous_status: task.status },
       },
     });
 
@@ -227,20 +318,30 @@ export class TasksService {
   async unblockTask(id: string, unblocked_by: string): Promise<TaskDto> {
     const task = await this.requireTask(id);
     this.assertCanModifyTask(task, unblocked_by);
-    if (!task.blocked) throw new BadRequestException('Task is not blocked');
+    if (!task.blocked) {
+      throw new BadRequestException('Task is not blocked');
+    }
+
+    const restoredStatus = task.previous_status ?? task.status;
+    this.parseStatus(restoredStatus);
 
     const updated = await this.prisma.task.update({
       where: { id },
-      data: { blocked: false, blocked_reason: null },
+      data: {
+        status: restoredStatus,
+        blocked: false,
+        blocked_reason: null,
+        previous_status: null,
+      },
     });
 
-    // Record activity
     await this.prisma.taskActivity.create({
       data: {
         task_id: id,
         activity_type: 'UNBLOCKED',
         actor_id: unblocked_by,
         summary: 'Task unblocked',
+        metadata: { restored_status: restoredStatus },
       },
     });
 
@@ -269,7 +370,7 @@ export class TasksService {
   async getParticipants(task_id: string, actor_id: string): Promise<TaskParticipantDto[]> {
     await this.assertDirectParticipant(task_id, actor_id);
     const participants = await this.prisma.taskParticipant.findMany({ where: { task_id } });
-    return participants.map((p) => this.participantToDto(p));
+    return participants.map((participant) => this.participantToDto(participant));
   }
 
   async getComments(task_id: string, actor_id: string): Promise<TaskCommentDto[]> {
@@ -299,7 +400,6 @@ export class TasksService {
       data: { task_id, author_id, content },
     });
 
-    // Record activity
     await this.prisma.taskActivity.create({
       data: {
         task_id,
@@ -318,27 +418,38 @@ export class TasksService {
     content: string,
   ): Promise<{ id: string; status: string; created_at: string }> {
     const task = await this.requireTask(task_id);
+    this.assertNotBlocked(task);
+
     if (task.assignee_id !== author_id) {
       throw new ForbiddenException('Only the current assignee may submit');
     }
+    if (task.status !== 'IN_PROGRESS') {
+      throw new BadRequestException(
+        `Task must be IN_PROGRESS before submission; received ${task.status}`,
+      );
+    }
 
-    const submission = await this.prisma.taskSubmission.create({
-      data: {
-        task_id,
+    const submission = await this.prisma.$transaction(async (tx) => {
+      const created = await tx.taskSubmission.create({
+        data: {
+          task_id,
+          author_id,
+          content,
+          status: 'PENDING',
+        },
+      });
+
+      await this.applyLifecycleChange(
+        tx,
+        task,
+        'WAITING_REVIEW',
         author_id,
-        content,
-        status: 'PENDING',
-      },
-    });
+        null,
+        'SUBMISSION',
+        'Task result submitted for review',
+      );
 
-    // Record activity
-    await this.prisma.taskActivity.create({
-      data: {
-        task_id,
-        activity_type: 'SUBMISSION',
-        actor_id: author_id,
-        summary: 'Task result submitted for review',
-      },
+      return created;
     });
 
     return {
@@ -351,44 +462,55 @@ export class TasksService {
   async reviewSubmission(
     submission_id: string,
     reviewer_id: string,
-    approved: boolean,
+    decision: ReviewDecision,
     comment?: string,
   ): Promise<{ id: string; status: string }> {
+    const normalizedDecision = this.parseReviewDecision(decision);
     const submission = await this.prisma.taskSubmission.findUnique({
       where: { id: submission_id },
     });
-    if (!submission) throw new NotFoundException('Submission not found');
+    if (!submission) {
+      throw new NotFoundException('Submission not found');
+    }
+
     const task = await this.requireTask(submission.task_id);
     this.assertCreator(task, reviewer_id);
+    this.assertNotBlocked(task);
 
-    const newStatus = approved ? 'APPROVED' : 'REJECTED';
-    const updated = await this.prisma.taskSubmission.update({
-      where: { id: submission_id },
-      data: {
-        status: newStatus,
-        reviewer_id,
-        review_comment: comment || null,
-        reviewed_at: new Date(),
-      },
-    });
-
-    // Record activity on the task
-    await this.prisma.taskActivity.create({
-      data: {
-        task_id: submission.task_id,
-        activity_type: 'REVIEW_DECISION',
-        actor_id: reviewer_id,
-        summary: `Submission ${approved ? 'approved' : 'rejected'}`,
-      },
-    });
-
-    // Update task result if approved
-    if (approved) {
-      await this.prisma.task.update({
-        where: { id: submission.task_id },
-        data: { result: submission.content },
-      });
+    if (task.status !== 'WAITING_REVIEW') {
+      throw new BadRequestException(
+        `Task must be WAITING_REVIEW before review; received ${task.status}`,
+      );
     }
+
+    if (normalizedDecision === 'APPROVED') {
+      await this.assertAllChildTasksApproved(task.id);
+    }
+
+    const updated = await this.prisma.$transaction(async (tx) => {
+      const nextSubmission = await tx.taskSubmission.update({
+        where: { id: submission_id },
+        data: {
+          status: normalizedDecision,
+          reviewer_id,
+          review_comment: comment || null,
+          reviewed_at: new Date(),
+        },
+      });
+
+      await this.applyLifecycleChange(
+        tx,
+        task,
+        normalizedDecision,
+        reviewer_id,
+        comment,
+        'REVIEW_DECISION',
+        `Submission ${normalizedDecision.toLowerCase().replace('_', ' ')}`,
+        normalizedDecision === 'APPROVED' ? submission.content : task.result,
+      );
+
+      return nextSubmission;
+    });
 
     return { id: updated.id, status: updated.status };
   }
@@ -410,30 +532,16 @@ export class TasksService {
       where: { task_id },
       orderBy: { created_at: 'asc' },
     });
-    return activities.map((a) => ({
-      id: a.id,
-      activity_type: a.activity_type,
-      actor_id: a.actor_id,
-      summary: a.summary,
-      created_at: a.created_at.toISOString(),
+    return activities.map((activity) => ({
+      id: activity.id,
+      activity_type: activity.activity_type,
+      actor_id: activity.actor_id,
+      summary: activity.summary,
+      created_at: activity.created_at.toISOString(),
     }));
   }
 
-  private toDto(task: {
-    id: string;
-    title: string;
-    description: string | null;
-    status: string;
-    creator_id: string;
-    assignee_id: string | null;
-    parent_task_id: string | null;
-    deadline: Date | null;
-    blocked: boolean;
-    blocked_reason: string | null;
-    result: string | null;
-    created_at: Date;
-    updated_at: Date;
-  }): TaskDto {
+  private toDto(task: TaskRecord): TaskDto {
     return {
       id: task.id,
       title: task.title,
@@ -446,12 +554,13 @@ export class TasksService {
       blocked: task.blocked,
       blocked_reason: task.blocked_reason,
       result: task.result,
+      is_overdue: this.isOverdue(task),
       created_at: task.created_at.toISOString(),
       updated_at: task.updated_at.toISOString(),
     };
   }
 
-  private participantToDto(p: {
+  private participantToDto(participant: {
     id: string;
     task_id: string;
     user_id: string;
@@ -459,31 +568,19 @@ export class TasksService {
     added_at: Date;
   }): TaskParticipantDto {
     return {
-      id: p.id,
-      task_id: p.task_id,
-      user_id: p.user_id,
-      role: p.role,
-      added_at: p.added_at.toISOString(),
+      id: participant.id,
+      task_id: participant.task_id,
+      user_id: participant.user_id,
+      role: participant.role,
+      added_at: participant.added_at.toISOString(),
     };
   }
 
-  private async requireTask(id: string): Promise<{
-    id: string;
-    title: string;
-    description: string | null;
-    status: string;
-    creator_id: string;
-    assignee_id: string | null;
-    parent_task_id: string | null;
-    deadline: Date | null;
-    blocked: boolean;
-    blocked_reason: string | null;
-    result: string | null;
-    created_at: Date;
-    updated_at: Date;
-  }> {
+  private async requireTask(id: string): Promise<TaskRecord> {
     const task = await this.prisma.task.findUnique({ where: { id } });
-    if (!task) throw new NotFoundException('Task not found');
+    if (!task) {
+      throw new NotFoundException('Task not found');
+    }
     return task;
   }
 
@@ -509,5 +606,120 @@ export class TasksService {
     if (task.creator_id !== user_id) {
       throw new ForbiddenException('Only the task creator may perform this action');
     }
+  }
+
+  private assertNotBlocked(task: { blocked: boolean }): void {
+    if (task.blocked) {
+      throw new BadRequestException(
+        'Task is blocked and must be unblocked before changing workflow state',
+      );
+    }
+  }
+
+  private assertNotTerminal(status: string): void {
+    if (this.isTerminalStatus(status)) {
+      throw new BadRequestException(`Task is already terminal with status ${status}`);
+    }
+  }
+
+  private assertTransitionAllowed(fromStatus: string, toStatus: TaskStatus): void {
+    const currentStatus = this.parseStatus(fromStatus);
+    if (!STATUS_TRANSITIONS[currentStatus].includes(toStatus)) {
+      throw new BadRequestException(
+        `Invalid lifecycle transition: ${currentStatus} -> ${toStatus}`,
+      );
+    }
+  }
+
+  private parseStatus(status: string): TaskStatus {
+    if ((CANONICAL_STATUSES as readonly string[]).includes(status)) {
+      return status as TaskStatus;
+    }
+
+    throw new BadRequestException(`Invalid status: ${status}`);
+  }
+
+  private parseReviewDecision(decision: string): ReviewDecision {
+    if ((REVIEW_DECISIONS as readonly string[]).includes(decision)) {
+      return decision as ReviewDecision;
+    }
+
+    throw new BadRequestException(`Invalid review decision: ${decision}`);
+  }
+
+  private isTerminalStatus(status: string): boolean {
+    return TERMINAL_STATUSES.has(this.parseStatus(status));
+  }
+
+  private isOverdue(task: { deadline: Date | null; status: string }): boolean {
+    if (!task.deadline) {
+      return false;
+    }
+
+    return (
+      task.deadline.getTime() < Date.now() && !RESOLVED_STATUSES.has(this.parseStatus(task.status))
+    );
+  }
+
+  private async assertAllChildTasksApproved(taskId: string): Promise<void> {
+    const incompleteChildren = await this.prisma.task.findFirst({
+      where: {
+        parent_task_id: taskId,
+        status: { not: 'APPROVED' },
+      },
+      select: { id: true, status: true },
+    });
+
+    if (incompleteChildren) {
+      throw new BadRequestException(
+        'Parent task cannot be approved while any child task is not APPROVED',
+      );
+    }
+  }
+
+  private async applyLifecycleChange(
+    tx: TaskTransaction,
+    task: TaskRecord,
+    toStatus: TaskStatus,
+    changedBy: string,
+    reason: string | undefined | null,
+    activityType: string,
+    summary: string,
+    result?: string | null,
+  ): Promise<TaskRecord> {
+    const updated = await tx.task.update({
+      where: { id: task.id },
+      data: {
+        status: toStatus,
+        previous_status: task.status,
+        ...(result !== undefined ? { result } : {}),
+      },
+    });
+
+    await tx.taskStatusHistory.create({
+      data: {
+        task_id: task.id,
+        from_status: task.status,
+        to_status: toStatus,
+        changed_by: changedBy,
+        reason: reason || null,
+      },
+    });
+
+    await tx.taskActivity.create({
+      data: {
+        task_id: task.id,
+        activity_type: activityType,
+        actor_id: changedBy,
+        summary,
+        metadata: {
+          from_status: task.status,
+          to_status: toStatus,
+          reason: reason || null,
+        },
+      },
+    });
+
+    return updated;
   }
 }
