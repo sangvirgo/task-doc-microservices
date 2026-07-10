@@ -286,6 +286,9 @@ export class DocumentsController {
         actor_id: user.userId,
         object_key: version.object_key,
         expires_in_seconds: parsed.data.expires_in_seconds,
+        max_expires_at: permCheck.effective_expires_at
+          ? new Date(permCheck.effective_expires_at)
+          : undefined,
       })
       .then(async (ticket) => {
         await this.auditClient.record({
@@ -334,6 +337,9 @@ export class DocumentsController {
       actor_id: user.userId,
       object_key: version.object_key,
       expires_in_seconds: 3600,
+      max_expires_at: permCheck.effective_expires_at
+        ? new Date(permCheck.effective_expires_at)
+        : undefined,
     });
   }
 }

@@ -14,6 +14,7 @@ import { PermissionPrismaService } from '../src/prisma/permission-prisma.service
 describe('Permission Service Integration (PostgreSQL)', () => {
   let app: INestApplication;
   let prisma: PermissionPrismaService;
+  let permissionService: PermissionService;
 
   const ACTOR_ID = randomUUID();
   const GRANTOR_ID = randomUUID();
@@ -29,6 +30,7 @@ describe('Permission Service Integration (PostgreSQL)', () => {
 
     app = moduleRef.createNestApplication();
     prisma = moduleRef.get(PermissionPrismaService);
+    permissionService = moduleRef.get(PermissionService);
     await app.init();
   });
 
@@ -184,5 +186,168 @@ describe('Permission Service Integration (PostgreSQL)', () => {
     // Verify in PostgreSQL
     const dbGrant = await prisma.grant.findUnique({ where: { id: grantId } });
     expect(dbGrant!.status).toBe('REVOKED');
+  });
+
+  it('denies request-time access after effective expiry', async () => {
+    const actorId = randomUUID();
+    const resourceId = randomUUID();
+    const taskId = randomUUID();
+    const expiresAt = new Date('2026-07-27T23:00:00.000Z').toISOString();
+
+    await request(app.getHttpServer())
+      .post('/grants')
+      .send({
+        grantor_id: GRANTOR_ID,
+        actor_id: actorId,
+        resource_type: 'DOCUMENT',
+        resource_id: resourceId,
+        permissions: ['DOWNLOAD'],
+        task_id: taskId,
+        expires_at: expiresAt,
+      })
+      .expect(201);
+
+    const res = await request(app.getHttpServer())
+      .post('/internal/permissions/check')
+      .send({
+        actor_id: actorId,
+        actor_role: 'EMPLOYEE',
+        resource_type: 'DOCUMENT',
+        resource_id: resourceId,
+        action: 'DOWNLOAD',
+        correlation_id: randomUUID(),
+      })
+      .expect(200);
+
+    expect(res.body.allowed).toBe(false);
+    expect(res.body.reason_code).toBe('GRANT_EXPIRED');
+  });
+
+  it('cascades parent revocation to delegated child grants', async () => {
+    const parentActorId = randomUUID();
+    const childActorId = randomUUID();
+    const resourceId = randomUUID();
+    const taskId = randomUUID();
+    const expiresAt = new Date('2026-07-29T12:00:00.000Z').toISOString();
+
+    const parentGrant = await request(app.getHttpServer())
+      .post('/grants')
+      .send({
+        grantor_id: GRANTOR_ID,
+        actor_id: parentActorId,
+        resource_type: 'DOCUMENT',
+        resource_id: resourceId,
+        permissions: ['PREVIEW', 'DOWNLOAD'],
+        task_id: taskId,
+        expires_at: expiresAt,
+      })
+      .expect(201);
+
+    const childGrant = await request(app.getHttpServer())
+      .post(`/grants/${parentGrant.body.id}/delegate`)
+      .send({
+        actor_id: childActorId,
+        permissions: ['PREVIEW'],
+      })
+      .expect(200);
+
+    await request(app.getHttpServer())
+      .delete(`/grants/${parentGrant.body.id}`)
+      .send({ reason: 'Parent revoked' })
+      .expect(200);
+
+    const delegatedGrant = await prisma.grant.findUniqueOrThrow({
+      where: { id: childGrant.body.id },
+    });
+    expect(delegatedGrant.status).toBe('REVOKED');
+    expect(delegatedGrant.revoked_at).not.toBeNull();
+
+    const res = await request(app.getHttpServer())
+      .post('/internal/permissions/check')
+      .send({
+        actor_id: childActorId,
+        actor_role: 'EMPLOYEE',
+        resource_type: 'DOCUMENT',
+        resource_id: resourceId,
+        action: 'PREVIEW',
+        correlation_id: randomUUID(),
+      })
+      .expect(200);
+
+    expect(res.body.allowed).toBe(false);
+  });
+
+  it('expires due grants idempotently', async () => {
+    const actorId = randomUUID();
+    const resourceId = randomUUID();
+    const taskId = randomUUID();
+    const workerNow = new Date('2026-07-28T00:00:00.000Z');
+    const beforeCount = await prisma.grant.count({
+      where: {
+        status: 'ACTIVE',
+        revoked_at: null,
+        effective_expires_at: { lte: workerNow },
+      },
+    });
+    const expiredGrant = await request(app.getHttpServer())
+      .post('/grants')
+      .send({
+        grantor_id: GRANTOR_ID,
+        actor_id: actorId,
+        resource_type: 'DOCUMENT',
+        resource_id: resourceId,
+        permissions: ['PREVIEW'],
+        task_id: taskId,
+        expires_at: '2026-07-27T00:00:00.000Z',
+      })
+      .expect(201);
+
+    const firstRun = await permissionService.expireDueGrants(workerNow);
+    const secondRun = await permissionService.expireDueGrants(workerNow);
+
+    expect(firstRun).toBe(beforeCount + 1);
+    expect(secondRun).toBe(0);
+
+    const persisted = await prisma.grant.findUniqueOrThrow({ where: { id: expiredGrant.body.id } });
+    expect(persisted.status).toBe('EXPIRED');
+  });
+
+  it('shrinks effective expiry on earlier task deadlines without widening it later', async () => {
+    const actorId = randomUUID();
+    const resourceId = randomUUID();
+    const taskId = randomUUID();
+    const created = await request(app.getHttpServer())
+      .post('/grants')
+      .send({
+        grantor_id: GRANTOR_ID,
+        actor_id: actorId,
+        resource_type: 'DOCUMENT',
+        resource_id: resourceId,
+        permissions: ['DOWNLOAD'],
+        task_id: taskId,
+        expires_at: '2026-07-31T00:00:00.000Z',
+      })
+      .expect(201);
+
+    const initialGrant = await prisma.grant.findUniqueOrThrow({ where: { id: created.body.id } });
+    expect(initialGrant.effective_expires_at.toISOString()).toBe('2026-07-31T00:00:00.000Z');
+
+    const shortened = await permissionService.handleTaskDeadlineChanged(
+      taskId,
+      new Date('2026-07-29T00:00:00.000Z'),
+    );
+    expect(shortened).toBe(1);
+
+    const afterShorten = await prisma.grant.findUniqueOrThrow({ where: { id: created.body.id } });
+    expect(afterShorten.effective_expires_at.toISOString()).toBe('2026-07-29T00:00:00.000Z');
+
+    const extended = await permissionService.handleTaskDeadlineChanged(
+      taskId,
+      new Date('2026-08-02T00:00:00.000Z'),
+    );
+    expect(extended).toBe(0);
+
+    const afterExtend = await prisma.grant.findUniqueOrThrow({ where: { id: created.body.id } });
+    expect(afterExtend.effective_expires_at.toISOString()).toBe('2026-07-29T00:00:00.000Z');
   });
 });

@@ -178,13 +178,18 @@ export class DocumentsService {
     actor_id: string;
     object_key: string;
     expires_in_seconds: number;
+    max_expires_at?: Date;
   }): Promise<DownloadTicketDto> {
     const documentVersion = await this.prisma.documentVersion.findUnique({
       where: { document_id_version: { document_id: data.document_id, version: data.version } },
     });
     if (!documentVersion) throw new NotFoundException('Document version not found');
 
-    const expires_at = new Date(Date.now() + data.expires_in_seconds * 1000);
+    const requestedExpiry = new Date(Date.now() + data.expires_in_seconds * 1000);
+    const expires_at =
+      data.max_expires_at && data.max_expires_at.getTime() < requestedExpiry.getTime()
+        ? data.max_expires_at
+        : requestedExpiry;
     const ticket = await this.prisma.downloadTicket.create({
       data: {
         document_id: data.document_id,

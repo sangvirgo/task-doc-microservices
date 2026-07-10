@@ -92,12 +92,28 @@ export class PermissionService {
           actor_id: request.actor_id,
           resource_type: request.resource_type,
           resource_id: request.resource_id,
-          status: 'ACTIVE',
           revoked_at: null,
         },
+        orderBy: { created_at: 'desc' },
       });
 
       if (!grant) {
+        return {
+          allowed: false,
+          reason_code: PermissionReasonCode.NO_GRANT,
+          effective_expires_at: null,
+        };
+      }
+
+      if (grant.status === 'EXPIRED') {
+        return {
+          allowed: false,
+          reason_code: PermissionReasonCode.GRANT_EXPIRED,
+          effective_expires_at: grant.effective_expires_at.toISOString(),
+        };
+      }
+
+      if (grant.status !== 'ACTIVE') {
         return {
           allowed: false,
           reason_code: PermissionReasonCode.NO_GRANT,
@@ -178,14 +194,9 @@ export class PermissionService {
     const grant = await this.prisma.grant.findUnique({ where: { id: grant_id } });
     if (!grant) throw new NotFoundException('Grant not found');
 
-    const updated = await this.prisma.grant.update({
-      where: { id: grant_id },
-      data: {
-        status: 'REVOKED',
-        revoked_at: new Date(),
-        revocation_reason: revocation_reason || null,
-      },
-    });
+    const revokedAt = grant.revoked_at ?? new Date();
+    await this.cascadeRevoke([grant_id], revokedAt, revocation_reason || null);
+    const updated = await this.prisma.grant.findUniqueOrThrow({ where: { id: grant_id } });
     return this.toDto(updated);
   }
 
@@ -220,6 +231,9 @@ export class PermissionService {
     if (!parent) throw new NotFoundException('Parent grant not found');
     if (parent.status !== 'ACTIVE') throw new BadRequestException('Parent grant must be ACTIVE');
     if (parent.revoked_at) throw new BadRequestException('Parent grant is revoked');
+    if (parent.effective_expires_at.getTime() <= Date.now()) {
+      throw new BadRequestException('Parent grant is expired');
+    }
 
     const delegatedPermissions = data.permissions || parent.permissions;
     for (const perm of delegatedPermissions) {
@@ -243,6 +257,106 @@ export class PermissionService {
       },
     });
     return this.toDto(delegated);
+  }
+
+  async expireDueGrants(now: Date = new Date()): Promise<number> {
+    const dueGrants = await this.prisma.grant.findMany({
+      where: {
+        status: 'ACTIVE',
+        revoked_at: null,
+        effective_expires_at: { lte: now },
+      },
+      select: { id: true },
+    });
+
+    if (dueGrants.length === 0) {
+      return 0;
+    }
+
+    const ids = dueGrants.map((grant) => grant.id);
+    const result = await this.prisma.grant.updateMany({
+      where: {
+        id: { in: ids },
+        status: 'ACTIVE',
+        revoked_at: null,
+      },
+      data: {
+        status: 'EXPIRED',
+      },
+    });
+
+    return result.count;
+  }
+
+  async handleTaskDeadlineChanged(task_id: string, deadline: Date): Promise<number> {
+    const grants = await this.prisma.grant.findMany({
+      where: {
+        task_id,
+        status: 'ACTIVE',
+        revoked_at: null,
+        effective_expires_at: { gt: deadline },
+      },
+      select: {
+        id: true,
+        expires_at: true,
+        effective_expires_at: true,
+      },
+    });
+
+    let updatedCount = 0;
+    for (const grant of grants) {
+      const nextEffectiveExpiry =
+        grant.expires_at.getTime() < deadline.getTime() ? grant.expires_at : deadline;
+
+      if (nextEffectiveExpiry.getTime() >= grant.effective_expires_at.getTime()) {
+        continue;
+      }
+
+      await this.prisma.grant.update({
+        where: { id: grant.id },
+        data: { effective_expires_at: nextEffectiveExpiry },
+      });
+      updatedCount += 1;
+    }
+
+    return updatedCount;
+  }
+
+  private async cascadeRevoke(
+    rootGrantIds: string[],
+    revokedAt: Date,
+    revocationReason: string | null,
+  ): Promise<void> {
+    const visited = new Set<string>();
+    const pending = [...rootGrantIds];
+
+    while (pending.length > 0) {
+      const grantId = pending.shift();
+      if (!grantId || visited.has(grantId)) {
+        continue;
+      }
+
+      visited.add(grantId);
+
+      const children = await this.prisma.grant.findMany({
+        where: { parent_grant_id: grantId },
+        select: { id: true },
+      });
+
+      pending.push(...children.map((child) => child.id));
+    }
+
+    await this.prisma.grant.updateMany({
+      where: {
+        id: { in: Array.from(visited) },
+        status: { not: 'REVOKED' },
+      },
+      data: {
+        status: 'REVOKED',
+        revoked_at: revokedAt,
+        revocation_reason: revocationReason,
+      },
+    });
   }
 
   private toDto(grant: {
