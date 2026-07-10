@@ -20,7 +20,7 @@ import { buildEventEnvelope, PermissionAction, ResourceType } from '@c17/contrac
 import { EVENT_PUBLISHER, type EventPublisher } from '@c17/messaging';
 import { getCorrelationId } from '@c17/observability';
 
-import { TasksService, TaskCommentDto, TaskDto } from './tasks.service';
+import { AncestorTaskSummaryDto, TasksService, TaskCommentDto, TaskDto } from './tasks.service';
 import { PermissionClient } from '../permissions/permission.client';
 import { AuditClient } from '../audit/audit.client';
 import { UserRoleClient } from '../users/user-role.client';
@@ -127,7 +127,10 @@ export class TasksController {
 
   @Get(':id')
   @ApiOperation({ summary: 'Get a task by ID (permission-checked)' })
-  async getTask(@Param('id') taskId: string, @CurrentUser() user?: AuthContext): Promise<TaskDto> {
+  async getTask(
+    @Param('id') taskId: string,
+    @CurrentUser() user?: AuthContext,
+  ): Promise<TaskDto | AncestorTaskSummaryDto> {
     if (!user) throw new ForbiddenException('Authentication required');
     await this.assertPermission(user, PermissionAction.TASK_VIEW, taskId);
     return this.tasksService.getTask(taskId, user.userId);

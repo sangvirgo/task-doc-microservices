@@ -262,6 +262,110 @@ describe('Task authorization integration (PostgreSQL)', () => {
     expect(res.body.id).toBe(taskId);
   });
 
+  it('allows ancestor creator to read only the restricted descendant summary', async () => {
+    const childAssigneeId = randomUUID();
+    const parentTaskId = await seedTask({
+      creatorId: EMPLOYEE_ID,
+      assigneeId: SECOND_EMPLOYEE_ID,
+    });
+    const childTaskId = await seedTask({
+      creatorId: SECOND_EMPLOYEE_ID,
+      assigneeId: childAssigneeId,
+      parentTaskId,
+      status: 'WAITING_REVIEW',
+      deadline: new Date('2026-07-27T00:00:00.000Z'),
+    });
+
+    await prisma.taskComment.create({
+      data: {
+        task_id: childTaskId,
+        author_id: EMPLOYEE_ID,
+        content: 'Confidential descendant comment',
+      },
+    });
+    await prisma.taskActivity.create({
+      data: {
+        task_id: childTaskId,
+        activity_type: 'COMMENT',
+        actor_id: EMPLOYEE_ID,
+        summary: 'Comment added',
+      },
+    });
+
+    const res = await request(app.getHttpServer())
+      .get(`/tasks/${childTaskId}`)
+      .set(authHeaders(EMPLOYEE_ID, 'EMPLOYEE'));
+
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({
+      title: 'Task under test',
+      status: 'WAITING_REVIEW',
+      assignee: childAssigneeId,
+      deadline: '2026-07-27T00:00:00.000Z',
+      is_overdue: true,
+      completion_result: null,
+    });
+    expect(res.body.comments).toBeUndefined();
+    expect(res.body.participants).toBeUndefined();
+    expect(res.body.activity).toBeUndefined();
+    expect(res.body.submissions).toBeUndefined();
+    expect(res.body.parent_task_id).toBeUndefined();
+  });
+
+  it('denies an explicit ancestor participant automatic descendant access', async () => {
+    const ancestorParticipantId = randomUUID();
+    const parentTaskId = await seedTask({
+      creatorId: EMPLOYEE_ID,
+      assigneeId: SECOND_EMPLOYEE_ID,
+      explicitParticipantId: ancestorParticipantId,
+    });
+    const childTaskId = await seedTask({
+      creatorId: SECOND_EMPLOYEE_ID,
+      assigneeId: EMPLOYEE_ID,
+      parentTaskId,
+    });
+
+    const res = await request(app.getHttpServer())
+      .get(`/tasks/${childTaskId}`)
+      .set(authHeaders(ancestorParticipantId, 'EMPLOYEE'));
+
+    expect(res.status).toBe(403);
+  });
+
+  it('denies descendant participants automatic parent or sibling task access', async () => {
+    const childOnlyParticipantId = randomUUID();
+    const parentTaskId = await seedTask({
+      creatorId: EMPLOYEE_ID,
+      assigneeId: SECOND_EMPLOYEE_ID,
+    });
+    const firstChildId = await seedTask({
+      creatorId: SECOND_EMPLOYEE_ID,
+      assigneeId: randomUUID(),
+      parentTaskId,
+      explicitParticipantId: childOnlyParticipantId,
+    });
+    const secondChildId = await seedTask({
+      creatorId: SECOND_EMPLOYEE_ID,
+      assigneeId: randomUUID(),
+      parentTaskId,
+    });
+
+    const parentRes = await request(app.getHttpServer())
+      .get(`/tasks/${parentTaskId}`)
+      .set(authHeaders(childOnlyParticipantId, 'EMPLOYEE'));
+    expect(parentRes.status).toBe(403);
+
+    const deniedSiblingRes = await request(app.getHttpServer())
+      .get(`/tasks/${secondChildId}`)
+      .set(authHeaders(childOnlyParticipantId, 'EMPLOYEE'));
+    expect(deniedSiblingRes.status).toBe(403);
+
+    const directChildRes = await request(app.getHttpServer())
+      .get(`/tasks/${firstChildId}`)
+      .set(authHeaders(childOnlyParticipantId, 'EMPLOYEE'));
+    expect(directChildRes.status).toBe(200);
+  });
+
   it('denies assigning ADMIN as assignee', async () => {
     const taskId = await seedTask();
 

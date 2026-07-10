@@ -83,6 +83,15 @@ export interface TaskParticipantDto {
   added_at: string;
 }
 
+export interface AncestorTaskSummaryDto {
+  title: string;
+  status: string;
+  assignee: string | null;
+  deadline: string | null;
+  is_overdue: boolean;
+  completion_result: string | null;
+}
+
 export interface TaskCommentDto {
   id: string;
   task_id: string;
@@ -150,10 +159,18 @@ export class TasksService {
     return this.toDto(task);
   }
 
-  async getTask(id: string, actor_id: string): Promise<TaskDto> {
-    await this.assertDirectParticipant(id, actor_id);
+  async getTask(id: string, actor_id: string): Promise<TaskDto | AncestorTaskSummaryDto> {
     const task = await this.requireTask(id);
-    return this.toDto(task);
+
+    if (await this.hasDirectParticipation(id, actor_id)) {
+      return this.toDto(task);
+    }
+
+    if (await this.hasAncestorOversight(task, actor_id)) {
+      return this.toAncestorSummary(task);
+    }
+
+    throw new ForbiddenException('Direct task participation is required');
   }
 
   async listTasks(
@@ -560,6 +577,17 @@ export class TasksService {
     };
   }
 
+  private toAncestorSummary(task: TaskRecord): AncestorTaskSummaryDto {
+    return {
+      title: task.title,
+      status: task.status,
+      assignee: task.assignee_id,
+      deadline: task.deadline?.toISOString() ?? null,
+      is_overdue: this.isOverdue(task),
+      completion_result: task.result,
+    };
+  }
+
   private participantToDto(participant: {
     id: string;
     task_id: string;
@@ -585,12 +613,31 @@ export class TasksService {
   }
 
   private async assertDirectParticipant(task_id: string, user_id: string): Promise<void> {
+    if (!(await this.hasDirectParticipation(task_id, user_id))) {
+      throw new ForbiddenException('Direct task participation is required');
+    }
+  }
+
+  private async hasDirectParticipation(task_id: string, user_id: string): Promise<boolean> {
     const participant = await this.prisma.taskParticipant.findUnique({
       where: { task_id_user_id: { task_id, user_id } },
     });
-    if (!participant) {
-      throw new ForbiddenException('Direct task participation is required');
+
+    return Boolean(participant);
+  }
+
+  private async hasAncestorOversight(task: TaskRecord, actor_id: string): Promise<boolean> {
+    let ancestorTaskId = task.parent_task_id;
+
+    while (ancestorTaskId) {
+      const ancestor = await this.requireTask(ancestorTaskId);
+      if (ancestor.creator_id === actor_id || ancestor.assignee_id === actor_id) {
+        return true;
+      }
+      ancestorTaskId = ancestor.parent_task_id;
     }
+
+    return false;
   }
 
   private assertCanModifyTask(
