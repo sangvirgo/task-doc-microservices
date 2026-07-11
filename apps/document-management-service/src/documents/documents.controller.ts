@@ -538,6 +538,7 @@ export class DocumentsController {
         retention_policy: metadata.retention_policy,
         object_key: processed.object_key,
         checksum: processed.checksum,
+        signature: processed.signature,
         encrypted_dek: processed.encrypted_dek,
         file_size: processed.file_size,
         mime_type: processed.mime_type,

@@ -23,6 +23,7 @@ export interface DocumentVersionDto {
   id: string;
   document_id: string;
   version: number;
+  signature: string | null;
   file_size: number;
   mime_type: string;
   created_by: string;
@@ -109,6 +110,7 @@ export class DocumentsService {
     retention_policy?: string;
     object_key: string;
     checksum: string;
+    signature?: string;
     encrypted_dek: string;
     file_size: number;
     mime_type: string;
@@ -133,6 +135,7 @@ export class DocumentsService {
           version: 1,
           object_key: data.object_key,
           checksum: data.checksum,
+          signature: data.signature || null,
           encrypted_dek: data.encrypted_dek,
           file_size: data.file_size,
           mime_type: data.mime_type,
@@ -152,6 +155,7 @@ export class DocumentsService {
     document_id: string;
     object_key: string;
     checksum: string;
+    signature?: string;
     kek_version?: number;
     encrypted_dek: string;
     file_size: number;
@@ -168,6 +172,7 @@ export class DocumentsService {
         version: nextVersion,
         object_key: data.object_key,
         checksum: data.checksum,
+        signature: data.signature || null,
         kek_version: data.kek_version || 1,
         encrypted_dek: data.encrypted_dek,
         file_size: data.file_size,
@@ -445,6 +450,7 @@ export class DocumentsService {
     document_id: string;
     version: number;
     object_key: string;
+    signature: string | null;
     file_size: number;
     mime_type: string;
     created_by: string;
@@ -454,6 +460,7 @@ export class DocumentsService {
       id: version.id,
       document_id: version.document_id,
       version: version.version,
+      signature: version.signature,
       file_size: version.file_size,
       mime_type: version.mime_type,
       created_by: version.created_by,

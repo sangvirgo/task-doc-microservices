@@ -14,7 +14,11 @@ import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import { z } from 'zod';
 import type { Request } from 'express';
 
-import { SecurityPipelineService, EncryptionRecordDto } from './security-pipeline.service';
+import {
+  SecurityPipelineService,
+  EncryptionRecordDto,
+  UploadPipelineResult,
+} from './security-pipeline.service';
 
 const processDocumentSchema = z.object({
   document_id: z.string().uuid(),
@@ -53,7 +57,7 @@ export class SecurityController {
   @Post('uploads/process')
   @HttpCode(HttpStatus.CREATED)
   @ApiOperation({ summary: 'Accept a streamed plaintext upload from Document Management' })
-  async processUpload(@Req() req: Request): Promise<EncryptionRecordDto> {
+  async processUpload(@Req() req: Request): Promise<UploadPipelineResult> {
     const parsed = uploadHeaderSchema.safeParse({
       document_id: req.headers['x-document-id'],
       version: req.headers['x-document-version'],

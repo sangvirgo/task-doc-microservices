@@ -16,6 +16,7 @@ export interface SecurityUploadResult {
   version: number;
   object_key: string;
   checksum: string;
+  signature: string;
   encrypted_dek: string;
   kek_version: number;
   file_size: number;

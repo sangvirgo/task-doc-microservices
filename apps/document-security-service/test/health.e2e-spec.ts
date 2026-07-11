@@ -2,12 +2,35 @@ import { INestApplication } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import request from 'supertest';
 
+import { baseTestEnv } from '@c17/testing';
+
 import { AppModule, SERVICE } from '../src/app.module';
 
 describe('document-security-service health', () => {
   let app: INestApplication;
 
   beforeAll(async () => {
+    Object.assign(
+      process.env,
+      baseTestEnv({
+        PORT: '3005',
+        DOCUMENT_SECURITY_DATABASE_URL:
+          'postgresql://c17:replace-me-local-only@localhost:5433/document_security_db',
+        MINIO_ENDPOINT: 'localhost',
+        MINIO_PORT: '9000',
+        MINIO_ACCESS_KEY: 'replace-me-local-only',
+        MINIO_SECRET_KEY: 'replace-me-local-only',
+        MINIO_USE_SSL: 'false',
+        MINIO_BUCKET: 'documents',
+        CLAMAV_HOST: 'localhost',
+        CLAMAV_PORT: '3310',
+        CLAMAV_TIMEOUT_MS: '10000',
+        DOCUMENT_ACTIVE_KEK_VERSION: '1',
+        DOCUMENT_KEK_V1: 'replace-me-local-only',
+        DOCUMENT_SIGNATURE_KEY: 'replace-me-local-only',
+      }),
+    );
+
     const moduleRef = await Test.createTestingModule({ imports: [AppModule] }).compile();
     app = moduleRef.createNestApplication();
     await app.init();
