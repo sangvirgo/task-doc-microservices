@@ -4,16 +4,27 @@ import {
   Controller,
   ForbiddenException,
   Get,
+  Headers,
   HttpCode,
   HttpStatus,
   Inject,
   Param,
   Post,
   Query,
+  Req,
+  UploadedFile,
+  UseInterceptors,
 } from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import { z } from 'zod';
 import { randomUUID } from 'crypto';
+import type { Request } from 'express';
+import { createWriteStream, mkdirSync } from 'fs';
+import { stat, rm } from 'fs/promises';
+import { tmpdir } from 'os';
+import { basename, join } from 'path';
+import { pipeline } from 'stream/promises';
 
 import { CurrentUser, AuthContext } from '@c17/auth-context';
 import { buildEventEnvelope } from '@c17/contracts';
@@ -35,7 +46,7 @@ const createDocumentSchema = z.object({
   title: z.string().min(1),
   document_type: z.string().min(1),
   owner_id: z.string().uuid(),
-  security_level: z.string().default('INTERNAL'),
+  security_level: z.enum(['PUBLIC', 'INTERNAL', 'CONFIDENTIAL', 'RESTRICTED']).default('INTERNAL'),
   retention_policy: z.string().optional(),
 });
 
@@ -73,6 +84,73 @@ const reviewPackageSchema = z.object({
   rejection_reason: z.string().optional(),
 });
 
+const TMP_UPLOAD_DIR =
+  process.env.DOCUMENT_UPLOAD_TMP_DIR || join(tmpdir(), 'c17-document-management-uploads');
+const MAX_UPLOAD_BYTES = Number(process.env.DOCUMENT_UPLOAD_MAX_BYTES || 25 * 1024 * 1024);
+const ALLOWED_UPLOAD_MIME_TYPES = new Set(
+  (
+    process.env.DOCUMENT_ALLOWED_MIME_TYPES ||
+    'application/pdf,text/plain,application/octet-stream,image/png,image/jpeg,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+  )
+    .split(',')
+    .map((value) => value.trim())
+    .filter(Boolean),
+);
+mkdirSync(TMP_UPLOAD_DIR, { recursive: true });
+
+const rawBooleanSchema = z
+  .union([z.boolean(), z.enum(['true', 'false', 'TRUE', 'FALSE'])])
+  .transform((value) => {
+    if (typeof value === 'boolean') return value;
+    return value.toLowerCase() === 'true';
+  });
+
+const multipartUploadSchema = z.object({
+  title: z.string().min(1),
+  document_type: z.string().min(1),
+  owner_id: z.string().uuid(),
+  security_level: z.enum(['PUBLIC', 'INTERNAL', 'CONFIDENTIAL', 'RESTRICTED']).default('INTERNAL'),
+  retention_policy: z.string().optional(),
+  declared_state_secret: rawBooleanSchema.default(false),
+});
+
+const rawUploadHeaderSchema = z.object({
+  title: z.string().min(1),
+  document_type: z.string().min(1),
+  owner_id: z.string().uuid(),
+  security_level: z.enum(['PUBLIC', 'INTERNAL', 'CONFIDENTIAL', 'RESTRICTED']).default('INTERNAL'),
+  retention_policy: z.string().optional(),
+  declared_state_secret: rawBooleanSchema.default(false),
+});
+
+interface UploadedDocumentResult {
+  document: DocumentDto;
+  version: DocumentVersionDto;
+}
+
+interface UploadMetadata {
+  title: string;
+  document_type: string;
+  owner_id: string;
+  security_level: 'PUBLIC' | 'INTERNAL' | 'CONFIDENTIAL' | 'RESTRICTED';
+  retention_policy?: string;
+  declared_state_secret: boolean;
+}
+
+interface UploadedFileReference {
+  filePath: string;
+  fileSize: number;
+  mimeType: string;
+  originalName: string;
+}
+
+interface UploadedFilePayload {
+  path: string;
+  size: number;
+  mimetype: string;
+  originalname: string;
+}
+
 /**
  * Document Management API (V3 §5.4, §5.6).
  * Full document lifecycle with versioning, records, transfer packages, and download tickets.
@@ -96,6 +174,85 @@ export class DocumentsController {
     @Query('status') status?: string,
   ): Promise<DocumentDto[]> {
     return this.documentsService.listDocuments({ owner_id, creator_id, status });
+  }
+
+  @Post('upload')
+  @UseInterceptors(
+    FileInterceptor('file', {
+      dest: TMP_UPLOAD_DIR,
+      limits: { fileSize: MAX_UPLOAD_BYTES, files: 1 },
+    }),
+  )
+  @ApiOperation({ summary: 'Upload a document with streamed downstream processing' })
+  async uploadDocument(
+    @UploadedFile() file: UploadedFilePayload | undefined,
+    @Body() body: Record<string, string>,
+    @CurrentUser() user?: AuthContext,
+  ): Promise<UploadedDocumentResult> {
+    if (!user) throw new ForbiddenException('Authentication required');
+    if (!file) throw new BadRequestException('A file upload is required');
+
+    const parsed = multipartUploadSchema.safeParse(body);
+    if (!parsed.success) {
+      await safeDelete(file.path);
+      throw new BadRequestException(parsed.error.issues);
+    }
+
+    return this.handleUploadedFile(
+      {
+        filePath: file.path,
+        fileSize: file.size,
+        mimeType: normalizeMimeType(file.mimetype),
+        originalName: file.originalname,
+      },
+      parsed.data,
+      user,
+    );
+  }
+
+  @Post('upload/raw')
+  @ApiOperation({ summary: 'Upload a raw document stream with metadata headers' })
+  async uploadRawDocument(
+    @Req() req: Request,
+    @Headers() headers: Record<string, string | string[] | undefined>,
+    @CurrentUser() user?: AuthContext,
+  ): Promise<UploadedDocumentResult> {
+    if (!user) throw new ForbiddenException('Authentication required');
+
+    const parsed = rawUploadHeaderSchema.safeParse({
+      title: firstHeader(headers['x-document-title']),
+      document_type: firstHeader(headers['x-document-type']),
+      owner_id: firstHeader(headers['x-document-owner-id']),
+      security_level: firstHeader(headers['x-document-security-level']) || 'INTERNAL',
+      retention_policy: firstHeader(headers['x-document-retention-policy']),
+      declared_state_secret: firstHeader(headers['x-document-state-secret']) || false,
+    });
+
+    if (!parsed.success) {
+      throw new BadRequestException(parsed.error.issues);
+    }
+
+    const mimeType = normalizeMimeType(firstHeader(headers['content-type']));
+    const tempFilePath = join(
+      TMP_UPLOAD_DIR,
+      `${randomUUID()}-${sanitizeFilename('raw-upload.bin')}`,
+    );
+    mkdirSync(TMP_UPLOAD_DIR, { recursive: true });
+
+    await pipeline(req, createWriteStream(tempFilePath));
+
+    const fileStat = await stat(tempFilePath);
+
+    return this.handleUploadedFile(
+      {
+        filePath: tempFilePath,
+        fileSize: fileStat.size,
+        mimeType,
+        originalName: basename(tempFilePath),
+      },
+      parsed.data,
+      user,
+    );
   }
 
   @Post()
@@ -277,14 +434,11 @@ export class DocumentsController {
       throw new ForbiddenException(`Download denied: ${permCheck.reason_code}`);
     }
 
-    const version = await this.documentsService.getDocumentVersion(documentId, parsed.data.version);
-
     return this.documentsService
       .createDownloadTicket({
         document_id: documentId,
         version: parsed.data.version,
         actor_id: user.userId,
-        object_key: version.object_key,
         expires_in_seconds: parsed.data.expires_in_seconds,
         max_expires_at: permCheck.effective_expires_at
           ? new Date(permCheck.effective_expires_at)
@@ -326,22 +480,133 @@ export class DocumentsController {
     }
 
     const document = await this.documentsService.getDocument(documentId);
-    const version = await this.documentsService.getDocumentVersion(
-      documentId,
-      document.current_version,
-    );
-
     return this.documentsService.createDownloadTicket({
       document_id: documentId,
       version: document.current_version,
       actor_id: user.userId,
-      object_key: version.object_key,
       expires_in_seconds: 3600,
       max_expires_at: permCheck.effective_expires_at
         ? new Date(permCheck.effective_expires_at)
         : undefined,
     });
   }
+
+  private async handleUploadedFile(
+    file: UploadedFileReference,
+    metadata: UploadMetadata,
+    user: AuthContext,
+  ): Promise<UploadedDocumentResult> {
+    try {
+      this.assertUploadAccepted(file.fileSize, file.mimeType);
+
+      if (metadata.declared_state_secret) {
+        await this.auditClient.record({
+          event_type: 'DOCUMENT_UPLOAD_REJECTED',
+          actor_id: user.userId,
+          resource_type: 'DOCUMENT',
+          resource_id: randomUUID(),
+          payload: {
+            reason_code: 'STATE_SECRET_DECLARED',
+            title: metadata.title,
+            document_type: metadata.document_type,
+          },
+        });
+        throw new BadRequestException('Declared state-secret material is not accepted');
+      }
+
+      const documentId = randomUUID();
+      const processed = await this.securityClient.processUpload({
+        document_id: documentId,
+        version: 1,
+        file_path: file.filePath,
+        file_size: file.fileSize,
+        mime_type: file.mimeType,
+        original_filename: file.originalName,
+      });
+
+      if (!processed) {
+        throw new BadRequestException('Document security processing failed');
+      }
+
+      const created = await this.documentsService.createUploadedDocument({
+        document_id: documentId,
+        title: metadata.title,
+        document_type: metadata.document_type,
+        owner_id: metadata.owner_id,
+        creator_id: user.userId,
+        security_level: metadata.security_level,
+        retention_policy: metadata.retention_policy,
+        object_key: processed.object_key,
+        checksum: processed.checksum,
+        encrypted_dek: processed.encrypted_dek,
+        file_size: processed.file_size,
+        mime_type: processed.mime_type,
+        kek_version: processed.kek_version,
+      });
+
+      await this.auditClient.record({
+        event_type: 'DOCUMENT_CREATED',
+        actor_id: user.userId,
+        resource_type: 'DOCUMENT',
+        resource_id: created.document.id,
+        payload: {
+          title: created.document.title,
+          document_type: created.document.document_type,
+          security_level: created.document.security_level,
+          version: created.version.version,
+        },
+      });
+      void this.eventPublisher.publish(
+        buildEventEnvelope({
+          event_id: randomUUID(),
+          event_type: 'document.created',
+          occurred_at: new Date().toISOString(),
+          producer: 'document-management-service',
+          correlation_id: getCorrelationId() ?? randomUUID(),
+          actor_id: user.userId,
+          resource_type: 'DOCUMENT',
+          resource_id: created.document.id,
+          payload: {
+            title: created.document.title,
+            document_type: created.document.document_type,
+            version: created.version.version,
+          },
+        }),
+      );
+
+      return created;
+    } finally {
+      await safeDelete(file.filePath);
+    }
+  }
+
+  private assertUploadAccepted(fileSize: number, mimeType: string): void {
+    if (fileSize <= 0) {
+      throw new BadRequestException('Uploaded file must not be empty');
+    }
+    if (fileSize > MAX_UPLOAD_BYTES) {
+      throw new BadRequestException(`Upload exceeds the ${MAX_UPLOAD_BYTES} byte limit`);
+    }
+    if (!ALLOWED_UPLOAD_MIME_TYPES.has(mimeType)) {
+      throw new BadRequestException(`Unsupported MIME type: ${mimeType}`);
+    }
+  }
+}
+
+function firstHeader(value: string | string[] | undefined): string | undefined {
+  return Array.isArray(value) ? value[0] : value;
+}
+
+function normalizeMimeType(value: string | undefined): string {
+  return (value || '').split(';', 1)[0]?.trim().toLowerCase() || 'application/octet-stream';
+}
+
+function sanitizeFilename(value: string): string {
+  return value.replace(/[^a-zA-Z0-9._-]/g, '_');
+}
+
+async function safeDelete(path: string): Promise<void> {
+  await rm(path, { force: true }).catch(() => undefined);
 }
 
 /**

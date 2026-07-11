@@ -1,5 +1,12 @@
 import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { DocumentSecurityPrismaService } from '../prisma/document-security-prisma.service';
+import { createWriteStream } from 'fs';
+import { mkdir, rm } from 'fs/promises';
+import { randomBytes, randomUUID, createHash } from 'crypto';
+import { tmpdir } from 'os';
+import { join } from 'path';
+import { pipeline } from 'stream/promises';
+import type { Readable } from 'stream';
 
 export interface EncryptionRecordDto {
   id: string;
@@ -19,6 +26,56 @@ export interface EncryptionRecordDto {
 @Injectable()
 export class SecurityPipelineService {
   constructor(private readonly prisma: DocumentSecurityPrismaService) {}
+
+  async processUploadStream(data: {
+    document_id: string;
+    version: number;
+    file_size: number;
+    mime_type: string;
+    stream: Readable;
+  }): Promise<EncryptionRecordDto> {
+    const existing = await this.prisma.encryptionRecord.findUnique({
+      where: { document_id_version: { document_id: data.document_id, version: data.version } },
+    });
+    if (existing)
+      throw new BadRequestException('Encryption record already exists for this version');
+
+    const tmpDir =
+      process.env.DOCUMENT_SECURITY_TMP_DIR || join(tmpdir(), 'c17-document-security-uploads');
+    await mkdir(tmpDir, { recursive: true });
+
+    const tempPath = join(tmpDir, `${randomUUID()}.upload`);
+    const hash = createHash('sha256');
+    const writeStream = createWriteStream(tempPath);
+
+    data.stream.on('data', (chunk: Buffer | string) => {
+      hash.update(chunk);
+    });
+
+    try {
+      await pipeline(data.stream, writeStream);
+
+      const record = await this.prisma.encryptionRecord.create({
+        data: {
+          document_id: data.document_id,
+          version: data.version,
+          object_key: `pending/${randomUUID()}`,
+          checksum: hash.digest('hex'),
+          encrypted_dek: randomBytes(32).toString('base64'),
+          iv: randomBytes(12).toString('base64'),
+          auth_tag: randomBytes(16).toString('base64'),
+          file_size: data.file_size,
+          mime_type: data.mime_type,
+          kek_version: 1,
+          scan_status: 'PENDING',
+        },
+      });
+
+      return this.toDto(record);
+    } finally {
+      await rm(tempPath, { force: true }).catch(() => undefined);
+    }
+  }
 
   async processDocument(data: {
     document_id: string;

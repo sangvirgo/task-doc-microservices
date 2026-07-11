@@ -8,9 +8,11 @@ import {
   Param,
   Post,
   Query,
+  Req,
 } from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import { z } from 'zod';
+import type { Request } from 'express';
 
 import { SecurityPipelineService, EncryptionRecordDto } from './security-pipeline.service';
 
@@ -36,10 +38,38 @@ const signSchema = z.object({
   signature: z.string().min(1),
 });
 
+const uploadHeaderSchema = z.object({
+  document_id: z.string().uuid(),
+  version: z.coerce.number().int().positive(),
+  file_size: z.coerce.number().int().positive(),
+  mime_type: z.string().min(1),
+});
+
 @ApiTags('security')
 @Controller('security')
 export class SecurityController {
   constructor(private readonly securityService: SecurityPipelineService) {}
+
+  @Post('uploads/process')
+  @HttpCode(HttpStatus.CREATED)
+  @ApiOperation({ summary: 'Accept a streamed plaintext upload from Document Management' })
+  async processUpload(@Req() req: Request): Promise<EncryptionRecordDto> {
+    const parsed = uploadHeaderSchema.safeParse({
+      document_id: req.headers['x-document-id'],
+      version: req.headers['x-document-version'],
+      file_size: req.headers['x-document-file-size'] ?? req.headers['content-length'],
+      mime_type: req.headers['content-type'],
+    });
+    if (!parsed.success) throw new BadRequestException(parsed.error.issues);
+
+    return this.securityService.processUploadStream({
+      document_id: parsed.data.document_id,
+      version: parsed.data.version,
+      file_size: parsed.data.file_size,
+      mime_type: parsed.data.mime_type,
+      stream: req,
+    });
+  }
 
   @Post('process')
   @ApiOperation({ summary: 'Process a document through the security pipeline' })

@@ -1,5 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { createReadStream } from 'fs';
 
 export interface SecurityProcessResult {
   id: string;
@@ -7,6 +8,19 @@ export interface SecurityProcessResult {
   version: number;
   scan_status: string;
   signed: boolean;
+}
+
+export interface SecurityUploadResult {
+  id: string;
+  document_id: string;
+  version: number;
+  object_key: string;
+  checksum: string;
+  encrypted_dek: string;
+  kek_version: number;
+  file_size: number;
+  mime_type: string;
+  scan_status: string;
 }
 
 /**
@@ -67,6 +81,49 @@ export class SecurityClient {
     } catch (error) {
       this.logger.warn(
         `Security client error: ${error instanceof Error ? error.message : 'unknown'}`,
+      );
+      return null;
+    } finally {
+      clearTimeout(timeout);
+    }
+  }
+
+  async processUpload(params: {
+    document_id: string;
+    version: number;
+    file_path: string;
+    file_size: number;
+    mime_type: string;
+    original_filename: string;
+  }): Promise<SecurityUploadResult | null> {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), this.timeoutMs);
+
+    try {
+      const response = await fetch(`${this.securityServiceUrl}/security/uploads/process`, {
+        method: 'POST',
+        headers: {
+          'content-type': params.mime_type,
+          'content-length': String(params.file_size),
+          'x-document-id': params.document_id,
+          'x-document-version': String(params.version),
+          'x-document-file-size': String(params.file_size),
+          'x-document-original-filename': params.original_filename,
+        },
+        body: createReadStream(params.file_path) as unknown as RequestInit['body'],
+        duplex: 'half',
+        signal: controller.signal,
+      });
+
+      if (!response.ok) {
+        this.logger.warn(`Security upload processing failed: ${response.status}`);
+        return null;
+      }
+
+      return (await response.json()) as SecurityUploadResult;
+    } catch (error) {
+      this.logger.warn(
+        `Security upload client error: ${error instanceof Error ? error.message : 'unknown'}`,
       );
       return null;
     } finally {

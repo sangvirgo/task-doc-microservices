@@ -8,6 +8,8 @@ import {
   ServiceUnavailableException,
 } from '@nestjs/common';
 import type { Request, Response } from 'express';
+import { Readable } from 'stream';
+import { pipeline } from 'stream/promises';
 import { getCorrelationId } from '@c17/observability';
 
 import { Public } from '../auth/jwt-auth.guard';
@@ -174,9 +176,13 @@ export class GatewayController {
       const requestContentType = req.headers['content-type'];
       const accept = req.headers['accept'];
       const authorization = req.headers['authorization'];
+      const contentLength = req.headers['content-length'];
       if (typeof requestContentType === 'string') headers['content-type'] = requestContentType;
       if (typeof accept === 'string') headers['accept'] = accept;
       if (typeof authorization === 'string') headers['authorization'] = authorization;
+      if (typeof contentLength === 'string' && /^\d+$/.test(contentLength)) {
+        headers['content-length'] = contentLength;
+      }
 
       // Propagate correlation ID
       const correlationId = getCorrelationId();
@@ -192,8 +198,11 @@ export class GatewayController {
       }
 
       // Build body for mutating methods
-      let body: string | undefined;
-      if (['POST', 'PUT', 'PATCH', 'DELETE'].includes(req.method) && req.body) {
+      let body: RequestInit['body'] | undefined;
+      const isStreamingUpload = this.isStreamingUploadRequest(req);
+      if (isStreamingUpload) {
+        body = Readable.toWeb(req);
+      } else if (['POST', 'PUT', 'PATCH', 'DELETE'].includes(req.method) && req.body) {
         body = JSON.stringify(req.body);
       }
 
@@ -207,6 +216,7 @@ export class GatewayController {
           method: req.method,
           headers,
           body,
+          duplex: body && isStreamingUpload ? 'half' : undefined,
           signal: controller.signal,
         });
       } finally {
@@ -219,11 +229,25 @@ export class GatewayController {
       // Forward response headers
       const contentType = response.headers.get('content-type');
       if (contentType) res.setHeader('content-type', contentType);
+      const responseContentLength = response.headers.get('content-length');
+      if (responseContentLength) res.setHeader('content-length', responseContentLength);
       const upstreamCorrelation = response.headers.get('x-correlation-id');
       if (upstreamCorrelation) res.setHeader('x-correlation-id', upstreamCorrelation);
+      res.status(status);
 
-      const responseBody = await response.text();
-      res.status(status).send(responseBody);
+      if (status !== response.status) {
+        const message =
+          status === 503 ? 'Upstream service unavailable' : 'Request was denied upstream';
+        res.json({ statusCode: status, message });
+        return;
+      }
+
+      if (!response.body) {
+        res.send();
+        return;
+      }
+
+      await pipeline(Readable.fromWeb(response.body as never), res);
     } catch (error: unknown) {
       // Fail-closed: any proxy error → 503
       if (error instanceof Error && error.name === 'AbortError') {
@@ -248,5 +272,18 @@ export class GatewayController {
     if (status === 403) return 403;
     if (status >= 500) return 503;
     return status;
+  }
+
+  private isStreamingUploadRequest(req: Request): boolean {
+    if (!['POST', 'PUT', 'PATCH'].includes(req.method)) return false;
+    if (!req.originalUrl.startsWith('/api/documents/upload')) return false;
+
+    const contentType = req.headers['content-type'];
+    if (typeof contentType !== 'string') return false;
+
+    return (
+      contentType.startsWith('multipart/form-data') ||
+      contentType.startsWith('application/octet-stream')
+    );
   }
 }

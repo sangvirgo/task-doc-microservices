@@ -23,7 +23,6 @@ export interface DocumentVersionDto {
   id: string;
   document_id: string;
   version: number;
-  object_key: string;
   file_size: number;
   mime_type: string;
   created_by: string;
@@ -56,7 +55,6 @@ export interface DownloadTicketDto {
   version: number;
   actor_id: string;
   expires_at: string;
-  object_key: string;
 }
 
 @Injectable()
@@ -64,6 +62,7 @@ export class DocumentsService {
   constructor(private readonly prisma: DocumentPrismaService) {}
 
   async createDocument(data: {
+    id?: string;
     title: string;
     document_type: string;
     owner_id: string;
@@ -73,6 +72,7 @@ export class DocumentsService {
   }): Promise<DocumentDto> {
     const document = await this.prisma.document.create({
       data: {
+        id: data.id,
         title: data.title,
         document_type: data.document_type,
         owner_id: data.owner_id,
@@ -97,6 +97,55 @@ export class DocumentsService {
   }): Promise<DocumentDto[]> {
     const documents = await this.prisma.document.findMany({ where: filters });
     return documents.map((d) => this.toDto(d));
+  }
+
+  async createUploadedDocument(data: {
+    document_id: string;
+    title: string;
+    document_type: string;
+    owner_id: string;
+    creator_id: string;
+    security_level?: string;
+    retention_policy?: string;
+    object_key: string;
+    checksum: string;
+    encrypted_dek: string;
+    file_size: number;
+    mime_type: string;
+    kek_version?: number;
+  }): Promise<{ document: DocumentDto; version: DocumentVersionDto }> {
+    const [document, version] = await this.prisma.$transaction([
+      this.prisma.document.create({
+        data: {
+          id: data.document_id,
+          title: data.title,
+          document_type: data.document_type,
+          owner_id: data.owner_id,
+          creator_id: data.creator_id,
+          security_level: data.security_level || 'INTERNAL',
+          retention_policy: data.retention_policy || null,
+          current_version: 1,
+        },
+      }),
+      this.prisma.documentVersion.create({
+        data: {
+          document_id: data.document_id,
+          version: 1,
+          object_key: data.object_key,
+          checksum: data.checksum,
+          encrypted_dek: data.encrypted_dek,
+          file_size: data.file_size,
+          mime_type: data.mime_type,
+          created_by: data.creator_id,
+          kek_version: data.kek_version || 1,
+        },
+      }),
+    ]);
+
+    return {
+      document: this.toDto(document),
+      version: this.versionToDto(version),
+    };
   }
 
   async createDocumentVersion(data: {
@@ -176,7 +225,6 @@ export class DocumentsService {
     document_id: string;
     version: number;
     actor_id: string;
-    object_key: string;
     expires_in_seconds: number;
     max_expires_at?: Date;
   }): Promise<DownloadTicketDto> {
@@ -195,7 +243,7 @@ export class DocumentsService {
         document_id: data.document_id,
         version: data.version,
         actor_id: data.actor_id,
-        object_key: data.object_key,
+        object_key: documentVersion.object_key,
         expires_at,
       },
     });
@@ -406,7 +454,6 @@ export class DocumentsService {
       id: version.id,
       document_id: version.document_id,
       version: version.version,
-      object_key: version.object_key,
       file_size: version.file_size,
       mime_type: version.mime_type,
       created_by: version.created_by,
@@ -428,7 +475,6 @@ export class DocumentsService {
       version: ticket.version,
       actor_id: ticket.actor_id,
       expires_at: ticket.expires_at.toISOString(),
-      object_key: ticket.object_key,
     };
   }
 
