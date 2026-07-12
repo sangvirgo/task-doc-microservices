@@ -52,6 +52,12 @@ export interface UploadPipelineResult {
   scan_status: string;
 }
 
+export interface DecryptedDownloadArtifact {
+  filePath: string;
+  fileSize: number;
+  mimeType: string;
+}
+
 interface EncryptionMaterial {
   checksum: string;
   objectKey: string;
@@ -321,6 +327,68 @@ export class SecurityPipelineService {
     }
 
     return plaintext;
+  }
+
+  async preparePlaintextDownload(
+    document_id: string,
+    version: number,
+  ): Promise<DecryptedDownloadArtifact> {
+    const record = await this.prisma.encryptionRecord.findUnique({
+      where: { document_id_version: { document_id, version } },
+    });
+    if (!record) throw new NotFoundException('Encryption record not found');
+    if (!record.signature) {
+      throw new InternalServerErrorException('Missing integrity signature');
+    }
+
+    const signaturePayload = this.buildSignaturePayload({
+      documentId: record.document_id,
+      version: record.version,
+      objectKey: record.object_key,
+      checksum: record.checksum,
+      encryptedDek: record.encrypted_dek,
+      iv: record.iv,
+      authTag: record.auth_tag,
+      kekVersion: record.kek_version,
+      fileSize: record.file_size,
+      mimeType: record.mime_type,
+    });
+
+    if (!this.signatureService.verify(signaturePayload, record.signature)) {
+      throw new ServiceUnavailableException('Stored document signature is invalid');
+    }
+
+    const tmpDir =
+      process.env.DOCUMENT_SECURITY_TMP_DIR || join(tmpdir(), 'c17-document-security-uploads');
+    await mkdir(tmpDir, { recursive: true });
+
+    const plaintextPath = join(tmpDir, `${randomUUID()}.download`);
+    const encryptedStream = await this.storageService.getObject(record.object_key);
+    const dek = this.kekProvider.unwrapDek(record.kek_version, record.encrypted_dek);
+    const decipher = createDecipheriv('aes-256-gcm', dek, Buffer.from(record.iv, 'base64'));
+    decipher.setAuthTag(Buffer.from(record.auth_tag, 'base64'));
+    const hash = createHash('sha256');
+
+    decipher.on('data', (chunk: Buffer | string) => {
+      hash.update(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+    });
+
+    try {
+      await pipeline(encryptedStream, decipher, createWriteStream(plaintextPath));
+      const checksum = hash.digest('hex');
+      if (checksum !== record.checksum) {
+        throw new ServiceUnavailableException('Stored document checksum is invalid');
+      }
+
+      return {
+        filePath: plaintextPath,
+        fileSize: record.file_size,
+        mimeType: record.mime_type,
+      };
+    } catch (error) {
+      await rm(plaintextPath, { force: true }).catch(() => undefined);
+      throw error;
+    }
   }
 
   private async assertVersionAvailable(documentId: string, version: number): Promise<void> {

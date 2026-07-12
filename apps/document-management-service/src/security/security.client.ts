@@ -131,4 +131,43 @@ export class SecurityClient {
       clearTimeout(timeout);
     }
   }
+
+  async redeemDownload(params: {
+    document_id: string;
+    version: number;
+    correlation_id?: string;
+  }): Promise<Response | null> {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), this.timeoutMs);
+
+    try {
+      const headers: Record<string, string> = {};
+      if (params.correlation_id) {
+        headers['x-correlation-id'] = params.correlation_id;
+      }
+
+      const response = await fetch(
+        `${this.securityServiceUrl}/security/${params.document_id}/versions/${params.version}/plaintext`,
+        {
+          method: 'GET',
+          headers,
+          signal: controller.signal,
+        },
+      );
+
+      if (!response.ok) {
+        this.logger.warn(`Security download processing failed: ${response.status}`);
+        return null;
+      }
+
+      return response;
+    } catch (error) {
+      this.logger.warn(
+        `Security download client error: ${error instanceof Error ? error.message : 'unknown'}`,
+      );
+      return null;
+    } finally {
+      clearTimeout(timeout);
+    }
+  }
 }

@@ -9,13 +9,19 @@ import {
   Post,
   Query,
   Req,
+  Res,
 } from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import { z } from 'zod';
 import type { Request } from 'express';
+import type { Response } from 'express';
+import { createReadStream } from 'fs';
+import { rm } from 'fs/promises';
+import { pipeline } from 'stream/promises';
 
 import {
   SecurityPipelineService,
+  DecryptedDownloadArtifact,
   EncryptionRecordDto,
   UploadPipelineResult,
 } from './security-pipeline.service';
@@ -131,6 +137,20 @@ export class SecurityController {
     return this.securityService.getRecord(documentId, versionNum);
   }
 
+  @Get(':documentId/versions/:version/plaintext')
+  @ApiOperation({ summary: 'Stream verified plaintext for an encrypted document version' })
+  async getPlaintext(
+    @Param('documentId') documentId: string,
+    @Param('version') version: string,
+    @Res() res: Response,
+  ): Promise<void> {
+    const versionNum = parseInt(version, 10);
+    if (isNaN(versionNum)) throw new BadRequestException('Invalid version number');
+
+    const artifact = await this.securityService.preparePlaintextDownload(documentId, versionNum);
+    await this.pipeArtifact(res, artifact);
+  }
+
   @Get('records')
   @ApiOperation({ summary: 'List encryption records' })
   async listRecords(@Query('document_id') document_id?: string): Promise<EncryptionRecordDto[]> {
@@ -149,5 +169,17 @@ export class SecurityController {
   @ApiOperation({ summary: 'Rotate KEK (creates new version, deactivates old)' })
   async rotateKek() {
     return this.securityService.rotateKek();
+  }
+
+  private async pipeArtifact(res: Response, artifact: DecryptedDownloadArtifact): Promise<void> {
+    res.setHeader('content-type', artifact.mimeType);
+    res.setHeader('content-length', String(artifact.fileSize));
+    res.status(HttpStatus.OK);
+
+    try {
+      await pipeline(createReadStream(artifact.filePath), res);
+    } finally {
+      await rm(artifact.filePath, { force: true }).catch(() => undefined);
+    }
   }
 }

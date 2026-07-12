@@ -12,6 +12,8 @@ import {
   Post,
   Query,
   Req,
+  Res,
+  ServiceUnavailableException,
   UploadedFile,
   UseInterceptors,
 } from '@nestjs/common';
@@ -19,11 +21,12 @@ import { FileInterceptor } from '@nestjs/platform-express';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import { z } from 'zod';
 import { randomUUID } from 'crypto';
-import type { Request } from 'express';
+import type { Request, Response } from 'express';
 import { createWriteStream, mkdirSync } from 'fs';
 import { stat, rm } from 'fs/promises';
 import { tmpdir } from 'os';
 import { basename, join } from 'path';
+import { Readable } from 'stream';
 import { pipeline } from 'stream/promises';
 
 import { CurrentUser, AuthContext } from '@c17/auth-context';
@@ -62,6 +65,10 @@ const documentVersionSchema = z.object({
 const downloadTicketSchema = z.object({
   version: z.number().int().positive(),
   expires_in_seconds: z.number().int().positive().default(3600),
+});
+
+const redeemDownloadTicketSchema = z.object({
+  ticket_id: z.string().uuid(),
 });
 
 const createRecordSchema = z.object({
@@ -489,6 +496,125 @@ export class DocumentsController {
         ? new Date(permCheck.effective_expires_at)
         : undefined,
     });
+  }
+
+  @Post(':id/versions/:version/redeem')
+  @ApiOperation({ summary: 'Redeem a single-use download ticket and stream plaintext bytes' })
+  async redeemDownloadTicket(
+    @Param('id') documentId: string,
+    @Param('version') version: string,
+    @Body() body: z.infer<typeof redeemDownloadTicketSchema>,
+    @CurrentUser() user: AuthContext | undefined,
+    @Res() res: Response,
+  ): Promise<void> {
+    if (!user) throw new ForbiddenException('Authentication required');
+
+    const parsed = redeemDownloadTicketSchema.safeParse(body);
+    if (!parsed.success) {
+      throw new BadRequestException(parsed.error.issues);
+    }
+
+    const versionNum = parseInt(version, 10);
+    if (isNaN(versionNum)) {
+      throw new BadRequestException('Invalid version number');
+    }
+
+    const correlationId = getCorrelationId() ?? randomUUID();
+    const auditDeny = async (reason_code: string) => {
+      await this.auditClient.record({
+        event_type: 'DOCUMENT_DOWNLOAD_DENIED',
+        actor_id: user.userId,
+        resource_type: 'DOCUMENT',
+        resource_id: documentId,
+        payload: { version: versionNum, ticket_id: parsed.data.ticket_id, reason_code },
+      });
+    };
+
+    const permCheck = await this.permissionClient.check({
+      actor_id: user.userId,
+      actor_role: user.role,
+      resource_type: 'DOCUMENT',
+      resource_id: documentId,
+      action: 'DOWNLOAD',
+      correlation_id: correlationId,
+    });
+
+    if (!permCheck.allowed) {
+      await auditDeny(permCheck.reason_code || 'DOWNLOAD_DENIED');
+      throw new ForbiddenException('Download denied');
+    }
+
+    const ticket = await this.documentsService
+      .getDownloadTicket(parsed.data.ticket_id)
+      .catch(async () => {
+        await auditDeny('DOWNLOAD_TICKET_NOT_FOUND');
+        throw new ForbiddenException('Download denied');
+      });
+
+    if (ticket.document_id !== documentId || ticket.version !== versionNum) {
+      await auditDeny('DOWNLOAD_TICKET_RESOURCE_MISMATCH');
+      throw new ForbiddenException('Download denied');
+    }
+
+    if (ticket.actor_id !== user.userId) {
+      await auditDeny('DOWNLOAD_TICKET_ACTOR_MISMATCH');
+      throw new ForbiddenException('Download denied');
+    }
+
+    if (ticket.used_at) {
+      await auditDeny('DOWNLOAD_TICKET_ALREADY_USED');
+      throw new ForbiddenException('Download denied');
+    }
+
+    if (ticket.expires_at.getTime() <= Date.now()) {
+      await auditDeny('DOWNLOAD_TICKET_EXPIRED');
+      throw new ForbiddenException('Download denied');
+    }
+
+    const markedUsed = await this.documentsService.markDownloadTicketUsed(ticket.id);
+    if (!markedUsed) {
+      await auditDeny('DOWNLOAD_TICKET_ALREADY_USED');
+      throw new ForbiddenException('Download denied');
+    }
+
+    const securityResponse = await this.securityClient.redeemDownload({
+      document_id: documentId,
+      version: versionNum,
+      correlation_id: correlationId,
+    });
+
+    if (!securityResponse?.body) {
+      await this.auditClient.record({
+        event_type: 'DOCUMENT_DOWNLOAD_DENIED',
+        actor_id: user.userId,
+        resource_type: 'DOCUMENT',
+        resource_id: documentId,
+        payload: {
+          version: versionNum,
+          ticket_id: parsed.data.ticket_id,
+          reason_code: 'DOCUMENT_DOWNLOAD_UNAVAILABLE',
+        },
+      });
+      throw new ServiceUnavailableException('Download unavailable');
+    }
+
+    await this.auditClient.record({
+      event_type: 'DOCUMENT_DOWNLOAD_REDEEMED',
+      actor_id: user.userId,
+      resource_type: 'DOCUMENT',
+      resource_id: documentId,
+      payload: { version: versionNum, ticket_id: parsed.data.ticket_id },
+    });
+
+    const contentType = securityResponse.headers.get('content-type') || 'application/octet-stream';
+    const contentLength = securityResponse.headers.get('content-length');
+    res.status(200);
+    res.setHeader('content-type', contentType);
+    if (contentLength) {
+      res.setHeader('content-length', contentLength);
+    }
+
+    await pipeline(Readable.fromWeb(securityResponse.body as never), res);
   }
 
   private async handleUploadedFile(

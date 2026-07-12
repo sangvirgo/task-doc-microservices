@@ -58,6 +58,15 @@ export interface DownloadTicketDto {
   expires_at: string;
 }
 
+export interface DownloadTicketRecord {
+  id: string;
+  document_id: string;
+  version: number;
+  actor_id: string;
+  expires_at: Date;
+  used_at: Date | null;
+}
+
 @Injectable()
 export class DocumentsService {
   constructor(private readonly prisma: DocumentPrismaService) {}
@@ -254,6 +263,28 @@ export class DocumentsService {
     });
 
     return this.ticketToDto(ticket);
+  }
+
+  async getDownloadTicket(ticketId: string): Promise<DownloadTicketRecord> {
+    const ticket = await this.prisma.downloadTicket.findUnique({ where: { id: ticketId } });
+    if (!ticket) throw new NotFoundException('Download ticket not found');
+
+    return {
+      id: ticket.id,
+      document_id: ticket.document_id,
+      version: ticket.version,
+      actor_id: ticket.actor_id,
+      expires_at: ticket.expires_at,
+      used_at: ticket.used_at,
+    };
+  }
+
+  async markDownloadTicketUsed(ticketId: string): Promise<boolean> {
+    const result = await this.prisma.downloadTicket.updateMany({
+      where: { id: ticketId, used_at: null },
+      data: { used_at: new Date() },
+    });
+    return result.count === 1;
   }
 
   async createRecord(data: {
