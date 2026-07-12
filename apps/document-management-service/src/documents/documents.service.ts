@@ -1,5 +1,8 @@
 import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import type { Prisma } from '@prisma/client-document';
+import { randomUUID } from 'crypto';
+
+import { EventType, Producer } from '@c17/contracts';
 
 import { DocumentPrismaService } from '../prisma/document-prisma.service';
 
@@ -79,17 +82,44 @@ export class DocumentsService {
     creator_id: string;
     security_level?: string;
     retention_policy?: string;
+    correlation_id?: string;
   }): Promise<DocumentDto> {
-    const document = await this.prisma.document.create({
-      data: {
-        id: data.id,
-        title: data.title,
-        document_type: data.document_type,
-        owner_id: data.owner_id,
-        creator_id: data.creator_id,
-        security_level: data.security_level || 'INTERNAL',
-        retention_policy: data.retention_policy || null,
-      },
+    const document = await this.prisma.$transaction(async (tx) => {
+      const created = await tx.document.create({
+        data: {
+          id: data.id,
+          title: data.title,
+          document_type: data.document_type,
+          owner_id: data.owner_id,
+          creator_id: data.creator_id,
+          security_level: data.security_level || 'INTERNAL',
+          retention_policy: data.retention_policy || null,
+        },
+      });
+
+      if (data.correlation_id) {
+        await tx.outboxEvent.create({
+          data: {
+            document_id: created.id,
+            event_id: randomUUID(),
+            event_type: EventType.DOCUMENT_CREATED,
+            correlation_id: data.correlation_id,
+            producer: Producer.DOCUMENT_MANAGEMENT_SERVICE,
+            actor_id: data.creator_id,
+            resource_type: 'DOCUMENT',
+            resource_id: created.id,
+            payload: {
+              title: created.title,
+              document_type: created.document_type,
+              owner_id: created.owner_id,
+              version: created.current_version,
+            },
+            occurred_at: new Date(),
+          },
+        });
+      }
+
+      return created;
     });
     return this.toDto(document);
   }
@@ -124,9 +154,10 @@ export class DocumentsService {
     file_size: number;
     mime_type: string;
     kek_version?: number;
+    correlation_id?: string;
   }): Promise<{ document: DocumentDto; version: DocumentVersionDto }> {
-    const [document, version] = await this.prisma.$transaction([
-      this.prisma.document.create({
+    const { document, version } = await this.prisma.$transaction(async (tx) => {
+      const document = await tx.document.create({
         data: {
           id: data.document_id,
           title: data.title,
@@ -137,8 +168,8 @@ export class DocumentsService {
           retention_policy: data.retention_policy || null,
           current_version: 1,
         },
-      }),
-      this.prisma.documentVersion.create({
+      });
+      const version = await tx.documentVersion.create({
         data: {
           document_id: data.document_id,
           version: 1,
@@ -151,8 +182,32 @@ export class DocumentsService {
           created_by: data.creator_id,
           kek_version: data.kek_version || 1,
         },
-      }),
-    ]);
+      });
+
+      if (data.correlation_id) {
+        await tx.outboxEvent.create({
+          data: {
+            document_id: document.id,
+            event_id: randomUUID(),
+            event_type: EventType.DOCUMENT_CREATED,
+            correlation_id: data.correlation_id,
+            producer: Producer.DOCUMENT_MANAGEMENT_SERVICE,
+            actor_id: data.creator_id,
+            resource_type: 'DOCUMENT',
+            resource_id: document.id,
+            payload: {
+              title: document.title,
+              document_type: document.document_type,
+              owner_id: document.owner_id,
+              version: version.version,
+            },
+            occurred_at: new Date(),
+          },
+        });
+      }
+
+      return { document, version };
+    });
 
     return {
       document: this.toDto(document),
@@ -375,10 +430,8 @@ export class DocumentsService {
         record_id: data.record_id,
         submitter_id: data.submitter_id,
         status: 'DRAFT',
-        manifest:
-          data.manifest === undefined ? undefined : (data.manifest as Prisma.InputJsonValue),
-        metadata:
-          data.metadata === undefined ? undefined : (data.metadata as Prisma.InputJsonValue),
+        manifest: data.manifest === undefined ? undefined : toJsonValue(data.manifest),
+        metadata: data.metadata === undefined ? undefined : toJsonValue(data.metadata),
       },
     });
 
@@ -561,4 +614,8 @@ export class DocumentsService {
       added_at: entry.added_at.toISOString(),
     };
   }
+}
+
+function toJsonValue(value: Record<string, unknown>): Prisma.InputJsonValue {
+  return value as Prisma.InputJsonValue;
 }

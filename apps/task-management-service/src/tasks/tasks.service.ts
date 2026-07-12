@@ -5,6 +5,10 @@ import {
   ConflictException,
   ForbiddenException,
 } from '@nestjs/common';
+import { randomUUID } from 'crypto';
+
+import { EventType, Producer } from '@c17/contracts';
+
 import { TaskPrismaService } from '../prisma/task-prisma.service';
 
 const CANONICAL_STATUSES = [
@@ -111,6 +115,7 @@ export class TasksService {
     assignee_id?: string;
     parent_task_id?: string;
     deadline?: Date;
+    correlation_id?: string;
   }): Promise<TaskDto> {
     if (data.parent_task_id) {
       const parent = await this.requireTask(data.parent_task_id);
@@ -149,6 +154,27 @@ export class TasksService {
             task_id: created.id,
             user_id: data.assignee_id,
             role: 'ASSIGNEE',
+          },
+        });
+      }
+
+      if (data.correlation_id) {
+        await tx.outboxEvent.create({
+          data: {
+            task_id: created.id,
+            event_id: randomUUID(),
+            event_type: EventType.TASK_CREATED,
+            correlation_id: data.correlation_id,
+            producer: Producer.TASK_MANAGEMENT_SERVICE,
+            actor_id: data.creator_id,
+            resource_type: 'TASK',
+            resource_id: created.id,
+            payload: {
+              title: created.title,
+              assignee_id: created.assignee_id,
+              deadline: created.deadline?.toISOString() ?? null,
+            },
+            occurred_at: new Date(),
           },
         });
       }

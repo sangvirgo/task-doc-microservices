@@ -7,7 +7,6 @@ import {
   Headers,
   HttpCode,
   HttpStatus,
-  Inject,
   Param,
   Post,
   Query,
@@ -30,8 +29,6 @@ import { Readable } from 'stream';
 import { pipeline } from 'stream/promises';
 
 import { CurrentUser, AuthContext } from '@c17/auth-context';
-import { buildEventEnvelope } from '@c17/contracts';
-import { EVENT_PUBLISHER, type EventPublisher } from '@c17/messaging';
 import { getCorrelationId } from '@c17/observability';
 
 import {
@@ -170,7 +167,6 @@ export class DocumentsController {
     private readonly permissionClient: PermissionClient,
     private readonly auditClient: AuditClient,
     private readonly securityClient: SecurityClient,
-    @Inject(EVENT_PUBLISHER) private readonly eventPublisher: EventPublisher,
   ) {}
 
   @Get()
@@ -283,6 +279,7 @@ export class DocumentsController {
         creator_id: user.userId,
         security_level: parsed.data.security_level,
         retention_policy: parsed.data.retention_policy,
+        correlation_id: getCorrelationId() ?? randomUUID(),
       })
       .then(async (doc) => {
         await this.auditClient.record({
@@ -296,19 +293,6 @@ export class DocumentsController {
             security_level: doc.security_level,
           },
         });
-        void this.eventPublisher.publish(
-          buildEventEnvelope({
-            event_id: randomUUID(),
-            event_type: 'document.created',
-            occurred_at: new Date().toISOString(),
-            producer: 'document-management-service',
-            correlation_id: randomUUID(),
-            actor_id: user.userId,
-            resource_type: 'DOCUMENT',
-            resource_id: doc.id,
-            payload: { title: doc.title, document_type: doc.document_type },
-          }),
-        );
         return doc;
       });
   }
@@ -669,6 +653,7 @@ export class DocumentsController {
         file_size: processed.file_size,
         mime_type: processed.mime_type,
         kek_version: processed.kek_version,
+        correlation_id: getCorrelationId() ?? randomUUID(),
       });
 
       await this.auditClient.record({
@@ -683,24 +668,6 @@ export class DocumentsController {
           version: created.version.version,
         },
       });
-      void this.eventPublisher.publish(
-        buildEventEnvelope({
-          event_id: randomUUID(),
-          event_type: 'document.created',
-          occurred_at: new Date().toISOString(),
-          producer: 'document-management-service',
-          correlation_id: getCorrelationId() ?? randomUUID(),
-          actor_id: user.userId,
-          resource_type: 'DOCUMENT',
-          resource_id: created.document.id,
-          payload: {
-            title: created.document.title,
-            document_type: created.document.document_type,
-            version: created.version.version,
-          },
-        }),
-      );
-
       return created;
     } finally {
       await safeDelete(file.filePath);

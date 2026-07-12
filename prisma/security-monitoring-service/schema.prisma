@@ -50,3 +50,14 @@ model SecurityEventCounter {
   @@index([rule_id])
   @@index([actor_id])
 }
+
+model ConsumedEvent {
+  id           String   @id @default(uuid())
+  event_id     String   @unique
+  event_type   String
+  resource_id  String
+  processed_at DateTime @default(now())
+  metadata     Json?
+
+  @@index([event_type, processed_at])
+}

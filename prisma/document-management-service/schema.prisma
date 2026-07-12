@@ -24,11 +24,37 @@ model Document {
   updated_at       DateTime  @updatedAt
 
   versions DocumentVersion[]
+  outboxEvents OutboxEvent[]
 
   @@index([owner_id])
   @@index([creator_id])
   @@index([status])
   @@index([record_id])
+}
+
+model OutboxEvent {
+  id             String   @id @default(uuid())
+  document_id    String?
+  event_id       String   @unique
+  event_type     String
+  correlation_id String
+  producer       String
+  actor_id       String?
+  resource_type  String
+  resource_id    String
+  schema_version Int      @default(1)
+  payload        Json
+  occurred_at    DateTime
+  published_at   DateTime?
+  available_at   DateTime @default(now())
+  attempts       Int      @default(0)
+  last_error     String?
+  created_at     DateTime @default(now())
+
+  document Document? @relation(fields: [document_id], references: [id], onDelete: SetNull)
+
+  @@index([published_at, available_at, created_at])
+  @@index([document_id])
 }
 
 model DocumentVersion {

@@ -1,10 +1,21 @@
 import { INestApplication } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
+import amqp from 'amqplib';
 import request from 'supertest';
 import { randomUUID } from 'crypto';
 
-import { AuditController } from '../src/audit/audit.controller';
-import { AuditService } from '../src/audit/audit.service';
+import { buildEventEnvelope, EventType } from '@c17/contracts';
+import {
+  DEAD_LETTER_EXCHANGE,
+  DOMAIN_EXCHANGE,
+  deadLetterQueueName,
+  deadLetterRoutingKey,
+  queueName,
+  retryQueueName,
+  RETRY_EXCHANGE,
+} from '@c17/messaging';
+import { loadLocalEnv } from '../../../test/load-local-env';
+
 import { AuditPrismaService } from '../src/prisma/audit-prisma.service';
 
 /**
@@ -15,6 +26,12 @@ import { AuditPrismaService } from '../src/prisma/audit-prisma.service';
 describe('Audit Log Service Integration (PostgreSQL)', () => {
   let app: INestApplication;
   let prisma: AuditPrismaService;
+  let connection: amqp.ChannelModel;
+  let channel: amqp.Channel;
+  let rabbitmqUrl: string;
+  const auditQueue = queueName('audit-log-service', 'domain-events');
+  const auditRetryQueue = retryQueueName(auditQueue);
+  const auditDlq = deadLetterQueueName(auditQueue);
 
   // Unique event IDs per test run to avoid collisions with seed data
   const EVENT_1_ID = randomUUID();
@@ -22,10 +39,33 @@ describe('Audit Log Service Integration (PostgreSQL)', () => {
   const ACTOR_ID = randomUUID();
 
   beforeAll(async () => {
+    loadLocalEnv();
+    rabbitmqUrl = requireEnv('RABBITMQ_URL');
     const moduleRef = await Test.createTestingModule({
-      controllers: [AuditController],
-      providers: [AuditService, AuditPrismaService],
+      imports: [(await import('../src/app.module')).AppModule],
     }).compile();
+
+    connection = await amqp.connect(rabbitmqUrl);
+    channel = await connection.createChannel();
+    await channel.assertExchange(DOMAIN_EXCHANGE, 'topic', { durable: true });
+    await channel.assertExchange(DEAD_LETTER_EXCHANGE, 'topic', { durable: true });
+    await channel.assertExchange(RETRY_EXCHANGE, 'topic', { durable: true });
+    await channel.assertQueue(auditQueue, {
+      durable: true,
+      deadLetterExchange: DEAD_LETTER_EXCHANGE,
+      deadLetterRoutingKey: deadLetterRoutingKey(auditQueue),
+    });
+    await channel.bindQueue(auditQueue, DOMAIN_EXCHANGE, '#');
+    await channel.assertQueue(auditRetryQueue, {
+      durable: true,
+      deadLetterExchange: DOMAIN_EXCHANGE,
+    });
+    await channel.bindQueue(auditRetryQueue, RETRY_EXCHANGE, '#');
+    await channel.assertQueue(auditDlq, { durable: true });
+    await channel.bindQueue(auditDlq, DEAD_LETTER_EXCHANGE, deadLetterRoutingKey(auditQueue));
+    await channel.purgeQueue(auditQueue);
+    await channel.purgeQueue(auditRetryQueue);
+    await channel.purgeQueue(auditDlq);
 
     app = moduleRef.createNestApplication();
     prisma = moduleRef.get(AuditPrismaService);
@@ -49,6 +89,8 @@ describe('Audit Log Service Integration (PostgreSQL)', () => {
     } catch {
       /* ignore */
     }
+    await channel?.close();
+    await connection?.close();
     await app.close();
   });
 
@@ -149,4 +191,70 @@ describe('Audit Log Service Integration (PostgreSQL)', () => {
       expect(event.actor_id).toBe(ACTOR_ID);
     }
   });
+
+  it('does not fork the chain on duplicate RabbitMQ delivery', async () => {
+    const eventId = randomUUID();
+    const resourceId = randomUUID();
+    const before = await prisma.auditEvent.count();
+
+    const envelope = buildEventEnvelope({
+      event_id: eventId,
+      event_type: EventType.TASK_CREATED,
+      occurred_at: '2026-07-29T09:30:00.000Z',
+      producer: 'task-management-service',
+      correlation_id: randomUUID(),
+      actor_id: ACTOR_ID,
+      resource_type: 'TASK',
+      resource_id: resourceId,
+      payload: { title: 'Rabbit audit event', assignee_id: ACTOR_ID },
+    });
+
+    const payload = Buffer.from(JSON.stringify(envelope));
+    channel.publish(DOMAIN_EXCHANGE, envelope.event_type, payload, {
+      persistent: true,
+      contentType: 'application/json',
+      messageId: envelope.event_id,
+      correlationId: envelope.correlation_id,
+    });
+    channel.publish(DOMAIN_EXCHANGE, envelope.event_type, payload, {
+      persistent: true,
+      contentType: 'application/json',
+      messageId: envelope.event_id,
+      correlationId: envelope.correlation_id,
+    });
+
+    await waitFor(async () => {
+      const event = await prisma.auditEvent.findUnique({ where: { id: eventId } });
+      return Boolean(event);
+    });
+
+    const after = await prisma.auditEvent.count();
+    expect(after).toBe(before + 1);
+
+    const event = await prisma.auditEvent.findUniqueOrThrow({ where: { id: eventId } });
+    expect(event.sequence_number).toBeGreaterThan(0);
+
+    const integrity = await request(app.getHttpServer()).post('/audit/chain/verify').expect(200);
+    expect(integrity.body).toEqual({ valid: true });
+  });
 });
+
+async function waitFor(predicate: () => Promise<boolean>, timeoutMs = 10_000): Promise<void> {
+  const startedAt = Date.now();
+  while (Date.now() - startedAt < timeoutMs) {
+    if (await predicate()) {
+      return;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 100));
+  }
+
+  throw new Error(`Condition not met within ${timeoutMs}ms`);
+}
+
+function requireEnv(name: string): string {
+  const value = process.env[name];
+  if (!value) {
+    throw new Error(`Missing required environment variable: ${name}`);
+  }
+  return value;
+}

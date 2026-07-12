@@ -17,7 +17,11 @@ export const EventType = {
   PERMISSION_GRANT_EXPIRED: 'permission.grant.expired',
 
   // task-management-service
+  TASK_CREATED: 'task.created',
   TASK_DEADLINE_CHANGED: 'task.deadline.changed',
+
+  // document-management-service
+  DOCUMENT_CREATED: 'document.created',
 } as const;
 
 export type EventType = (typeof EventType)[keyof typeof EventType];

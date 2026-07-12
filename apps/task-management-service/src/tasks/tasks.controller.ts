@@ -6,7 +6,6 @@ import {
   Get,
   HttpCode,
   HttpStatus,
-  Inject,
   Param,
   Post,
   Query,
@@ -16,8 +15,7 @@ import { z } from 'zod';
 import { randomUUID } from 'crypto';
 
 import { CurrentUser, AuthContext } from '@c17/auth-context';
-import { buildEventEnvelope, PermissionAction, ResourceType } from '@c17/contracts';
-import { EVENT_PUBLISHER, type EventPublisher } from '@c17/messaging';
+import { PermissionAction, ResourceType } from '@c17/contracts';
 import { getCorrelationId } from '@c17/observability';
 
 import { AncestorTaskSummaryDto, TasksService, TaskCommentDto, TaskDto } from './tasks.service';
@@ -101,7 +99,6 @@ export class TasksController {
     private readonly permissionClient: PermissionClient,
     private readonly auditClient: AuditClient,
     private readonly userRoleClient: UserRoleClient,
-    @Inject(EVENT_PUBLISHER) private readonly eventPublisher: EventPublisher,
   ) {}
 
   @Get()
@@ -165,6 +162,7 @@ export class TasksController {
         assignee_id: parsed.data.assignee_id,
         parent_task_id: parsed.data.parent_task_id,
         deadline: parsed.data.deadline ? new Date(parsed.data.deadline) : undefined,
+        correlation_id: getCorrelationId() ?? randomUUID(),
       })
       .then(async (task) => {
         await this.auditClient.record({
@@ -174,19 +172,6 @@ export class TasksController {
           resource_id: task.id,
           payload: { title: task.title, assignee_id: task.assignee_id },
         });
-        void this.eventPublisher.publish(
-          buildEventEnvelope({
-            event_id: randomUUID(),
-            event_type: 'task.created',
-            occurred_at: new Date().toISOString(),
-            producer: 'task-management-service',
-            correlation_id: getCorrelationId() ?? randomUUID(),
-            actor_id: user.userId,
-            resource_type: 'TASK',
-            resource_id: task.id,
-            payload: { title: task.title, assignee_id: task.assignee_id },
-          }),
-        );
         return task;
       });
   }

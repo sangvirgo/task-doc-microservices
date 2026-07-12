@@ -178,16 +178,7 @@ export class AuditService {
   }
 
   private canonicalJSON(obj: Record<string, unknown>): string {
-    const sorted = Object.keys(obj)
-      .sort()
-      .reduce(
-        (acc, key) => {
-          acc[key] = obj[key];
-          return acc;
-        },
-        {} as Record<string, unknown>,
-      );
-    return JSON.stringify(sorted);
+    return JSON.stringify(sortCanonical(obj));
   }
 
   private toDto(event: {
@@ -217,4 +208,24 @@ export class AuditService {
       created_at: event.created_at.toISOString(),
     };
   }
+}
+
+function sortCanonical(value: unknown): unknown {
+  if (Array.isArray(value)) {
+    return value.map((item) => sortCanonical(item));
+  }
+
+  if (value && typeof value === 'object') {
+    return Object.keys(value as Record<string, unknown>)
+      .sort()
+      .reduce(
+        (acc, key) => {
+          acc[key] = sortCanonical((value as Record<string, unknown>)[key]);
+          return acc;
+        },
+        {} as Record<string, unknown>,
+      );
+  }
+
+  return value;
 }

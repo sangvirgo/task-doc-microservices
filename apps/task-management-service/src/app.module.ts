@@ -11,6 +11,7 @@ import { PermissionClient } from './permissions/permission.client';
 import { AuditClient } from './audit/audit.client';
 import { TaskPrismaService } from './prisma/task-prisma.service';
 import { UserRoleClient } from './users/user-role.client';
+import { TaskOutboxRelayService } from './messaging/task-outbox-relay.service';
 
 export const SERVICE = 'task-management-service';
 
@@ -24,6 +25,9 @@ export const envSchema = baseEnvSchema.extend({
   AUDIT_SERVICE_URL: z.string().url().default('http://localhost:3007'),
   AUDIT_TIMEOUT_MS: z.coerce.number().int().positive().default(2000),
   RABBITMQ_URL: z.string().url().default('amqp://guest:guest@localhost:5672'),
+  OUTBOX_POLL_INTERVAL_MS: z.coerce.number().int().positive().default(1000),
+  OUTBOX_RETRY_DELAY_MS: z.coerce.number().int().positive().default(2000),
+  OUTBOX_BATCH_SIZE: z.coerce.number().int().positive().default(20),
 });
 
 @Module({
@@ -36,6 +40,13 @@ export const envSchema = baseEnvSchema.extend({
     }),
   ],
   controllers: [TasksController],
-  providers: [TaskPrismaService, TasksService, PermissionClient, AuditClient, UserRoleClient],
+  providers: [
+    TaskPrismaService,
+    TasksService,
+    PermissionClient,
+    AuditClient,
+    UserRoleClient,
+    TaskOutboxRelayService,
+  ],
 })
 export class AppModule {}

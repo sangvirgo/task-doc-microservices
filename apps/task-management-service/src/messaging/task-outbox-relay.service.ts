@@ -1,0 +1,100 @@
+import { Inject, Injectable, OnApplicationShutdown, OnModuleInit } from '@nestjs/common';
+
+import { EVENT_PUBLISHER, type EventPublisher } from '@c17/messaging';
+import { StructuredLogger } from '@c17/observability';
+
+import { TaskPrismaService } from '../prisma/task-prisma.service';
+
+const POLL_INTERVAL_MS = Number(process.env.OUTBOX_POLL_INTERVAL_MS || 1_000);
+const RETRY_DELAY_MS = Number(process.env.OUTBOX_RETRY_DELAY_MS || 2_000);
+const BATCH_SIZE = Number(process.env.OUTBOX_BATCH_SIZE || 20);
+
+@Injectable()
+export class TaskOutboxRelayService implements OnModuleInit, OnApplicationShutdown {
+  private timer?: NodeJS.Timeout;
+  private running = false;
+
+  constructor(
+    private readonly prisma: TaskPrismaService,
+    @Inject(EVENT_PUBLISHER) private readonly publisher: EventPublisher,
+    private readonly logger: StructuredLogger,
+  ) {}
+
+  onModuleInit(): void {
+    void this.flush();
+    this.timer = setInterval(() => void this.flush(), POLL_INTERVAL_MS);
+    this.timer.unref();
+  }
+
+  onApplicationShutdown(): void {
+    if (this.timer) {
+      clearInterval(this.timer);
+    }
+  }
+
+  private async flush(): Promise<void> {
+    if (this.running) return;
+    this.running = true;
+
+    try {
+      const events = await this.prisma.outboxEvent.findMany({
+        where: {
+          published_at: null,
+          available_at: { lte: new Date() },
+        },
+        orderBy: { created_at: 'asc' },
+        take: BATCH_SIZE,
+      });
+
+      for (const event of events) {
+        try {
+          await this.publisher.publish({
+            event_id: event.event_id,
+            event_type: event.event_type,
+            occurred_at: event.occurred_at.toISOString(),
+            producer: event.producer,
+            correlation_id: event.correlation_id,
+            actor_id: event.actor_id,
+            resource_type: event.resource_type,
+            resource_id: event.resource_id,
+            schema_version: event.schema_version,
+            payload: event.payload as Record<string, unknown>,
+          });
+
+          await this.prisma.outboxEvent.update({
+            where: { id: event.id },
+            data: {
+              published_at: new Date(),
+              attempts: { increment: 1 },
+              last_error: null,
+            },
+          });
+        } catch (error) {
+          await this.prisma.outboxEvent.update({
+            where: { id: event.id },
+            data: {
+              attempts: { increment: 1 },
+              available_at: new Date(Date.now() + RETRY_DELAY_MS),
+              last_error: limitError(error),
+            },
+          });
+          this.logger.warn(
+            {
+              event_id: event.event_id,
+              event_type: event.event_type,
+              error: limitError(error),
+            },
+            'TaskOutboxRelayService',
+          );
+        }
+      }
+    } finally {
+      this.running = false;
+    }
+  }
+}
+
+function limitError(error: unknown): string {
+  const message = error instanceof Error ? error.message : 'unknown';
+  return message.slice(0, 500);
+}

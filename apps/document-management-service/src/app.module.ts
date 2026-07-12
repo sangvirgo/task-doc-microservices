@@ -15,6 +15,7 @@ import { DocumentPrismaService } from './prisma/document-prisma.service';
 import { PermissionClient } from './permissions/permission.client';
 import { AuditClient } from './audit/audit.client';
 import { SecurityClient } from './security/security.client';
+import { DocumentOutboxRelayService } from './messaging/document-outbox-relay.service';
 
 export const SERVICE = 'document-management-service';
 
@@ -28,6 +29,9 @@ export const envSchema = baseEnvSchema.extend({
   DOCUMENT_SECURITY_URL: z.string().url().default('http://localhost:3005'),
   SECURITY_TIMEOUT_MS: z.coerce.number().int().positive().default(5000),
   RABBITMQ_URL: z.string().url().default('amqp://guest:guest@localhost:5672'),
+  OUTBOX_POLL_INTERVAL_MS: z.coerce.number().int().positive().default(1000),
+  OUTBOX_RETRY_DELAY_MS: z.coerce.number().int().positive().default(2000),
+  OUTBOX_BATCH_SIZE: z.coerce.number().int().positive().default(20),
 });
 
 @Module({
@@ -46,6 +50,7 @@ export const envSchema = baseEnvSchema.extend({
     PermissionClient,
     AuditClient,
     SecurityClient,
+    DocumentOutboxRelayService,
   ],
 })
 export class AppModule {}
