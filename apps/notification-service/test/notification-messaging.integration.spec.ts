@@ -121,6 +121,90 @@ describe('Notification event consumer integration (PostgreSQL + RabbitMQ)', () =
     });
     expect(notifications).toHaveLength(1);
   });
+
+  it('consumes security.alert.created and persists one notification when only in-app is enabled', async () => {
+    const actorId = randomUUID();
+    await prisma.notificationPreference.create({
+      data: {
+        user_id: actorId,
+        in_app_enabled: true,
+        email_enabled: false,
+      },
+    });
+
+    const envelope = buildEventEnvelope({
+      event_id: randomUUID(),
+      event_type: EventType.SECURITY_ALERT_CREATED,
+      occurred_at: '2026-07-29T11:00:00.000Z',
+      producer: 'security-monitoring-service',
+      correlation_id: randomUUID(),
+      actor_id: actorId,
+      resource_type: 'SECURITY_ALERT',
+      resource_id: randomUUID(),
+      payload: {
+        severity: 'HIGH',
+        rule_type: 'FAILED_LOGIN',
+        status: 'OPEN',
+      },
+    });
+
+    publishEnvelope(channel, envelope);
+
+    await waitFor(async () => {
+      const notifications = await prisma.notification.findMany({
+        where: { recipient_id: actorId },
+      });
+      return notifications.length === 1;
+    });
+
+    const notifications = await prisma.notification.findMany({
+      where: { recipient_id: actorId },
+    });
+    expect(notifications).toHaveLength(1);
+    expect(notifications[0].type).toBe('SECURITY_ALERT');
+    expect(notifications[0].channel).toBe('IN_APP');
+  });
+
+  it('suppresses security alert notifications when every channel is disabled', async () => {
+    const actorId = randomUUID();
+    await prisma.notificationPreference.create({
+      data: {
+        user_id: actorId,
+        in_app_enabled: false,
+        email_enabled: false,
+      },
+    });
+
+    const envelope = buildEventEnvelope({
+      event_id: randomUUID(),
+      event_type: EventType.SECURITY_ALERT_CREATED,
+      occurred_at: '2026-07-29T11:05:00.000Z',
+      producer: 'security-monitoring-service',
+      correlation_id: randomUUID(),
+      actor_id: actorId,
+      resource_type: 'SECURITY_ALERT',
+      resource_id: randomUUID(),
+      payload: {
+        severity: 'MEDIUM',
+        rule_type: 'DENIED_CONTENT_ACCESS',
+        status: 'OPEN',
+      },
+    });
+
+    publishEnvelope(channel, envelope);
+
+    await waitFor(async () => {
+      const consumed = await prisma.consumedEvent.findUnique({
+        where: { event_id: envelope.event_id },
+      });
+      return consumed !== null;
+    });
+
+    const notifications = await prisma.notification.findMany({
+      where: { recipient_id: actorId },
+    });
+    expect(notifications).toHaveLength(0);
+  });
 });
 
 function publishEnvelope(

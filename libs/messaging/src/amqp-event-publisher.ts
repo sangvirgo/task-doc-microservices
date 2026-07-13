@@ -63,7 +63,16 @@ export class AmqpEventPublisher implements EventPublisher, OnModuleInit, OnAppli
   }
 
   async onApplicationShutdown(): Promise<void> {
-    await this.channel?.close();
-    await this.connection?.close();
+    try {
+      await this.channel?.close();
+    } catch {
+      // Best-effort shutdown: a late broker/channel close during process teardown is non-fatal.
+    }
+
+    try {
+      await this.connection?.close();
+    } catch {
+      // Best-effort shutdown: a late broker/channel close during process teardown is non-fatal.
+    }
   }
 }

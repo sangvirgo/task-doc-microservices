@@ -6,6 +6,17 @@ import { createHash, randomUUID } from 'crypto';
 import { AuthPrismaService } from '../prisma/auth-prisma.service';
 import { RedisService } from '../redis/redis.service';
 
+export class AuthLoginFailedError extends UnauthorizedException {
+  constructor(
+    message: string,
+    readonly email: string,
+    readonly userId: string | null,
+    readonly reasonCode: 'INVALID_CREDENTIALS' | 'ACCOUNT_LOCKED',
+  ) {
+    super(message);
+  }
+}
+
 export interface TokenPair {
   access_token: string;
   refresh_token: string;
@@ -55,15 +66,15 @@ export class AuthService {
   async login(email: string, password: string): Promise<TokenPair> {
     const user = await this.prisma.user.findUnique({ where: { email } });
     if (!user) {
-      throw new UnauthorizedException('Invalid credentials');
+      throw new AuthLoginFailedError('Invalid credentials', email, null, 'INVALID_CREDENTIALS');
     }
 
     if (user.locked_at) {
-      throw new UnauthorizedException('Account is locked');
+      throw new AuthLoginFailedError('Account is locked', email, user.id, 'ACCOUNT_LOCKED');
     }
 
     if (!this.verifyPassword(password, user.password_hash)) {
-      throw new UnauthorizedException('Invalid credentials');
+      throw new AuthLoginFailedError('Invalid credentials', email, user.id, 'INVALID_CREDENTIALS');
     }
 
     return this.issueTokenPair(user.id, user.email, user.role);
@@ -101,7 +112,9 @@ export class AuthService {
     return this.issueTokenPair(storedToken.user.id, storedToken.user.email, storedToken.user.role);
   }
 
-  async logout(refreshToken: string): Promise<void> {
+  async logout(
+    refreshToken: string,
+  ): Promise<{ user_id: string; refresh_token_id: string } | null> {
     const tokenHash = this.hashToken(refreshToken);
     const storedToken = await this.prisma.refreshToken.findUnique({
       where: { token_hash: tokenHash },
@@ -113,7 +126,10 @@ export class AuthService {
         data: { revoked_at: new Date() },
       });
       await this.redis.deleteSession(storedToken.id);
+      return { user_id: storedToken.user_id, refresh_token_id: storedToken.id };
     }
+
+    return null;
   }
 
   async revokeAllUserTokens(userId: string): Promise<void> {

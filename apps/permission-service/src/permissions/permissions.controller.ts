@@ -6,21 +6,28 @@ import {
   HttpCode,
   HttpStatus,
   Get,
+  Inject,
+  Optional,
   Param,
   Delete,
   Query,
 } from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
+import { randomUUID } from 'crypto';
 import { z } from 'zod';
 
 import {
   PERMISSION_CHECK_PATH,
+  buildEventEnvelope,
   denied,
+  EventType,
+  Producer,
   type PermissionCheckRequest,
   type PermissionCheckResponse,
   permissionCheckRequestSchema,
   PermissionReasonCode,
 } from '@c17/contracts';
+import { EVENT_PUBLISHER, type EventPublisher } from '@c17/messaging';
 
 import { PermissionService, GrantDto } from './permission.service';
 
@@ -53,7 +60,10 @@ const revokeSchema = z.object({
 @ApiTags('permissions')
 @Controller()
 export class PermissionsController {
-  constructor(private readonly permissionService: PermissionService) {}
+  constructor(
+    private readonly permissionService: PermissionService,
+    @Optional() @Inject(EVENT_PUBLISHER) private readonly eventPublisher?: EventPublisher,
+  ) {}
 
   @Post(PERMISSION_CHECK_PATH)
   @ApiOperation({ summary: 'Check whether an actor has a permission on a resource' })
@@ -65,7 +75,7 @@ export class PermissionsController {
     }
 
     const req = parsed.data;
-    return this.permissionService.check({
+    const result = await this.permissionService.check({
       actor_id: req.actor_id,
       actor_role: req.actor_role,
       resource_type: req.resource_type,
@@ -73,6 +83,28 @@ export class PermissionsController {
       action: req.action,
       task_id: req.task_id,
     });
+
+    void this.eventPublisher
+      ?.publish(
+        buildEventEnvelope({
+          event_id: randomUUID(),
+          event_type: EventType.PERMISSION_DECISION_MADE,
+          occurred_at: new Date().toISOString(),
+          producer: Producer.PERMISSION_SERVICE,
+          correlation_id: req.correlation_id,
+          actor_id: req.actor_id,
+          resource_type: req.resource_type,
+          resource_id: req.resource_id,
+          payload: {
+            action: req.action,
+            allowed: result.allowed,
+            reason_code: result.reason_code,
+          },
+        }),
+      )
+      .catch(() => undefined);
+
+    return result;
   }
 
   @Post('grants')

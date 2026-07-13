@@ -1,4 +1,10 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Inject, Injectable, Optional, NotFoundException } from '@nestjs/common';
+import { randomUUID } from 'crypto';
+
+import { buildEventEnvelope, EventType, Producer } from '@c17/contracts';
+import { EVENT_PUBLISHER, type EventPublisher } from '@c17/messaging';
+
+import { AuthAdminClient } from '../auth/auth-admin.client';
 import { SecurityMonitoringPrismaService } from '../prisma/security-monitoring-prisma.service';
 
 export interface SecurityAlertDto {
@@ -28,7 +34,11 @@ export interface SecurityRuleDto {
 
 @Injectable()
 export class MonitoringService {
-  constructor(private readonly prisma: SecurityMonitoringPrismaService) {}
+  constructor(
+    private readonly prisma: SecurityMonitoringPrismaService,
+    private readonly authAdminClient: AuthAdminClient,
+    @Optional() @Inject(EVENT_PUBLISHER) private readonly eventPublisher?: EventPublisher,
+  ) {}
 
   async recordEvent(
     rule_id: string,
@@ -130,6 +140,156 @@ export class MonitoringService {
 
     const updated = await this.prisma.securityRule.update({ where: { id }, data: { enabled } });
     return this.toRuleDto(updated);
+  }
+
+  async handleRepeatedFailedLogin(event: {
+    actor_id: string | null;
+    correlation_id: string;
+    resource_id: string;
+    occurred_at: string;
+    payload: Record<string, unknown>;
+  }): Promise<void> {
+    if (!event.actor_id) {
+      return;
+    }
+
+    await this.processRuleType({
+      actorId: event.actor_id,
+      ruleType: 'FAILED_LOGIN',
+      description: 'Repeated failed login threshold reached',
+      correlationId: event.correlation_id,
+      occurredAt: event.occurred_at,
+      resourceId: event.resource_id,
+      metadata: {
+        reason_code:
+          typeof event.payload.reason_code === 'string' ? event.payload.reason_code : null,
+      },
+    });
+  }
+
+  async handlePermissionDenied(event: {
+    actor_id: string | null;
+    correlation_id: string;
+    resource_id: string;
+    occurred_at: string;
+    payload: Record<string, unknown>;
+  }): Promise<void> {
+    if (!event.actor_id || event.payload.allowed !== false) {
+      return;
+    }
+
+    await this.processRuleType({
+      actorId: event.actor_id,
+      ruleType: 'DENIED_CONTENT_ACCESS',
+      description: 'Repeated denied content access threshold reached',
+      correlationId: event.correlation_id,
+      occurredAt: event.occurred_at,
+      resourceId: event.resource_id,
+      metadata: {
+        action: typeof event.payload.action === 'string' ? event.payload.action : null,
+        reason_code:
+          typeof event.payload.reason_code === 'string' ? event.payload.reason_code : null,
+      },
+    });
+  }
+
+  private async processRuleType(input: {
+    actorId: string;
+    ruleType: string;
+    description: string;
+    correlationId: string;
+    occurredAt: string;
+    resourceId: string;
+    metadata: Record<string, unknown>;
+  }): Promise<void> {
+    const rules = await this.prisma.securityRule.findMany({
+      where: {
+        enabled: true,
+        rule_type: input.ruleType,
+      },
+      orderBy: { created_at: 'asc' },
+    });
+
+    for (const rule of rules) {
+      const windowMs = rule.window_minutes * 60_000;
+      const occurredAt = new Date(input.occurredAt);
+      const windowStart = new Date(Math.floor(occurredAt.getTime() / windowMs) * windowMs);
+
+      const outcome = await this.prisma.$transaction(async (tx) => {
+        const counter = await tx.securityEventCounter.upsert({
+          where: {
+            rule_id_actor_id_window_start: {
+              rule_id: rule.id,
+              actor_id: input.actorId,
+              window_start: windowStart,
+            },
+          },
+          create: {
+            rule_id: rule.id,
+            actor_id: input.actorId,
+            window_start: windowStart,
+            count: 1,
+          },
+          update: { count: { increment: 1 } },
+        });
+
+        if (counter.count !== rule.threshold) {
+          return null;
+        }
+
+        const alert = await tx.securityAlert.create({
+          data: {
+            rule_id: rule.id,
+            severity: rule.action === 'BLOCK' ? 'HIGH' : 'MEDIUM',
+            actor_id: input.actorId,
+            description: input.description,
+            metadata: {
+              count: counter.count,
+              threshold: rule.threshold,
+              window_start: windowStart.toISOString(),
+              rule_type: rule.rule_type,
+              correlation_id: input.correlationId,
+              resource_id: input.resourceId,
+              ...input.metadata,
+            },
+          },
+        });
+
+        return {
+          alertId: alert.id,
+          severity: alert.severity,
+          shouldBlock: rule.action === 'BLOCK',
+        };
+      });
+
+      if (!outcome) {
+        continue;
+      }
+
+      if (outcome.shouldBlock) {
+        await this.authAdminClient.revokeAllSessions(input.actorId);
+      }
+
+      void this.eventPublisher
+        ?.publish(
+          buildEventEnvelope({
+            event_id: randomUUID(),
+            event_type: EventType.SECURITY_ALERT_CREATED,
+            occurred_at: new Date().toISOString(),
+            producer: Producer.SECURITY_MONITORING_SERVICE,
+            correlation_id: input.correlationId,
+            actor_id: input.actorId,
+            resource_type: 'SECURITY_ALERT',
+            resource_id: outcome.alertId,
+            payload: {
+              severity: outcome.severity,
+              rule_type: input.ruleType,
+              status: 'OPEN',
+            },
+          }),
+        )
+        .catch(() => undefined);
+    }
   }
 
   private toAlertDto(alert: {

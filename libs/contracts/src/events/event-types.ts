@@ -16,6 +16,9 @@ export const EventType = {
   PERMISSION_DECISION_MADE: 'permission.decision.made',
   PERMISSION_GRANT_EXPIRED: 'permission.grant.expired',
 
+  // security-monitoring-service
+  SECURITY_ALERT_CREATED: 'security.alert.created',
+
   // task-management-service
   TASK_CREATED: 'task.created',
   TASK_DEADLINE_CHANGED: 'task.deadline.changed',

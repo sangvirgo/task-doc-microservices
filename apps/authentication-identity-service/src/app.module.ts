@@ -3,6 +3,7 @@ import { JwtModule } from '@nestjs/jwt';
 import { z } from 'zod';
 
 import { AppConfigModule, baseEnvSchema } from '@c17/config';
+import { MessagingModule } from '@c17/messaging';
 import { ObservabilityModule } from '@c17/observability';
 
 import { AuthController } from './auth/auth.controller';
@@ -17,12 +18,17 @@ export const envSchema = baseEnvSchema.extend({
   JWT_TTL_SECONDS: z.coerce.number().int().positive().default(1800),
   AUTH_DATABASE_URL: z.string().url(),
   REDIS_URL: z.string().default('redis://localhost:6379'),
+  RABBITMQ_URL: z.string().url().default('amqp://guest:guest@localhost:5672'),
 });
 
 @Module({
   imports: [
     AppConfigModule.forRoot({ serviceName: SERVICE, schema: envSchema }),
     ObservabilityModule,
+    MessagingModule.forRoot({
+      url: process.env.RABBITMQ_URL || 'amqp://guest:guest@localhost:5672',
+      inMemory: process.env.MESSAGING_IN_MEMORY === 'true',
+    }),
     JwtModule.register({
       secret: process.env.JWT_SECRET || 'dev-secret-min-32-chars-required',
       signOptions: { expiresIn: Number(process.env.JWT_TTL_SECONDS ?? 1800) },

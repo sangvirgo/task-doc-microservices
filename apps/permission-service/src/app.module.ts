@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { z } from 'zod';
 
 import { AppConfigModule, baseEnvSchema } from '@c17/config';
+import { MessagingModule } from '@c17/messaging';
 import { ObservabilityModule } from '@c17/observability';
 
 import { PermissionsController } from './permissions/permissions.controller';
@@ -21,6 +22,10 @@ export const envSchema = baseEnvSchema.extend({
   imports: [
     AppConfigModule.forRoot({ serviceName: SERVICE, schema: envSchema }),
     ObservabilityModule,
+    MessagingModule.forRoot({
+      url: process.env.RABBITMQ_URL || 'amqp://guest:guest@localhost:5672',
+      inMemory: process.env.MESSAGING_IN_MEMORY === 'true',
+    }),
   ],
   controllers: [PermissionsController],
   providers: [PermissionPrismaService, PermissionService, PermissionEventsConsumer],

@@ -1,11 +1,23 @@
-import { Injectable, Logger, BadRequestException, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  Inject,
+  Injectable,
+  Logger,
+  NotFoundException,
+  Optional,
+} from '@nestjs/common';
+import { randomUUID } from 'crypto';
 
 import {
+  buildEventEnvelope,
+  EventType,
   PermissionAction,
   PermissionReasonCode,
+  Producer,
   ResourceType,
   isAdminForbiddenAction,
 } from '@c17/contracts';
+import { EVENT_PUBLISHER, type EventPublisher } from '@c17/messaging';
 import { PermissionPrismaService } from '../prisma/permission-prisma.service';
 
 export interface GrantDto {
@@ -43,7 +55,10 @@ const TASK_PERMISSION_ACTIONS: ReadonlySet<PermissionAction> = new Set([
 export class PermissionService {
   private readonly logger = new Logger(PermissionService.name);
 
-  constructor(private readonly prisma: PermissionPrismaService) {}
+  constructor(
+    private readonly prisma: PermissionPrismaService,
+    @Optional() @Inject(EVENT_PUBLISHER) private readonly eventPublisher?: EventPublisher,
+  ) {}
 
   /**
    * Check whether an actor has permission on a resource (V3 §8.1).
@@ -266,7 +281,13 @@ export class PermissionService {
         revoked_at: null,
         effective_expires_at: { lte: now },
       },
-      select: { id: true },
+      select: {
+        id: true,
+        actor_id: true,
+        resource_type: true,
+        resource_id: true,
+        effective_expires_at: true,
+      },
     });
 
     if (dueGrants.length === 0) {
@@ -284,6 +305,25 @@ export class PermissionService {
         status: 'EXPIRED',
       },
     });
+
+    for (const grant of dueGrants) {
+      await this.eventPublisher?.publish(
+        buildEventEnvelope({
+          event_id: randomUUID(),
+          event_type: EventType.PERMISSION_GRANT_EXPIRED,
+          occurred_at: now.toISOString(),
+          producer: Producer.PERMISSION_SERVICE,
+          correlation_id: randomUUID(),
+          actor_id: grant.actor_id,
+          resource_type: grant.resource_type,
+          resource_id: grant.resource_id,
+          payload: {
+            grant_id: grant.id,
+            effective_expires_at: grant.effective_expires_at.toISOString(),
+          },
+        }),
+      );
+    }
 
     return result.count;
   }
