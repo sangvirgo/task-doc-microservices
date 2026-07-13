@@ -28,8 +28,9 @@ import { basename, join } from 'path';
 import { Readable } from 'stream';
 import { pipeline } from 'stream/promises';
 
-import { CurrentUser, AuthContext } from '@c17/auth-context';
+import { CurrentUser, AuthContext, isAdmin, hasCapability } from '@c17/auth-context';
 import { getCorrelationId } from '@c17/observability';
+import { Capability } from '@c17/contracts';
 
 import {
   DocumentsService,
@@ -37,6 +38,7 @@ import {
   DocumentVersionDto,
   RecordDto,
   DownloadTicketDto,
+  TransferPackageDto,
 } from './documents.service';
 import { PermissionClient } from '../permissions/permission.client';
 import { AuditClient } from '../audit/audit.client';
@@ -76,16 +78,6 @@ const createRecordSchema = z.object({
 const recordEntrySchema = z.object({
   document_id: z.string().uuid(),
   document_version_id: z.string().uuid(),
-});
-
-const transferPackageSchema = z.object({
-  manifest: z.record(z.unknown()).optional(),
-  metadata: z.record(z.unknown()).optional(),
-});
-
-const reviewPackageSchema = z.object({
-  approved: z.boolean(),
-  rejection_reason: z.string().optional(),
 });
 
 const TMP_UPLOAD_DIR =
@@ -710,7 +702,11 @@ async function safeDelete(path: string): Promise<void> {
 @ApiTags('records')
 @Controller('records')
 export class RecordsController {
-  constructor(private readonly documentsService: DocumentsService) {}
+  constructor(
+    private readonly documentsService: DocumentsService,
+    private readonly permissionClient: PermissionClient,
+    private readonly auditClient: AuditClient,
+  ) {}
 
   @Get()
   @ApiOperation({ summary: 'List records' })
@@ -728,17 +724,28 @@ export class RecordsController {
     @CurrentUser() user?: AuthContext,
   ): Promise<RecordDto> {
     if (!user) throw new ForbiddenException('Authentication required');
+    if (isAdmin(user)) throw new ForbiddenException('ADMIN cannot create records');
 
     const parsed = createRecordSchema.safeParse(body);
     if (!parsed.success) {
       throw new BadRequestException(parsed.error.issues);
     }
 
-    return this.documentsService.createRecord({
+    const record = await this.documentsService.createRecord({
       title: parsed.data.title,
       description: parsed.data.description,
       creator_id: user.userId,
     });
+
+    await this.auditClient.record({
+      event_type: 'RECORD_CREATED',
+      actor_id: user.userId,
+      resource_type: 'RECORD',
+      resource_id: record.id,
+      payload: { title: record.title, description: record.description },
+    });
+
+    return record;
   }
 
   @Get(':id')
@@ -755,17 +762,31 @@ export class RecordsController {
     @CurrentUser() user?: AuthContext,
   ) {
     if (!user) throw new ForbiddenException('Authentication required');
+    if (isAdmin(user)) throw new ForbiddenException('ADMIN cannot modify records');
 
     const parsed = recordEntrySchema.safeParse(body);
     if (!parsed.success) {
       throw new BadRequestException(parsed.error.issues);
     }
 
-    return this.documentsService.addDocumentToRecord(
+    const entry = await this.documentsService.addDocumentToRecord(
       recordId,
       parsed.data.document_id,
       parsed.data.document_version_id,
     );
+
+    await this.auditClient.record({
+      event_type: 'RECORD_ENTRY_ADDED',
+      actor_id: user.userId,
+      resource_type: 'RECORD',
+      resource_id: recordId,
+      payload: {
+        document_id: parsed.data.document_id,
+        document_version_id: parsed.data.document_version_id,
+      },
+    });
+
+    return entry;
   }
 
   @Post(':id/seal')
@@ -776,7 +797,32 @@ export class RecordsController {
     @CurrentUser() user?: AuthContext,
   ): Promise<RecordDto> {
     if (!user) throw new ForbiddenException('Authentication required');
-    return this.documentsService.sealRecord(recordId);
+    if (isAdmin(user)) throw new ForbiddenException('ADMIN cannot seal records');
+
+    const permCheck = await this.permissionClient.check({
+      actor_id: user.userId,
+      actor_role: user.role,
+      resource_type: 'RECORD',
+      resource_id: recordId,
+      action: 'TRANSFER',
+      correlation_id: getCorrelationId() ?? randomUUID(),
+    });
+
+    if (!permCheck.allowed) {
+      throw new ForbiddenException(`Record seal denied: ${permCheck.reason_code}`);
+    }
+
+    const record = await this.documentsService.sealRecord(recordId);
+
+    await this.auditClient.record({
+      event_type: 'RECORD_SEALED',
+      actor_id: user.userId,
+      resource_type: 'RECORD',
+      resource_id: recordId,
+      payload: { title: record.title, entry_count: record.entries.length },
+    });
+
+    return record;
   }
 }
 
@@ -787,57 +833,280 @@ export class RecordsController {
 @ApiTags('transfer-packages')
 @Controller('transfer-packages')
 export class TransferPackagesController {
-  constructor(private readonly documentsService: DocumentsService) {}
+  constructor(
+    private readonly documentsService: DocumentsService,
+    private readonly permissionClient: PermissionClient,
+    private readonly auditClient: AuditClient,
+  ) {}
 
   @Post()
-  @ApiOperation({ summary: 'Create transfer package' })
+  @ApiOperation({ summary: 'Create transfer package (requires ARCHIVE_SUBMIT capability)' })
   async createPackage(
-    @Body() body: { record_id: string } & z.infer<typeof transferPackageSchema>,
+    @Body() body: { record_id: string },
     @CurrentUser() user?: AuthContext,
-  ) {
+  ): Promise<TransferPackageDto> {
     if (!user) throw new ForbiddenException('Authentication required');
+    if (isAdmin(user)) throw new ForbiddenException('ADMIN cannot create transfer packages');
+    if (!hasCapability(user, Capability.ARCHIVE_SUBMIT)) {
+      throw new ForbiddenException('ARCHIVE_SUBMIT capability required');
+    }
 
-    const parsed = transferPackageSchema.extend({ record_id: z.string().uuid() }).safeParse(body);
+    const parsed = z.object({ record_id: z.string().uuid() }).safeParse(body);
     if (!parsed.success) {
       throw new BadRequestException(parsed.error.issues);
     }
 
-    return this.documentsService.createTransferPackage({
+    const permCheck = await this.permissionClient.check({
+      actor_id: user.userId,
+      actor_role: user.role,
+      resource_type: 'TRANSFER_PACKAGE',
+      resource_id: parsed.data.record_id,
+      action: 'TRANSFER',
+      correlation_id: getCorrelationId() ?? randomUUID(),
+    });
+
+    if (!permCheck.allowed) {
+      throw new ForbiddenException(`Transfer package creation denied: ${permCheck.reason_code}`);
+    }
+
+    const pkg = await this.documentsService.createTransferPackage({
       record_id: parsed.data.record_id,
       submitter_id: user.userId,
-      manifest: parsed.data.manifest,
-      metadata: parsed.data.metadata,
     });
+
+    await this.auditClient.record({
+      event_type: 'TRANSFER_PACKAGE_CREATED',
+      actor_id: user.userId,
+      resource_type: 'TRANSFER_PACKAGE',
+      resource_id: pkg.id,
+      payload: { record_id: pkg.record_id, status: pkg.status },
+    });
+
+    return pkg;
   }
 
   @Post(':id/submit')
   @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: 'Submit package for archival' })
-  async submitPackage(@Param('id') packageId: string, @CurrentUser() user?: AuthContext) {
+  @ApiOperation({ summary: 'Submit package for archival (requires ARCHIVE_SUBMIT capability)' })
+  async submitPackage(
+    @Param('id') packageId: string,
+    @CurrentUser() user?: AuthContext,
+  ): Promise<TransferPackageDto> {
     if (!user) throw new ForbiddenException('Authentication required');
-    return this.documentsService.submitTransferPackage(packageId);
+    if (isAdmin(user)) throw new ForbiddenException('ADMIN cannot submit transfer packages');
+    if (!hasCapability(user, Capability.ARCHIVE_SUBMIT)) {
+      throw new ForbiddenException('ARCHIVE_SUBMIT capability required');
+    }
+
+    const permCheck = await this.permissionClient.check({
+      actor_id: user.userId,
+      actor_role: user.role,
+      resource_type: 'TRANSFER_PACKAGE',
+      resource_id: packageId,
+      action: 'TRANSFER',
+      correlation_id: getCorrelationId() ?? randomUUID(),
+    });
+
+    if (!permCheck.allowed) {
+      throw new ForbiddenException(`Transfer package submission denied: ${permCheck.reason_code}`);
+    }
+
+    const pkg = await this.documentsService.submitTransferPackage(packageId, user.userId);
+
+    await this.auditClient.record({
+      event_type: 'TRANSFER_PACKAGE_SUBMITTED',
+      actor_id: user.userId,
+      resource_type: 'TRANSFER_PACKAGE',
+      resource_id: packageId,
+      payload: { record_id: pkg.record_id, status: pkg.status },
+    });
+
+    return pkg;
   }
 
-  @Post(':id/review')
+  @Post(':id/receive')
   @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: 'Review transfer package (archivist action)' })
-  async reviewPackage(
+  @ApiOperation({ summary: 'Receive package for checking (requires ARCHIVE_RECEIVE capability)' })
+  async receivePackage(
     @Param('id') packageId: string,
-    @Body() body: z.infer<typeof reviewPackageSchema>,
     @CurrentUser() user?: AuthContext,
-  ) {
+  ): Promise<TransferPackageDto> {
     if (!user) throw new ForbiddenException('Authentication required');
+    if (isAdmin(user)) throw new ForbiddenException('ADMIN cannot receive transfer packages');
+    if (!hasCapability(user, Capability.ARCHIVE_RECEIVE)) {
+      throw new ForbiddenException('ARCHIVE_RECEIVE capability required');
+    }
 
-    const parsed = reviewPackageSchema.safeParse(body);
+    const permCheck = await this.permissionClient.check({
+      actor_id: user.userId,
+      actor_role: user.role,
+      resource_type: 'TRANSFER_PACKAGE',
+      resource_id: packageId,
+      action: 'TRANSFER',
+      correlation_id: getCorrelationId() ?? randomUUID(),
+    });
+
+    if (!permCheck.allowed) {
+      throw new ForbiddenException(`Transfer package reception denied: ${permCheck.reason_code}`);
+    }
+
+    const pkg = await this.documentsService.receiveTransferPackage(packageId, user.userId);
+
+    await this.auditClient.record({
+      event_type: 'TRANSFER_PACKAGE_RECEIVED',
+      actor_id: user.userId,
+      resource_type: 'TRANSFER_PACKAGE',
+      resource_id: packageId,
+      payload: { record_id: pkg.record_id, status: pkg.status },
+    });
+
+    return pkg;
+  }
+
+  @Post(':id/accept')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Accept package (requires ARCHIVE_RECEIVE capability)' })
+  async acceptPackage(
+    @Param('id') packageId: string,
+    @CurrentUser() user?: AuthContext,
+  ): Promise<TransferPackageDto> {
+    if (!user) throw new ForbiddenException('Authentication required');
+    if (isAdmin(user)) throw new ForbiddenException('ADMIN cannot accept transfer packages');
+    if (!hasCapability(user, Capability.ARCHIVE_RECEIVE)) {
+      throw new ForbiddenException('ARCHIVE_RECEIVE capability required');
+    }
+
+    const permCheck = await this.permissionClient.check({
+      actor_id: user.userId,
+      actor_role: user.role,
+      resource_type: 'TRANSFER_PACKAGE',
+      resource_id: packageId,
+      action: 'TRANSFER',
+      correlation_id: getCorrelationId() ?? randomUUID(),
+    });
+
+    if (!permCheck.allowed) {
+      throw new ForbiddenException(`Transfer package acceptance denied: ${permCheck.reason_code}`);
+    }
+
+    const pkg = await this.documentsService.acceptTransferPackage(packageId, user.userId);
+
+    await this.auditClient.record({
+      event_type: 'TRANSFER_PACKAGE_ACCEPTED',
+      actor_id: user.userId,
+      resource_type: 'TRANSFER_PACKAGE',
+      resource_id: packageId,
+      payload: { record_id: pkg.record_id, status: pkg.status },
+    });
+
+    return pkg;
+  }
+
+  @Post(':id/reject')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Reject package (requires ARCHIVE_RECEIVE capability)' })
+  async rejectPackage(
+    @Param('id') packageId: string,
+    @Body() body: { rejection_reason: string },
+    @CurrentUser() user?: AuthContext,
+  ): Promise<TransferPackageDto> {
+    if (!user) throw new ForbiddenException('Authentication required');
+    if (isAdmin(user)) throw new ForbiddenException('ADMIN cannot reject transfer packages');
+    if (!hasCapability(user, Capability.ARCHIVE_RECEIVE)) {
+      throw new ForbiddenException('ARCHIVE_RECEIVE capability required');
+    }
+
+    const parsed = z.object({ rejection_reason: z.string().min(1) }).safeParse(body);
     if (!parsed.success) {
       throw new BadRequestException(parsed.error.issues);
     }
 
-    return this.documentsService.reviewTransferPackage(
+    const permCheck = await this.permissionClient.check({
+      actor_id: user.userId,
+      actor_role: user.role,
+      resource_type: 'TRANSFER_PACKAGE',
+      resource_id: packageId,
+      action: 'TRANSFER',
+      correlation_id: getCorrelationId() ?? randomUUID(),
+    });
+
+    if (!permCheck.allowed) {
+      throw new ForbiddenException(`Transfer package rejection denied: ${permCheck.reason_code}`);
+    }
+
+    const pkg = await this.documentsService.rejectTransferPackage(
       packageId,
       user.userId,
-      parsed.data.approved,
       parsed.data.rejection_reason,
     );
+
+    await this.auditClient.record({
+      event_type: 'TRANSFER_PACKAGE_REJECTED',
+      actor_id: user.userId,
+      resource_type: 'TRANSFER_PACKAGE',
+      resource_id: packageId,
+      payload: {
+        record_id: pkg.record_id,
+        status: pkg.status,
+        rejection_reason: pkg.rejection_reason,
+      },
+    });
+
+    return pkg;
+  }
+
+  @Post(':id/archive')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Archive accepted package (requires ARCHIVE_RECEIVE capability)' })
+  async archivePackage(
+    @Param('id') packageId: string,
+    @CurrentUser() user?: AuthContext,
+  ): Promise<TransferPackageDto> {
+    if (!user) throw new ForbiddenException('Authentication required');
+    if (isAdmin(user)) throw new ForbiddenException('ADMIN cannot archive transfer packages');
+    if (!hasCapability(user, Capability.ARCHIVE_RECEIVE)) {
+      throw new ForbiddenException('ARCHIVE_RECEIVE capability required');
+    }
+
+    const permCheck = await this.permissionClient.check({
+      actor_id: user.userId,
+      actor_role: user.role,
+      resource_type: 'TRANSFER_PACKAGE',
+      resource_id: packageId,
+      action: 'TRANSFER',
+      correlation_id: getCorrelationId() ?? randomUUID(),
+    });
+
+    if (!permCheck.allowed) {
+      throw new ForbiddenException(`Transfer package archival denied: ${permCheck.reason_code}`);
+    }
+
+    const pkg = await this.documentsService.archiveTransferPackage(packageId);
+
+    await this.auditClient.record({
+      event_type: 'TRANSFER_PACKAGE_ARCHIVED',
+      actor_id: user.userId,
+      resource_type: 'TRANSFER_PACKAGE',
+      resource_id: packageId,
+      payload: { record_id: pkg.record_id, status: pkg.status },
+    });
+
+    return pkg;
+  }
+
+  @Get(':id')
+  @ApiOperation({ summary: 'Get transfer package by ID' })
+  async getPackage(@Param('id') packageId: string): Promise<TransferPackageDto> {
+    return this.documentsService.getTransferPackage(packageId);
+  }
+
+  @Get()
+  @ApiOperation({ summary: 'List transfer packages' })
+  async listPackages(
+    @Query('record_id') record_id?: string,
+    @Query('status') status?: string,
+    @Query('submitter_id') submitter_id?: string,
+  ): Promise<TransferPackageDto[]> {
+    return this.documentsService.listTransferPackages({ record_id, status, submitter_id });
   }
 }

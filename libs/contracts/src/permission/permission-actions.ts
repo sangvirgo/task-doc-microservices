@@ -6,6 +6,8 @@ export const ResourceType = {
   TASK: 'TASK',
   TASK_COMMENT: 'TASK_COMMENT',
   TRANSFER_PACKAGE: 'TRANSFER_PACKAGE',
+  RECORD: 'RECORD',
+  RETENTION_HOLD: 'RETENTION_HOLD',
 } as const;
 
 export type ResourceType = (typeof ResourceType)[keyof typeof ResourceType];

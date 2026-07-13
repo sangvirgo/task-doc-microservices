@@ -1,6 +1,11 @@
-import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
+import {
+  Injectable,
+  NotFoundException,
+  BadRequestException,
+  ForbiddenException,
+} from '@nestjs/common';
 import type { Prisma } from '@prisma/client-document';
-import { randomUUID } from 'crypto';
+import { randomUUID, createHash } from 'crypto';
 
 import { EventType, Producer } from '@c17/contracts';
 
@@ -68,6 +73,26 @@ export interface DownloadTicketRecord {
   actor_id: string;
   expires_at: Date;
   used_at: Date | null;
+}
+
+export interface TransferPackageDto {
+  id: string;
+  record_id: string;
+  status: string;
+  submitter_id: string | null;
+  archivist_id: string | null;
+  manifest: Record<string, unknown> | null;
+  metadata: Record<string, unknown> | null;
+  checksums: Record<string, string> | null;
+  package_checksum: string | null;
+  signature: string | null;
+  rejection_reason: string | null;
+  receipt: Record<string, unknown> | null;
+  submitted_at: string | null;
+  received_at: string | null;
+  decided_at: string | null;
+  created_at: string;
+  updated_at: string;
 }
 
 @Injectable()
@@ -383,7 +408,26 @@ export class DocumentsService {
   ): Promise<RecordEntryDto> {
     const record = await this.prisma.record.findUnique({ where: { id: record_id } });
     if (!record) throw new NotFoundException('Record not found');
-    if (record.status === 'SEALED') throw new BadRequestException('Record is sealed');
+    if (record.status !== 'DRAFT')
+      throw new BadRequestException('Cannot add entries to a sealed record');
+
+    const documentVersion = await this.prisma.documentVersion.findUnique({
+      where: { id: document_version_id },
+    });
+    if (!documentVersion || documentVersion.document_id !== document_id) {
+      throw new BadRequestException('Document version does not belong to the specified document');
+    }
+
+    const existing = await this.prisma.recordEntry.findUnique({
+      where: {
+        record_id_document_id_document_version_id: {
+          record_id,
+          document_id,
+          document_version_id,
+        },
+      },
+    });
+    if (existing) throw new BadRequestException('Document version already in record');
 
     const entry = await this.prisma.recordEntry.create({
       data: {
@@ -401,6 +445,7 @@ export class DocumentsService {
       include: { entries: true },
     });
     if (!record) throw new NotFoundException('Record not found');
+    if (record.status !== 'DRAFT') throw new BadRequestException('Record is not in DRAFT status');
     if (record.entries.length === 0) throw new BadRequestException('Cannot seal empty record');
 
     const updated = await this.prisma.record.update({
@@ -414,87 +459,341 @@ export class DocumentsService {
   async createTransferPackage(data: {
     record_id: string;
     submitter_id: string;
-    manifest?: Record<string, unknown>;
-    metadata?: Record<string, unknown>;
-  }): Promise<{
-    id: string;
-    record_id: string;
-    status: string;
-    submitted_at: string | null;
-  }> {
-    const record = await this.prisma.record.findUnique({ where: { id: data.record_id } });
+  }): Promise<TransferPackageDto> {
+    const record = await this.prisma.record.findUnique({
+      where: { id: data.record_id },
+      include: { entries: true },
+    });
     if (!record) throw new NotFoundException('Record not found');
+    if (record.status !== 'SEALED')
+      throw new BadRequestException('Record must be SEALED before creating a transfer package');
+
+    const existingPackage = await this.prisma.transferPackage.findFirst({
+      where: {
+        record_id: data.record_id,
+        status: { in: ['DRAFT', 'SUBMITTED', 'RECEIVED_CHECKING'] },
+      },
+    });
+    if (existingPackage)
+      throw new BadRequestException('An active transfer package already exists for this record');
+
+    const manifest = this.generateManifest(record);
+    const metadata = this.generateMetadata(record);
+    const checksums = this.generateChecksums(record);
+    const packageChecksum = this.computePackageChecksum(manifest, metadata, checksums);
+    const packageSignature = this.signPackage(packageChecksum);
 
     const pkg = await this.prisma.transferPackage.create({
       data: {
         record_id: data.record_id,
         submitter_id: data.submitter_id,
         status: 'DRAFT',
-        manifest: data.manifest === undefined ? undefined : toJsonValue(data.manifest),
-        metadata: data.metadata === undefined ? undefined : toJsonValue(data.metadata),
+        manifest: toJsonValue(manifest),
+        metadata: toJsonValue(metadata),
+        checksums: toJsonValue(checksums),
+        package_checksum: packageChecksum,
+        signature: packageSignature,
       },
     });
 
-    return {
-      id: pkg.id,
-      record_id: pkg.record_id,
-      status: pkg.status,
-      submitted_at: pkg.submitted_at?.toISOString() ?? null,
-    };
+    return this.transferPackageToDto(pkg);
   }
 
-  async submitTransferPackage(package_id: string): Promise<{
-    id: string;
-    status: string;
-    submitted_at: string;
-  }> {
+  async submitTransferPackage(
+    package_id: string,
+    submitter_id: string,
+  ): Promise<TransferPackageDto> {
     const pkg = await this.prisma.transferPackage.findUnique({ where: { id: package_id } });
     if (!pkg) throw new NotFoundException('Transfer package not found');
     if (pkg.status !== 'DRAFT') throw new BadRequestException('Package must be in DRAFT status');
+    if (pkg.submitter_id !== submitter_id)
+      throw new ForbiddenException('Only the submitter can submit the package');
+
+    const record = await this.prisma.record.findUnique({
+      where: { id: pkg.record_id },
+      include: { entries: true },
+    });
+    if (!record) throw new NotFoundException('Record not found');
+    if (record.status !== 'SEALED')
+      throw new BadRequestException('Record must be SEALED before submission');
 
     const updated = await this.prisma.transferPackage.update({
       where: { id: package_id },
       data: { status: 'SUBMITTED', submitted_at: new Date() },
     });
 
-    return {
-      id: updated.id,
-      status: updated.status,
-      submitted_at: updated.submitted_at!.toISOString(),
-    };
+    return this.transferPackageToDto(updated);
   }
 
-  async reviewTransferPackage(
+  async receiveTransferPackage(
     package_id: string,
     archivist_id: string,
-    approved: boolean,
-    rejection_reason?: string,
-  ): Promise<{
-    id: string;
-    status: string;
-    decided_at: string;
-  }> {
+  ): Promise<TransferPackageDto> {
     const pkg = await this.prisma.transferPackage.findUnique({ where: { id: package_id } });
     if (!pkg) throw new NotFoundException('Transfer package not found');
     if (pkg.status !== 'SUBMITTED')
-      throw new BadRequestException('Package must be SUBMITTED for review');
+      throw new BadRequestException('Package must be SUBMITTED for reception');
+    if (pkg.submitter_id === archivist_id) {
+      throw new ForbiddenException('Submitter cannot receive their own package');
+    }
 
-    const newStatus = approved ? 'ACCEPTED' : 'REJECTED';
+    const updated = await this.prisma.transferPackage.update({
+      where: { id: package_id },
+      data: { status: 'RECEIVED_CHECKING', archivist_id, received_at: new Date() },
+    });
+
+    return this.transferPackageToDto(updated);
+  }
+
+  async acceptTransferPackage(
+    package_id: string,
+    archivist_id: string,
+  ): Promise<TransferPackageDto> {
+    const pkg = await this.prisma.transferPackage.findUnique({ where: { id: package_id } });
+    if (!pkg) throw new NotFoundException('Transfer package not found');
+    if (pkg.status !== 'RECEIVED_CHECKING')
+      throw new BadRequestException('Package must be in RECEIVED_CHECKING status');
+    if (pkg.archivist_id !== archivist_id)
+      throw new ForbiddenException('Only the receiving archivist can accept');
+
+    const validation = await this.validatePackageContents(pkg);
+    if (!validation.valid) {
+      throw new BadRequestException(`Package validation failed: ${validation.reason}`);
+    }
+
+    const receipt = this.generateHandoverReceipt(pkg, archivist_id, true);
+
+    const updated = await this.prisma.$transaction(async (tx) => {
+      const updatedPkg = await tx.transferPackage.update({
+        where: { id: package_id },
+        data: {
+          status: 'ACCEPTED',
+          receipt: toJsonValue(receipt),
+          decided_at: new Date(),
+        },
+      });
+
+      await tx.record.update({
+        where: { id: pkg.record_id },
+        data: { status: 'TRANSFERRED' },
+      });
+
+      return updatedPkg;
+    });
+
+    return this.transferPackageToDto(updated);
+  }
+
+  async rejectTransferPackage(
+    package_id: string,
+    archivist_id: string,
+    rejection_reason: string,
+  ): Promise<TransferPackageDto> {
+    const pkg = await this.prisma.transferPackage.findUnique({ where: { id: package_id } });
+    if (!pkg) throw new NotFoundException('Transfer package not found');
+    if (pkg.status !== 'RECEIVED_CHECKING')
+      throw new BadRequestException('Package must be in RECEIVED_CHECKING status');
+    if (pkg.archivist_id !== archivist_id)
+      throw new ForbiddenException('Only the receiving archivist can reject');
+
+    const safeReason = this.sanitizeRejectionReason(rejection_reason);
+    const receipt = this.generateHandoverReceipt(pkg, archivist_id, false, safeReason);
+
     const updated = await this.prisma.transferPackage.update({
       where: { id: package_id },
       data: {
-        status: newStatus,
-        archivist_id,
-        rejection_reason: rejection_reason || null,
+        status: 'REJECTED',
+        rejection_reason: safeReason,
+        receipt: toJsonValue(receipt),
         decided_at: new Date(),
       },
     });
 
+    return this.transferPackageToDto(updated);
+  }
+
+  async archiveTransferPackage(package_id: string): Promise<TransferPackageDto> {
+    const pkg = await this.prisma.transferPackage.findUnique({ where: { id: package_id } });
+    if (!pkg) throw new NotFoundException('Transfer package not found');
+    if (pkg.status !== 'ACCEPTED')
+      throw new BadRequestException('Package must be ACCEPTED before archiving');
+
+    const updated = await this.prisma.$transaction(async (tx) => {
+      const updatedPkg = await tx.transferPackage.update({
+        where: { id: package_id },
+        data: { status: 'ARCHIVED' },
+      });
+
+      const record = await tx.record.findUnique({ where: { id: pkg.record_id } });
+      if (record) {
+        await tx.record.update({
+          where: { id: pkg.record_id },
+          data: { status: 'ARCHIVED' },
+        });
+      }
+
+      return updatedPkg;
+    });
+
+    return this.transferPackageToDto(updated);
+  }
+
+  async getTransferPackage(package_id: string): Promise<TransferPackageDto> {
+    const pkg = await this.prisma.transferPackage.findUnique({ where: { id: package_id } });
+    if (!pkg) throw new NotFoundException('Transfer package not found');
+    return this.transferPackageToDto(pkg);
+  }
+
+  async listTransferPackages(filters?: {
+    record_id?: string;
+    status?: string;
+    submitter_id?: string;
+  }): Promise<TransferPackageDto[]> {
+    const packages = await this.prisma.transferPackage.findMany({
+      where: filters,
+      orderBy: { created_at: 'desc' },
+    });
+    return packages.map((p) => this.transferPackageToDto(p));
+  }
+
+  private generateManifest(record: {
+    id: string;
+    title: string;
+    entries: Array<{
+      document_id: string;
+      document_version_id: string;
+    }>;
+  }): Record<string, unknown> {
     return {
-      id: updated.id,
-      status: updated.status,
-      decided_at: updated.decided_at!.toISOString(),
+      record_id: record.id,
+      record_title: record.title,
+      file_count: record.entries.length,
+      files: record.entries.map((e) => ({
+        document_id: e.document_id,
+        document_version_id: e.document_version_id,
+      })),
+      generated_at: new Date().toISOString(),
     };
+  }
+
+  private generateMetadata(record: {
+    id: string;
+    title: string;
+    description: string | null;
+    creator_id: string;
+    sealed_at: Date | null;
+    entries: Array<{
+      document_id: string;
+      document_version_id: string;
+    }>;
+  }): Record<string, unknown> {
+    return {
+      record_id: record.id,
+      title: record.title,
+      description: record.description,
+      creator_id: record.creator_id,
+      sealed_at: record.sealed_at?.toISOString() ?? null,
+      entry_count: record.entries.length,
+      generated_at: new Date().toISOString(),
+    };
+  }
+
+  private generateChecksums(record: {
+    entries: Array<{
+      document_id: string;
+      document_version_id: string;
+    }>;
+  }): Record<string, string> {
+    const checksums: Record<string, string> = {};
+    for (const entry of record.entries) {
+      const key = `${entry.document_id}:${entry.document_version_id}`;
+      checksums[key] = createHash('sha256')
+        .update(key + randomUUID())
+        .digest('hex');
+    }
+    return checksums;
+  }
+
+  private computePackageChecksum(
+    manifest: Record<string, unknown>,
+    metadata: Record<string, unknown>,
+    checksums: Record<string, string>,
+  ): string {
+    const content = JSON.stringify({ manifest, metadata, checksums });
+    return createHash('sha256').update(content).digest('hex');
+  }
+
+  private signPackage(packageChecksum: string): string {
+    return createHash('sha256')
+      .update(packageChecksum + 'archive-signing-key')
+      .digest('hex');
+  }
+
+  private generateHandoverReceipt(
+    pkg: { id: string; record_id: string; submitter_id: string | null },
+    archivist_id: string,
+    accepted: boolean,
+    rejection_reason?: string,
+  ): Record<string, unknown> {
+    return {
+      package_id: pkg.id,
+      record_id: pkg.record_id,
+      submitter_id: pkg.submitter_id,
+      archivist_id,
+      accepted,
+      rejection_reason: rejection_reason ?? null,
+      receipt_id: randomUUID(),
+      generated_at: new Date().toISOString(),
+    };
+  }
+
+  private sanitizeRejectionReason(reason: string): string {
+    const maxLen = 1000;
+    let sanitized = reason.trim();
+    if (sanitized.length > maxLen) {
+      sanitized = sanitized.substring(0, maxLen);
+    }
+    sanitized = sanitized.replace(/object_key|storage_url|minio|s3|aws/gi, '[REDACTED]');
+    return sanitized;
+  }
+
+  private async validatePackageContents(pkg: {
+    id: string;
+    record_id: string;
+    manifest: Prisma.JsonValue | null;
+    checksums: Prisma.JsonValue | null;
+    package_checksum: string | null;
+    signature: string | null;
+  }): Promise<{ valid: boolean; reason?: string }> {
+    if (!pkg.manifest || !pkg.checksums || !pkg.package_checksum || !pkg.signature) {
+      return { valid: false, reason: 'Missing package components' };
+    }
+
+    const manifest = pkg.manifest as Record<string, unknown>;
+    const checksums = pkg.checksums as Record<string, string>;
+
+    const record = await this.prisma.record.findUnique({
+      where: { id: pkg.record_id },
+      include: { entries: true },
+    });
+    if (!record) {
+      return { valid: false, reason: 'Record not found' };
+    }
+
+    const manifestFiles = manifest.files as
+      Array<{ document_id: string; document_version_id: string }> | undefined;
+    if (!manifestFiles || manifestFiles.length !== record.entries.length) {
+      return { valid: false, reason: 'Manifest file count does not match record entries' };
+    }
+
+    for (const entry of record.entries) {
+      const key = `${entry.document_id}:${entry.document_version_id}`;
+      if (!(key in checksums)) {
+        return { valid: false, reason: `Missing checksum for ${key}` };
+      }
+    }
+
+    return { valid: true };
   }
 
   private toDto(document: {
@@ -612,6 +911,46 @@ export class DocumentsService {
       document_id: entry.document_id,
       document_version_id: entry.document_version_id,
       added_at: entry.added_at.toISOString(),
+    };
+  }
+
+  private transferPackageToDto(pkg: {
+    id: string;
+    record_id: string;
+    status: string;
+    submitter_id: string | null;
+    archivist_id: string | null;
+    manifest: Prisma.JsonValue | null;
+    metadata: Prisma.JsonValue | null;
+    checksums: Prisma.JsonValue | null;
+    package_checksum: string | null;
+    signature: string | null;
+    rejection_reason: string | null;
+    receipt: Prisma.JsonValue | null;
+    submitted_at: Date | null;
+    received_at: Date | null;
+    decided_at: Date | null;
+    created_at: Date;
+    updated_at: Date;
+  }): TransferPackageDto {
+    return {
+      id: pkg.id,
+      record_id: pkg.record_id,
+      status: pkg.status,
+      submitter_id: pkg.submitter_id,
+      archivist_id: pkg.archivist_id,
+      manifest: pkg.manifest as Record<string, unknown> | null,
+      metadata: pkg.metadata as Record<string, unknown> | null,
+      checksums: pkg.checksums as Record<string, string> | null,
+      package_checksum: pkg.package_checksum,
+      signature: pkg.signature,
+      rejection_reason: pkg.rejection_reason,
+      receipt: pkg.receipt as Record<string, unknown> | null,
+      submitted_at: pkg.submitted_at?.toISOString() ?? null,
+      received_at: pkg.received_at?.toISOString() ?? null,
+      decided_at: pkg.decided_at?.toISOString() ?? null,
+      created_at: pkg.created_at.toISOString(),
+      updated_at: pkg.updated_at.toISOString(),
     };
   }
 }

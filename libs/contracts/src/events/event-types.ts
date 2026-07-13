@@ -25,6 +25,24 @@ export const EventType = {
 
   // document-management-service
   DOCUMENT_CREATED: 'document.created',
+
+  // archive lifecycle
+  RECORD_CREATED: 'record.created',
+  RECORD_SEALED: 'record.sealed',
+  RECORD_CLOSED: 'record.closed',
+  TRANSFER_PACKAGE_CREATED: 'transfer.package.created',
+  TRANSFER_PACKAGE_SUBMITTED: 'transfer.package.submitted',
+  TRANSFER_PACKAGE_RECEIVED: 'transfer.package.received',
+  TRANSFER_PACKAGE_ACCEPTED: 'transfer.package.accepted',
+  TRANSFER_PACKAGE_REJECTED: 'transfer.package.rejected',
+  TRANSFER_PACKAGE_ARCHIVED: 'transfer.package.archived',
+  TRANSFER_PACKAGE_REJECTION_FAILED: 'transfer.package.rejection.failed',
+
+  // retention and disposal
+  RETENTION_ELIGIBLE: 'retention.eligible',
+  DISPOSAL_APPROVED: 'disposal.approved',
+  DISPOSAL_EXECUTED: 'disposal.executed',
+  DISPOSAL_FAILED: 'disposal.failed',
 } as const;
 
 export type EventType = (typeof EventType)[keyof typeof EventType];

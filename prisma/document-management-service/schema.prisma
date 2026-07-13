@@ -107,22 +107,24 @@ model RecordEntry {
 }
 
 model TransferPackage {
-  id               String    @id @default(uuid())
-  record_id        String
-  status           String    @default("DRAFT")
-  submitter_id     String?
-  archivist_id     String?
-  manifest         Json?
-  metadata         Json?
-  checksums        Json?
-  signature        String?
-  rejection_reason String?
-  receipt          Json?
-  submitted_at     DateTime?
-  received_at      DateTime?
-  decided_at       DateTime?
-  created_at       DateTime  @default(now())
-  updated_at       DateTime  @updatedAt
+  id                String    @id @default(uuid())
+  record_id         String
+  status            String    @default("DRAFT")
+  submitter_id      String?
+  archivist_id      String?
+  manifest          Json?
+  metadata          Json?
+  checksums         Json?
+  package_checksum  String?
+  signature         String?
+  rejection_reason  String?
+  receipt           Json?
+  audit_references  Json?
+  submitted_at      DateTime?
+  received_at       DateTime?
+  decided_at        DateTime?
+  created_at        DateTime  @default(now())
+  updated_at        DateTime  @updatedAt
 
   record Record @relation(fields: [record_id], references: [id])
 
