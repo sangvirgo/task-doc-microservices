@@ -953,6 +953,279 @@ export class DocumentsService {
       updated_at: pkg.updated_at.toISOString(),
     };
   }
+
+  async checkRetentionEligibility(): Promise<string[]> {
+    const now = new Date();
+    const eligibleDocuments = await this.prisma.document.findMany({
+      where: {
+        retention_expires_at: { lte: now },
+        archive_status: 'ARCHIVED',
+        disposal_status: null,
+      },
+      select: { id: true },
+    });
+
+    const updatedIds: string[] = [];
+    for (const doc of eligibleDocuments) {
+      const hasActiveHold = await this.prisma.retentionHold.findFirst({
+        where: {
+          document_id: doc.id,
+          released_at: null,
+        },
+      });
+
+      if (hasActiveHold) continue;
+
+      await this.prisma.document.update({
+        where: { id: doc.id },
+        data: { disposal_status: 'DISPOSED_ELIGIBLE' },
+      });
+      updatedIds.push(doc.id);
+    }
+
+    return updatedIds;
+  }
+
+  async approveDisposal(data: {
+    document_id: string;
+    approver_id: string;
+    reason: string;
+  }): Promise<{ id: string; document_id: string; approved_at: string }> {
+    const document = await this.prisma.document.findUnique({
+      where: { id: data.document_id },
+    });
+    if (!document) throw new NotFoundException('Document not found');
+    if (document.disposal_status !== 'DISPOSED_ELIGIBLE') {
+      throw new BadRequestException('Document is not eligible for disposal');
+    }
+
+    const hasActiveHold = await this.prisma.retentionHold.findFirst({
+      where: {
+        document_id: data.document_id,
+        released_at: null,
+      },
+    });
+    if (hasActiveHold) {
+      throw new BadRequestException('Cannot approve disposal while a retention hold is active');
+    }
+
+    const approval = await this.prisma.disposalApproval.create({
+      data: {
+        document_id: data.document_id,
+        approver_id: data.approver_id,
+        reason: data.reason,
+      },
+    });
+
+    return {
+      id: approval.id,
+      document_id: approval.document_id,
+      approved_at: approval.approved_at.toISOString(),
+    };
+  }
+
+  async executeDisposal(document_id: string): Promise<{
+    id: string;
+    document_id: string;
+    status: string;
+    objects_deleted: number;
+  }> {
+    const document = await this.prisma.document.findUnique({
+      where: { id: document_id },
+      include: { versions: true },
+    });
+    if (!document) throw new NotFoundException('Document not found');
+    if (document.disposal_status !== 'DISPOSED_ELIGIBLE') {
+      throw new BadRequestException('Document is not eligible for disposal');
+    }
+
+    const approval = await this.prisma.disposalApproval.findFirst({
+      where: { document_id },
+      orderBy: { approved_at: 'desc' },
+    });
+    if (!approval) {
+      throw new BadRequestException('No disposal approval found');
+    }
+
+    const hasActiveHold = await this.prisma.retentionHold.findFirst({
+      where: {
+        document_id,
+        released_at: null,
+      },
+    });
+    if (hasActiveHold) {
+      throw new BadRequestException('Cannot dispose while a retention hold is active');
+    }
+
+    let objectsDeleted = 0;
+    let deletionFailed = false;
+
+    for (const version of document.versions) {
+      try {
+        await this.deleteObject(version.object_key);
+        objectsDeleted++;
+      } catch {
+        deletionFailed = true;
+      }
+    }
+
+    if (deletionFailed) {
+      return {
+        id: approval.id,
+        document_id,
+        status: 'DELETION_FAILED',
+        objects_deleted: objectsDeleted,
+      };
+    }
+
+    await this.prisma.document.update({
+      where: { id: document_id },
+      data: { disposal_status: 'DISPOSED' },
+    });
+
+    return {
+      id: approval.id,
+      document_id,
+      status: 'DISPOSED',
+      objects_deleted: objectsDeleted,
+    };
+  }
+
+  async placeRetentionHold(data: {
+    document_id: string;
+    reason: string;
+    placed_by: string;
+  }): Promise<{ id: string; document_id: string; placed_at: string }> {
+    const document = await this.prisma.document.findUnique({
+      where: { id: data.document_id },
+    });
+    if (!document) throw new NotFoundException('Document not found');
+
+    const existingHold = await this.prisma.retentionHold.findFirst({
+      where: {
+        document_id: data.document_id,
+        released_at: null,
+      },
+    });
+    if (existingHold) {
+      throw new BadRequestException('A retention hold already exists for this document');
+    }
+
+    const hold = await this.prisma.retentionHold.create({
+      data: {
+        document_id: data.document_id,
+        reason: data.reason,
+        placed_by: data.placed_by,
+      },
+    });
+
+    return {
+      id: hold.id,
+      document_id: hold.document_id,
+      placed_at: hold.placed_at.toISOString(),
+    };
+  }
+
+  async releaseRetentionHold(hold_id: string): Promise<{ id: string; released_at: string }> {
+    const hold = await this.prisma.retentionHold.findUnique({
+      where: { id: hold_id },
+    });
+    if (!hold) throw new NotFoundException('Retention hold not found');
+    if (hold.released_at) {
+      throw new BadRequestException('Retention hold already released');
+    }
+
+    const updated = await this.prisma.retentionHold.update({
+      where: { id: hold_id },
+      data: { released_at: new Date() },
+    });
+
+    return {
+      id: updated.id,
+      released_at: updated.released_at!.toISOString(),
+    };
+  }
+
+  async listRetentionHolds(filters?: { document_id?: string; released?: boolean }): Promise<
+    Array<{
+      id: string;
+      document_id: string;
+      reason: string;
+      placed_by: string;
+      placed_at: string;
+      released_at: string | null;
+    }>
+  > {
+    const where: Record<string, unknown> = {};
+    if (filters?.document_id) where.document_id = filters.document_id;
+    if (filters?.released === true) where.released_at = { not: null };
+    if (filters?.released === false) where.released_at = null;
+
+    const holds = await this.prisma.retentionHold.findMany({
+      where,
+      orderBy: { placed_at: 'desc' },
+    });
+
+    return holds.map((h) => ({
+      id: h.id,
+      document_id: h.document_id,
+      reason: h.reason,
+      placed_by: h.placed_by,
+      placed_at: h.placed_at.toISOString(),
+      released_at: h.released_at?.toISOString() ?? null,
+    }));
+  }
+
+  async listDisposalApprovals(filters?: { document_id?: string }): Promise<
+    Array<{
+      id: string;
+      document_id: string;
+      approver_id: string;
+      reason: string;
+      approved_at: string;
+    }>
+  > {
+    const where: Record<string, unknown> = {};
+    if (filters?.document_id) where.document_id = filters.document_id;
+
+    const approvals = await this.prisma.disposalApproval.findMany({
+      where,
+      orderBy: { approved_at: 'desc' },
+    });
+
+    return approvals.map((a) => ({
+      id: a.id,
+      document_id: a.document_id,
+      approver_id: a.approver_id,
+      reason: a.reason,
+      approved_at: a.approved_at.toISOString(),
+    }));
+  }
+
+  private async deleteObject(objectKey: string): Promise<void> {
+    const minioEndpoint = process.env.MINIO_ENDPOINT || 'localhost';
+    const minioPort = process.env.MINIO_PORT || '9000';
+    const minioAccessKey = process.env.MINIO_ACCESS_KEY || '';
+    const minioSecretKey = process.env.MINIO_SECRET_KEY || '';
+    const minioBucket = process.env.MINIO_BUCKET || 'documents';
+
+    const { Client } = await import('minio');
+    const client = new Client({
+      endPoint: minioEndpoint,
+      port: parseInt(minioPort, 10),
+      useSSL: process.env.MINIO_USE_SSL === 'true',
+      accessKey: minioAccessKey,
+      secretKey: minioSecretKey,
+    });
+
+    try {
+      await client.statObject(minioBucket, objectKey);
+    } catch {
+      throw new Error(`Object not found: ${objectKey}`);
+    }
+
+    await client.removeObject(minioBucket, objectKey);
+  }
 }
 
 function toJsonValue(value: Record<string, unknown>): Prisma.InputJsonValue {

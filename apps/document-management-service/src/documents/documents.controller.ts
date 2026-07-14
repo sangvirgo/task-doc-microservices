@@ -1110,3 +1110,189 @@ export class TransferPackagesController {
     return this.documentsService.listTransferPackages({ record_id, status, submitter_id });
   }
 }
+
+/**
+ * Retention and Disposal API (V3 §5.9).
+ * Manages retention eligibility, holds, and controlled disposal.
+ */
+@ApiTags('retention-disposal')
+@Controller('retention-disposal')
+export class RetentionDisposalController {
+  constructor(
+    private readonly documentsService: DocumentsService,
+    private readonly permissionClient: PermissionClient,
+    private readonly auditClient: AuditClient,
+  ) {}
+
+  @Post('check-eligibility')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Check retention eligibility (idempotent worker)' })
+  async checkEligibility(@CurrentUser() user?: AuthContext) {
+    if (!user) throw new ForbiddenException('Authentication required');
+
+    const eligibleIds = await this.documentsService.checkRetentionEligibility();
+
+    for (const docId of eligibleIds) {
+      await this.auditClient.record({
+        event_type: 'RETENTION_ELIGIBLE',
+        actor_id: user.userId,
+        resource_type: 'DOCUMENT',
+        resource_id: docId,
+        payload: { status: 'DISPOSED_ELIGIBLE' },
+      });
+    }
+
+    return { eligible_count: eligibleIds.length, eligible_ids: eligibleIds };
+  }
+
+  @Post('approve-disposal')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Approve disposal (requires DISPOSAL_APPROVE capability)' })
+  async approveDisposal(
+    @Body() body: { document_id: string; reason: string },
+    @CurrentUser() user?: AuthContext,
+  ) {
+    if (!user) throw new ForbiddenException('Authentication required');
+    if (isAdmin(user)) throw new ForbiddenException('ADMIN cannot approve disposal');
+    if (!hasCapability(user, Capability.DISPOSAL_APPROVE)) {
+      throw new ForbiddenException('DISPOSAL_APPROVE capability required');
+    }
+
+    const parsed = z
+      .object({
+        document_id: z.string().uuid(),
+        reason: z.string().min(1),
+      })
+      .safeParse(body);
+    if (!parsed.success) {
+      throw new BadRequestException(parsed.error.issues);
+    }
+
+    const permCheck = await this.permissionClient.check({
+      actor_id: user.userId,
+      actor_role: user.role,
+      resource_type: 'DOCUMENT',
+      resource_id: parsed.data.document_id,
+      action: 'DISPOSE',
+      correlation_id: getCorrelationId() ?? randomUUID(),
+    });
+
+    if (!permCheck.allowed) {
+      throw new ForbiddenException(`Disposal approval denied: ${permCheck.reason_code}`);
+    }
+
+    const approval = await this.documentsService.approveDisposal({
+      document_id: parsed.data.document_id,
+      approver_id: user.userId,
+      reason: parsed.data.reason,
+    });
+
+    await this.auditClient.record({
+      event_type: 'DISPOSAL_APPROVED',
+      actor_id: user.userId,
+      resource_type: 'DOCUMENT',
+      resource_id: parsed.data.document_id,
+      payload: { reason: parsed.data.reason, approval_id: approval.id },
+    });
+
+    return approval;
+  }
+
+  @Post('execute-disposal')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Execute disposal (requires DISPOSAL_APPROVE capability)' })
+  async executeDisposal(@Body() body: { document_id: string }, @CurrentUser() user?: AuthContext) {
+    if (!user) throw new ForbiddenException('Authentication required');
+    if (isAdmin(user)) throw new ForbiddenException('ADMIN cannot execute disposal');
+    if (!hasCapability(user, Capability.DISPOSAL_APPROVE)) {
+      throw new ForbiddenException('DISPOSAL_APPROVE capability required');
+    }
+
+    const parsed = z.object({ document_id: z.string().uuid() }).safeParse(body);
+    if (!parsed.success) {
+      throw new BadRequestException(parsed.error.issues);
+    }
+
+    const permCheck = await this.permissionClient.check({
+      actor_id: user.userId,
+      actor_role: user.role,
+      resource_type: 'DOCUMENT',
+      resource_id: parsed.data.document_id,
+      action: 'DISPOSE',
+      correlation_id: getCorrelationId() ?? randomUUID(),
+    });
+
+    if (!permCheck.allowed) {
+      throw new ForbiddenException(`Disposal execution denied: ${permCheck.reason_code}`);
+    }
+
+    const result = await this.documentsService.executeDisposal(parsed.data.document_id);
+
+    const eventType = result.status === 'DISPOSED' ? 'DISPOSAL_EXECUTED' : 'DISPOSAL_FAILED';
+
+    await this.auditClient.record({
+      event_type: eventType,
+      actor_id: user.userId,
+      resource_type: 'DOCUMENT',
+      resource_id: parsed.data.document_id,
+      payload: {
+        status: result.status,
+        objects_deleted: result.objects_deleted,
+      },
+    });
+
+    return result;
+  }
+
+  @Post('holds')
+  @HttpCode(HttpStatus.CREATED)
+  @ApiOperation({ summary: 'Place a retention hold' })
+  async placeHold(
+    @Body() body: { document_id: string; reason: string },
+    @CurrentUser() user?: AuthContext,
+  ) {
+    if (!user) throw new ForbiddenException('Authentication required');
+
+    const parsed = z
+      .object({
+        document_id: z.string().uuid(),
+        reason: z.string().min(1),
+      })
+      .safeParse(body);
+    if (!parsed.success) {
+      throw new BadRequestException(parsed.error.issues);
+    }
+
+    return this.documentsService.placeRetentionHold({
+      document_id: parsed.data.document_id,
+      reason: parsed.data.reason,
+      placed_by: user.userId,
+    });
+  }
+
+  @Post('holds/:id/release')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Release a retention hold' })
+  async releaseHold(@Param('id') holdId: string, @CurrentUser() user?: AuthContext) {
+    if (!user) throw new ForbiddenException('Authentication required');
+    return this.documentsService.releaseRetentionHold(holdId);
+  }
+
+  @Get('holds')
+  @ApiOperation({ summary: 'List retention holds' })
+  async listHolds(
+    @Query('document_id') document_id?: string,
+    @Query('released') released?: string,
+  ) {
+    return this.documentsService.listRetentionHolds({
+      document_id,
+      released: released === 'true' ? true : released === 'false' ? false : undefined,
+    });
+  }
+
+  @Get('approvals')
+  @ApiOperation({ summary: 'List disposal approvals' })
+  async listApprovals(@Query('document_id') document_id?: string) {
+    return this.documentsService.listDisposalApprovals({ document_id });
+  }
+}

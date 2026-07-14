@@ -18,7 +18,9 @@ model Document {
   status           String    @default("UPLOADED")
   current_version  Int       @default(1)
   retention_policy String?
+  retention_expires_at DateTime?
   archive_status   String?
+  disposal_status  String?
   record_id        String?
   created_at       DateTime  @default(now())
   updated_at       DateTime  @updatedAt
@@ -30,6 +32,8 @@ model Document {
   @@index([creator_id])
   @@index([status])
   @@index([record_id])
+  @@index([retention_expires_at])
+  @@index([disposal_status])
 }
 
 model OutboxEvent {
@@ -146,4 +150,28 @@ model DownloadTicket {
   @@index([document_id])
   @@index([actor_id])
   @@index([expires_at])
+}
+
+model DisposalApproval {
+  id              String    @id @default(uuid())
+  document_id     String
+  approver_id     String
+  reason          String
+  approved_at     DateTime  @default(now())
+  expires_at      DateTime?
+
+  @@index([document_id])
+  @@index([approver_id])
+}
+
+model RetentionHold {
+  id          String    @id @default(uuid())
+  document_id String
+  reason      String
+  placed_by   String
+  placed_at   DateTime  @default(now())
+  released_at DateTime?
+
+  @@index([document_id])
+  @@index([released_at])
 }

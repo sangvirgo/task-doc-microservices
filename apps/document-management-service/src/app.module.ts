@@ -9,6 +9,7 @@ import {
   DocumentsController,
   RecordsController,
   TransferPackagesController,
+  RetentionDisposalController,
 } from './documents/documents.controller';
 import { DocumentsService } from './documents/documents.service';
 import { DocumentPrismaService } from './prisma/document-prisma.service';
@@ -43,7 +44,12 @@ export const envSchema = baseEnvSchema.extend({
       inMemory: process.env.MESSAGING_IN_MEMORY === 'true',
     }),
   ],
-  controllers: [DocumentsController, RecordsController, TransferPackagesController],
+  controllers: [
+    DocumentsController,
+    RecordsController,
+    TransferPackagesController,
+    RetentionDisposalController,
+  ],
   providers: [
     DocumentPrismaService,
     DocumentsService,
