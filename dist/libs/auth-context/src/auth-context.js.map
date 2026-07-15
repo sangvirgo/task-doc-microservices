@@ -1,1 +1,0 @@
-{"version":3,"file":"auth-context.js","sourceRoot":"","sources":["../../../../libs/auth-context/src/auth-context.ts"],"names":[],"mappings":";;AAgBA,0BAEC;AAED,sCAEC;AAND,SAAgB,OAAO,CAAC,IAAiB;IACvC,OAAO,IAAI,CAAC,IAAI,KAAK,OAAO,CAAC;AAC/B,CAAC;AAED,SAAgB,aAAa,CAAC,IAAiB,EAAE,UAAsB;IACrE,OAAO,IAAI,CAAC,YAAY,CAAC,QAAQ,CAAC,UAAU,CAAC,CAAC;AAChD,CAAC"}
