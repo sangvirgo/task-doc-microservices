@@ -1,4 +1,5 @@
 const { applyE2eEnvironmentDefaults } = require('../scripts/reset-e2e-state-lib.cjs');
+const { loadLocalEnv } = require('./load-local-env');
 export {};
 
 /**
@@ -10,5 +11,6 @@ export {};
  *
  * These values are non-secrets pointing at nothing. No real credential belongs in this file.
  */
+loadLocalEnv();
 process.env.NODE_ENV = 'test';
 applyE2eEnvironmentDefaults(process.env);

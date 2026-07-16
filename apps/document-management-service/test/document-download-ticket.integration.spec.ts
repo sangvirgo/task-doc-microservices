@@ -44,7 +44,7 @@ describe('Document download ticket integration (PostgreSQL)', () => {
   let app: INestApplication;
   let prisma: DocumentPrismaService;
   let fetchMock: MockFetch;
-  let grantEffectiveExpiresAt = '2026-07-30T12:00:00.000Z';
+  let grantEffectiveExpiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
   let permissionAllowed = true;
   let permissionReasonCode: string | null = null;
   let redeemedBody = PLAINTEXT_BYTES;
@@ -253,7 +253,7 @@ async function createDownloadTicket(
   prisma: DocumentPrismaService,
   documentId: string,
   actorId: string,
-  expiresAt = new Date('2026-07-30T12:00:00.000Z'),
+  expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000),
 ) {
   return prisma.downloadTicket.create({
     data: {

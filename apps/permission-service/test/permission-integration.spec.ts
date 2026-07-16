@@ -228,7 +228,7 @@ describe('Permission Service Integration (PostgreSQL)', () => {
     const childActorId = randomUUID();
     const resourceId = randomUUID();
     const taskId = randomUUID();
-    const expiresAt = new Date('2026-07-29T12:00:00.000Z').toISOString();
+    const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
 
     const parentGrant = await request(app.getHttpServer())
       .post('/grants')
