@@ -268,7 +268,7 @@ pnpm-lock.yaml        669 locked dependencies
 1. **Enter the branch:** `git checkout phase/01-foundation-auth-permission`
 2. **Verify state:** `git log --oneline -3` should show three Phase 1 commits
 3. **Run checks:** `pnpm lint && pnpm test && pnpm build && pnpm smoke`
-4. **Read context:** `CONTEXT.md`, `C17_BACKEND_AI_AGENT_PLAN_ENGLISH_V3.md`, `docs/adr/`
+4. **Read context:** `CONTEXT.md`, `docs/planning/backend-implementation-plan.md`, `docs/adr/`
 5. **Decide:** Has user approved Phase 1?
    - **YES:** Create `phase/02-task-document-timed-grants` branch from current HEAD and proceed
    - **NO:** Wait for approval (user says "APPROVE PUSH PHASE 1" or makes changes)
@@ -287,7 +287,7 @@ pnpm-lock.yaml        669 locked dependencies
 - `commit-history.txt` — The three Phase 1 commits
 
 **Plan References:**
-- `C17_BACKEND_AI_AGENT_PLAN_ENGLISH_V3.md` — Authoritative (§10 Phase 1 detail, §14 PHASE STOP REPORT template)
+- `docs/planning/backend-implementation-plan.md` — Authoritative (§10 Phase 1 detail, §14 PHASE STOP REPORT template)
 - `CONTEXT.md` — Domain language (27 terms)
 - `docs/adr/0001–0004` — Settled decisions (denormalized grant expiry, single-writer audit, KEK versioning, participation gating)
 

@@ -989,7 +989,7 @@ Sắp xếp theo phụ thuộc và rủi ro:
 | Đường dẫn | Mô tả |
 |---|---|
 | `CONTEXT.md` | Thuật ngữ miền (domain language) |
-| `C17_BACKEND_AI_AGENT_PLAN_ENGLISH_V3.md` | Kế hoạch triển khai V3 |
+| `docs/planning/backend-implementation-plan.md` | Kế hoạch triển khai V3 |
 | `docs/adr/0001-denormalized-grant-expiry-and-fail-closed-checks.md` | ADR: denormalized expiry, fail-closed |
 | `docs/adr/0002-single-writer-audit-chain.md` | ADR: single writer audit chain |
 | `docs/adr/0003-versioned-kek-from-the-start.md` | ADR: versioned KEK scaffold |

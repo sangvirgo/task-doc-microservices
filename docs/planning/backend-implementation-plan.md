@@ -2204,7 +2204,7 @@ There are no remaining open decisions.
 The initial instruction to the agent should be:
 
 ```text
-Read C17_BACKEND_AI_AGENT_PLAN_ENGLISH_V3.md completely.
+Read docs/planning/backend-implementation-plan.md completely.
 Read CONTEXT.md and docs/adr/0001 through 0004 completely.
 
 Implement only Phase 1 on the single local branch:

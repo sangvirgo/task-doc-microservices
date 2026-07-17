@@ -4,7 +4,7 @@ An organizational platform where work is assigned as tasks, and access to confid
 is granted only for as long as the task that justifies it remains live.
 
 Start with [CONTEXT.md](CONTEXT.md) for the domain language, then
-[C17_BACKEND_AI_AGENT_PLAN_ENGLISH_V3.md](C17_BACKEND_AI_AGENT_PLAN_ENGLISH_V3.md) for the plan.
+[docs/planning/backend-implementation-plan.md](docs/planning/backend-implementation-plan.md) for the plan.
 Decisions that outrank the plan live in [docs/adr/](docs/adr/).
 
 ## Layout
