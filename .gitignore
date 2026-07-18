@@ -43,6 +43,12 @@ uploads/tmp/
 *.pid
 *.pid.lock
 
+# Temporary plaintext/ciphertext (test artifacts)
+test-downloads/
+test-uploads/
+*. plaintext
+*. ciphertext
+
 # Editor and OS
 .DS_Store
 Thumbs.db
@@ -52,3 +58,10 @@ Thumbs.db
 
 # CodeGraph local index (machine-local, not project state)
 .codegraph/
+
+# Generated documentation artifacts
+docs/c17-api-postman-collection.json
+docs/project-overview.html
+
+# Claude local settings
+.claude/
