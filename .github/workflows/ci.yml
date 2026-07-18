@@ -24,19 +24,19 @@ jobs:
       - run: pnpm install --frozen-lockfile
 
       - name: Lint
-        run: pnpm lint
+        run: pnpm backend:lint
 
       - name: Formatting
-        run: pnpm format:check
+        run: pnpm --filter backend format:check
 
       - name: Unit tests
-        run: pnpm test
+        run: pnpm backend:test
 
       - name: Build all ten applications
-        run: pnpm build
+        run: pnpm backend:build
 
       - name: End-to-end tests
-        run: pnpm test:e2e
+        run: pnpm backend:test:e2e
 
       - name: Validate Docker Compose
         run: docker compose --env-file .env.example config --quiet

@@ -10,13 +10,13 @@ RUN corepack enable
 WORKDIR /app
 
 FROM base AS deps
-COPY package.json pnpm-lock.yaml .npmrc ./
+COPY backend/package.json pnpm-lock.yaml backend/.npmrc ./
 RUN pnpm install --frozen-lockfile
 
 FROM base AS build
 ARG APP
 COPY --from=deps /app/node_modules ./node_modules
-COPY . .
+COPY backend/ .
 RUN node scripts/prisma-generate-all.mjs
 RUN pnpm exec nest build "${APP}"
 RUN pnpm install --frozen-lockfile --prod

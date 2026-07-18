@@ -8,7 +8,7 @@ name: c17-task-document-platform
 x-service-base: &service-base
   build:
     context: .
-    dockerfile: infra/Dockerfile
+    dockerfile: backend/infra/Dockerfile
   restart: unless-stopped
   environment: &service-env
     NODE_ENV: ${NODE_ENV:-development}
@@ -126,7 +126,7 @@ services:
     <<: *service-base
     build:
       context: .
-      dockerfile: infra/Dockerfile
+      dockerfile: backend/infra/Dockerfile
       args:
         APP: api-gateway
     environment:
@@ -167,7 +167,7 @@ services:
     <<: *service-base
     build:
       context: .
-      dockerfile: infra/Dockerfile
+      dockerfile: backend/infra/Dockerfile
       args:
         APP: authentication-identity-service
     environment:
@@ -188,7 +188,7 @@ services:
     <<: *service-base
     build:
       context: .
-      dockerfile: infra/Dockerfile
+      dockerfile: backend/infra/Dockerfile
       args:
         APP: user-role-management-service
     environment:
@@ -206,7 +206,7 @@ services:
     <<: *service-base
     build:
       context: .
-      dockerfile: infra/Dockerfile
+      dockerfile: backend/infra/Dockerfile
       args:
         APP: task-management-service
     environment:
@@ -232,7 +232,7 @@ services:
     <<: *service-base
     build:
       context: .
-      dockerfile: infra/Dockerfile
+      dockerfile: backend/infra/Dockerfile
       args:
         APP: document-management-service
     environment:
@@ -262,7 +262,7 @@ services:
     <<: *service-base
     build:
       context: .
-      dockerfile: infra/Dockerfile
+      dockerfile: backend/infra/Dockerfile
       args:
         APP: document-security-service
     environment:
@@ -296,7 +296,7 @@ services:
     <<: *service-base
     build:
       context: .
-      dockerfile: infra/Dockerfile
+      dockerfile: backend/infra/Dockerfile
       args:
         APP: permission-service
     environment:
@@ -316,7 +316,7 @@ services:
     <<: *service-base
     build:
       context: .
-      dockerfile: infra/Dockerfile
+      dockerfile: backend/infra/Dockerfile
       args:
         APP: audit-log-service
     environment:
@@ -336,7 +336,7 @@ services:
     <<: *service-base
     build:
       context: .
-      dockerfile: infra/Dockerfile
+      dockerfile: backend/infra/Dockerfile
       args:
         APP: notification-service
     environment:
@@ -354,7 +354,7 @@ services:
     <<: *service-base
     build:
       context: .
-      dockerfile: infra/Dockerfile
+      dockerfile: backend/infra/Dockerfile
       args:
         APP: security-monitoring-service
     environment:

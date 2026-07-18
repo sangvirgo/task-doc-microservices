@@ -3,7 +3,7 @@
 # verify-full-backend.sh — Final backend verification for the full stack
 #
 # Usage:
-#   NODE_ENV=test bash scripts/verify-full-backend.sh
+#   NODE_ENV=test bash backend/scripts/verify-full-backend.sh
 #
 # Safety:
 #   - Requires NODE_ENV=test
@@ -13,6 +13,11 @@
 # ============================================================================
 
 set -euo pipefail
+
+# ── Path resolution ────────────────────────────────────────────────────────
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+BACKEND_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+REPO_ROOT="$(cd "$BACKEND_ROOT/.." && pwd)"
 
 # ── Colour helpers ──────────────────────────────────────────────────────────
 RED='\033[0;31m'
@@ -60,9 +65,9 @@ fi
 pass "NODE_ENV=test"
 
 # Load .env for infrastructure credentials and E2E database URLs
-if [ -f .env ]; then
+if [ -f "$REPO_ROOT/.env" ]; then
   set -a
-  source .env
+  source "$REPO_ROOT/.env"
   set +a
 fi
 
@@ -117,7 +122,7 @@ fi
 
 step "Validate Docker Compose configuration"
 
-if docker compose config --quiet 2>/dev/null; then
+if (cd "$REPO_ROOT" && docker compose config --quiet 2>/dev/null); then
   pass "docker-compose.yml is valid"
 else
   fail "docker-compose.yml validation failed"
@@ -128,13 +133,13 @@ fi
 step "Build and start Docker stack"
 
 # Check if the stack is already running
-RUNNING_CONTAINERS=$(docker compose ps --format "{{.Name}}" 2>/dev/null | wc -l)
+RUNNING_CONTAINERS=$(cd "$REPO_ROOT" && docker compose ps --format "{{.Name}}" 2>/dev/null | wc -l)
 if [ "$RUNNING_CONTAINERS" -ge 10 ]; then
   info "Docker Compose stack already running (${RUNNING_CONTAINERS} containers)"
   pass "Docker Compose stack is running"
 else
   info "Starting Docker Compose stack..."
-  if docker compose up -d --build --remove-orphans 2>&1 | tail -5; then
+  if (cd "$REPO_ROOT" && docker compose up -d --build --remove-orphans 2>&1 | tail -5); then
     pass "Docker Compose stack started"
   else
     fail "Docker Compose stack failed to start"
@@ -163,7 +168,7 @@ step "Wait for infrastructure health checks"
 # PostgreSQL — check via docker exec pg_isready
 POSTGRES_OK=false
 for i in 1 2 3 4 5 6 7 8 9 10; do
-  if docker compose exec -T postgres pg_isready -U c17 >/dev/null 2>&1; then
+  if (cd "$REPO_ROOT" && docker compose exec -T postgres pg_isready -U c17 >/dev/null 2>&1); then
     POSTGRES_OK=true
     break
   fi
@@ -178,7 +183,7 @@ fi
 # Redis — check via docker exec redis-cli ping
 REDIS_OK=false
 for i in 1 2 3 4 5; do
-  if docker compose exec -T redis redis-cli ping 2>/dev/null | grep -q PONG; then
+  if (cd "$REPO_ROOT" && docker compose exec -T redis redis-cli ping 2>/dev/null | grep -q PONG); then
     REDIS_OK=true
     break
   fi
@@ -211,7 +216,7 @@ fi
 wait_for_http "MinIO" "http://localhost:9000/minio/health/live" 60 || true
 
 # ClamAV — check via docker healthcheck status
-if docker inspect --format='{{.State.Health.Status}}' c17-task-document-platform-clamav-1 2>/dev/null | grep -q healthy; then
+if (cd "$REPO_ROOT" && docker inspect --format='{{.State.Health.Status}}' c17-task-document-platform-clamav-1 2>/dev/null | grep -q healthy); then
   pass "ClamAV container is healthy"
 else
   info "ClamAV container health check pending (may take 5 min on first run)"
@@ -258,7 +263,7 @@ fi
 
 step "Apply Prisma migrations (deploy)"
 
-DEPLOY_OUTPUT=$(pnpm db:deploy 2>&1) || true
+DEPLOY_OUTPUT=$(cd "$BACKEND_ROOT" && pnpm db:deploy 2>&1) || true
 if echo "$DEPLOY_OUTPUT" | grep -q "No pending migrations"; then
   pass "Prisma migrate deploy — no pending migrations"
 elif echo "$DEPLOY_OUTPUT" | grep -q "P3005"; then
@@ -275,7 +280,7 @@ fi
 
 step "Generate Prisma clients"
 
-if pnpm db:generate 2>&1 | tail -3; then
+if (cd "$BACKEND_ROOT" && pnpm db:generate 2>&1 | tail -3); then
   pass "Prisma client generation completed"
 else
   fail "Prisma client generation failed"
@@ -285,7 +290,7 @@ fi
 
 step "Seed test databases"
 
-if pnpm db:seed 2>&1 | tail -5; then
+if (cd "$BACKEND_ROOT" && pnpm db:seed 2>&1 | tail -5); then
   pass "Seed script completed"
 else
   fail "Seed script failed"
@@ -295,7 +300,7 @@ fi
 
 step "Run pnpm lint"
 
-if pnpm lint 2>&1 | tail -10; then
+if (cd "$BACKEND_ROOT" && pnpm lint 2>&1 | tail -10); then
   pass "Lint passed"
 else
   fail "Lint failed"
@@ -305,7 +310,7 @@ fi
 
 step "Run pnpm build"
 
-if pnpm build 2>&1 | tail -10; then
+if (cd "$BACKEND_ROOT" && pnpm build 2>&1 | tail -10); then
   pass "Build passed"
 else
   fail "Build failed"
@@ -321,7 +326,7 @@ run_suite() {
   local name="$2"
   info "Running: ${name}"
   local output
-  output=$(npx jest --config ./jest.config.ts --runInBand --forceExit "$file" 2>&1) || true
+  output=$(cd "$BACKEND_ROOT" && npx jest --config ./jest.config.ts --runInBand --forceExit "$file" 2>&1) || true
   echo "$output" | tail -3
   if echo "$output" | grep -qE "Tests:.*passed.*([0-9]+) total" && echo "$output" | grep -qE "Test Suites:.*passed"; then
     pass "${name}"
@@ -381,13 +386,13 @@ run_suite "apps/document-management-service/test/retention-disposal.integration.
 step "Reset and seed E2E test databases"
 
 # Source .env to get E2E_POSTGRES_BASE_URL and other variables
-if [ -f .env ]; then
+if [ -f "$REPO_ROOT/.env" ]; then
   set -a
-  . ./.env
+  . "$REPO_ROOT/.env"
   set +a
 fi
 
-if pnpm test:e2e:reset 2>&1 | tail -5; then
+if (cd "$BACKEND_ROOT" && pnpm test:e2e:reset 2>&1 | tail -5); then
   pass "E2E database reset completed"
 else
   fail "E2E database reset failed"
@@ -397,7 +402,7 @@ fi
 
 step "Run core E2E workflow"
 
-E2E_OUTPUT=$(pnpm jest --config ./test/jest-e2e.config.ts --runInBand --forceExit 2>&1) || true
+E2E_OUTPUT=$(cd "$BACKEND_ROOT" && pnpm jest --config ./test/jest-e2e.config.ts --runInBand --forceExit 2>&1) || true
 echo "$E2E_OUTPUT" | tail -20
 
 # Parse the summary line for passed/total
@@ -437,8 +442,8 @@ else
   info "Audit chain returned: ${AUDIT_VERIFY}"
   # Reset audit chain for a clean state and re-verify
   info "Resetting audit chain to a clean baseline..."
-  pnpm jest --config ./jest.config.ts --runInBand --forceExit \
-    apps/audit-log-service/test/audit-integration.spec.ts 2>&1 | tail -3
+  (cd "$BACKEND_ROOT" && pnpm jest --config ./jest.config.ts --runInBand --forceExit \
+    apps/audit-log-service/test/audit-integration.spec.ts 2>&1 | tail -3)
 
   AUDIT_VERIFY2=$(curl -sf -X POST http://localhost:3007/audit/chain/verify \
     -H 'Content-Type: application/json' \

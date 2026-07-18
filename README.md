@@ -5,21 +5,22 @@ is granted only for as long as the task that justifies it remains live.
 
 Start with [CONTEXT.md](CONTEXT.md) for the domain language, then
 [docs/planning/backend-implementation-plan.md](docs/planning/backend-implementation-plan.md) for the plan.
-Decisions that outrank the plan live in [docs/adr/](docs/adr/).
+Decisions that outrank the plan live in [docs/architecture/adr/](docs/architecture/adr/).
 
-## Layout
+## Repository Layout
 
-This is a **NestJS monorepo managed by pnpm** — not a pnpm workspace (V3 §4.1). There is exactly
-one `package.json`, one `pnpm-lock.yaml`, and one `nest-cli.json`. Applications never get their
-own `package.json`.
+This is a **pnpm workspace monorepo** with separate backend and frontend packages.
 
 ```
-apps/    ten independently deployable services
-libs/    shared libraries, consumed through @c17/* path aliases
-infra/   Dockerfile and container init scripts
-scripts/ build and smoke-test tooling
-docs/    ADRs, evidence, reports
+backend/   NestJS monorepo — ten independently deployable services + shared libraries
+frontend/  Reserved for the frontend application (not yet imported)
+docs/      Architecture decisions, planning documents, and reports
+infra/     Shared infrastructure (Docker Compose at root)
 ```
+
+### Backend
+
+The backend is a NestJS monorepo managed by pnpm with ten independently deployable services.
 
 | Service                           | Port | Database                |
 | --------------------------------- | ---- | ----------------------- |
@@ -34,12 +35,12 @@ docs/    ADRs, evidence, reports
 | `notification-service`            | 3008 | `notification_db`       |
 | `security-monitoring-service`     | 3009 | `security_monitoring_db`|
 
-No service reads another service's database (V3 §7).
+No service reads another service's database.
 
 `audit-log-service` runs at exactly one replica. The audit chain has a single writer by design
 (ADR-0002); a second replica would fork it.
 
-## Running locally
+## Running Locally
 
 Requires Node.js 24 LTS and pnpm 9.
 
@@ -47,21 +48,26 @@ Requires Node.js 24 LTS and pnpm 9.
 pnpm install
 cp .env.example .env      # then replace every placeholder
 docker compose up -d postgres redis rabbitmq minio clamav
-pnpm start:dev <service>  # e.g. pnpm start:dev permission-service
+pnpm backend:start:dev permission-service  # e.g.
 ```
 
 Each service exposes `GET /health` and Swagger at `/docs`.
 
-## Checks
+## Commands
 
 ```bash
-pnpm lint          # ESLint, type-aware
-pnpm format:check  # Prettier
-pnpm test          # unit tests
-pnpm test:e2e      # HTTP-level tests
-pnpm build         # builds all ten applications
-pnpm smoke         # starts each built service and calls /health
+# Backend
+pnpm backend:lint          # ESLint, type-aware
+pnpm backend:build         # builds all ten applications
+pnpm backend:test          # unit tests
+pnpm backend:test:e2e      # HTTP-level tests
+pnpm backend:smoke         # starts each built service and calls /health
+pnpm backend:verify        # full backend verification suite
+
+# Docker
 docker compose --env-file .env.example config --quiet
+docker compose up -d
+docker compose down
 ```
 
 ## Secrets

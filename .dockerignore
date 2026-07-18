@@ -10,4 +10,14 @@ temp
 .env.*
 docs/evidence
 docs/handoff
+docs/planning
+docs/reports
+docs/adr
+frontend
+.claude
+.codegraph
+.github
 .gitignore
+README.md
+CONTEXT.md
+CLAUDE.md
