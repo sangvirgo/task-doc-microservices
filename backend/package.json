@@ -1,7 +1,7 @@
 {
-  "name": "c17-task-document-platform",
+  "name": "backend",
   "version": "0.1.0",
-  "description": "Task Assignment and Secure Digital Document Sharing Platform for Organizations",
+  "description": "Task Assignment and Secure Digital Document Sharing Platform for Organizations - Backend",
   "private": true,
   "license": "UNLICENSED",
   "packageManager": "pnpm@9.15.9",
