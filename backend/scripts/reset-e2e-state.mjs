@@ -1,4 +1,6 @@
 #!/usr/bin/env node
+import { readFileSync, existsSync } from 'node:fs';
+import { join } from 'node:path';
 import {
   E2E_DATABASE_TARGETS,
   applyE2eEnvironmentDefaults,
@@ -8,6 +10,24 @@ import {
 } from './reset-e2e-state-lib.cjs';
 
 const skipSeed = process.argv.includes('--skip-seed');
+
+function loadEnv() {
+  const root = process.cwd();
+  const envPath = existsSync(join(root, '.env')) ? join(root, '.env') : join(root, '.env.example');
+  if (!existsSync(envPath)) return;
+  const source = readFileSync(envPath, 'utf8');
+  for (const line of source.split(/\r?\n/u)) {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith('#')) continue;
+    const separatorIndex = trimmed.indexOf('=');
+    if (separatorIndex <= 0) continue;
+    const key = trimmed.slice(0, separatorIndex).trim();
+    const value = trimmed.slice(separatorIndex + 1).trim();
+    if (!process.env[key]) process.env[key] = value;
+  }
+}
+
+loadEnv();
 
 try {
   applyE2eEnvironmentDefaults(process.env);

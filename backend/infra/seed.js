@@ -14,7 +14,11 @@ const { hashSync } = require('bcryptjs');
 
 // ── Parse .env ──────────────────────────────────────────────────────────────
 function loadEnv() {
-  const envPath = path.resolve(__dirname, '..', '.env');
+  const envDir = path.resolve(__dirname, '..');
+  const envPath = fs.existsSync(path.join(envDir, '.env'))
+    ? path.join(envDir, '.env')
+    : path.join(envDir, '.env.example');
+  if (!fs.existsSync(envPath)) return;
   const content = fs.readFileSync(envPath, 'utf8');
   for (const line of content.split('\n')) {
     const trimmed = line.trim();

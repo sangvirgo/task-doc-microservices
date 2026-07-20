@@ -12,18 +12,7 @@ const schemaPaths = [
   'prisma/security-monitoring-service/schema.prisma',
 ];
 
-function runPnpm(args) {
-  const npmExecPath = process.env.npm_execpath;
-
-  if (npmExecPath) {
-    execFileSync(process.execPath, [npmExecPath, ...args], { stdio: 'inherit' });
-    return;
-  }
-
-  execFileSync('pnpm', args, { stdio: 'inherit' });
-}
-
 for (const schemaPath of schemaPaths) {
   console.log(`Generating Prisma client for ${schemaPath}`);
-  runPnpm(['exec', 'prisma', 'generate', '--schema', schemaPath]);
+  execFileSync('pnpm', ['exec', 'prisma', 'generate', '--schema', schemaPath], { stdio: 'inherit' });
 }
