@@ -1,79 +1,88 @@
-# Frontend
+# Frontend Applications
 
-## Location
+## Overview
 
-All frontend source code belongs under the `frontend/` directory in this repository.
+The C17 Task and Secure Document Platform has two separate frontend clients:
 
-## Application Type
+- **Web** (`frontend/web/`) — Next.js + TypeScript responsive web application
+- **Mobile** (`frontend/mobile/`) — Flutter + Dart native mobile application
 
-The target is a **responsive mobile-first web application**:
+Both applications consume the same backend through the API Gateway. They share
+backend API contracts, domain terminology, authentication rules, role and capability
+rules, canonical enums and statuses, security requirements, upload/download workflows,
+and error-handling expectations.
 
-- Mobile browser is the primary layout target
-- Desktop browser is also supported
-- One responsive codebase must serve both mobile and desktop
-- This is **not** a native Android application
-- This is **not** a native iOS application
-- Do not create a separate `mobile/` directory
-- Do not create separate mobile and desktop codebases
+They do **not** share runtime UI source code. Web uses TypeScript models; Mobile uses
+Dart models. API schemas may be used to generate typed clients for each platform
+independently.
+
+## Directory Ownership
+
+### frontend/web/
+
+- **Framework:** Next.js
+- **Language:** TypeScript
+- **Primary target:** desktop/laptop browsers
+- **Secondary target:** tablet browsers
+- **Mobile browser support:** secondary — the official mobile app is Flutter
+- **Workflows:** administrative and data-dense screens, dashboards, task management,
+  document management, permission management, records and transfer-package workflows,
+  security alert management
+
+### frontend/mobile/
+
+- **Framework:** Flutter
+- **Language:** Dart
+- **Platforms:** Android and iOS (one shared codebase)
+- **Primary target:** touch-first mobile workflows
+- **Not a WebView wrapper** — native Flutter widgets, not the Next.js site embedded
+  in a mobile shell
+- **Workflows:** assigned task list, task details, document metadata, file upload,
+  ticket-based secure download, notifications, account handling
 
 ## Current Implementation Status
 
-No frontend framework code has been implemented yet. The `frontend/` directory currently contains only this README.
+| Application | Location | Technology | Status |
+|---|---|---|---|
+| Web | `frontend/web/` | Next.js + TypeScript | Planned — not initialized |
+| Mobile | `frontend/mobile/` | Flutter + Dart | Planned — not initialized |
 
-PWA support is optional future work and must not be claimed as implemented.
+No frontend framework code has been implemented yet. The `frontend/web/` and
+`frontend/mobile/` directories currently contain only their respective README files.
 
-## Framework
+## Shared Integration Rules
 
-The frontend framework has not been selected by this documentation task. Do not fabricate an existing React, Vue, Angular, or Next.js application. When a framework is chosen, this section will be updated.
+Both applications must:
 
-## Getting Started
+- Call the **API Gateway only** — never call service ports 3001–3009
+- Never call `/internal/*` endpoints
+- Never query service databases directly
+- Never connect to Redis, RabbitMQ, ClamAV, or MinIO/S3/R2 directly
+- Never upload directly to MinIO/S3/R2
+- Never store backend secrets (JWT signing secret, KEK, database credentials, MinIO access keys)
+- Use the real authentication contract (Bearer token, refresh rotation)
+- Use canonical enums and statuses from the backend
+- Treat backend authorization as authoritative — frontend route guards are UX only
+- Preserve correlation IDs (`x-correlation-id`) from error responses
+- Use the secure upload flow (multipart with metadata fields)
+- Use the ticket-based download flow (request ticket, then redeem)
+- Never expose `object_key`
+- Never send trusted internal identity headers (`x-user-id`, `x-user-role`, `x-user-capabilities`)
 
-When implementing the frontend:
+## Separate Runtime Code
 
-1. Initialize the workspace package (the `frontend/` directory is already declared in `pnpm-workspace.yaml`)
-2. Select a framework and add it to `frontend/package.json`
-3. Use the shared `pnpm-lock.yaml` for dependency management
-4. Configure environment variables for the API Gateway base URL
+- Web and Flutter do **not** share runtime UI code
+- Web uses TypeScript models and types
+- Mobile uses Dart models and types
+- API schemas/contracts may be generated separately for each platform when supported
+- Do not import TypeScript code directly into Flutter
+- Do not share component implementations across platforms
 
-## API Access Rules
+## Documentation Links
 
-The frontend must follow these rules strictly:
-
-- **Call the API Gateway only** (port 3000 in local development)
-- **Never call service ports 3001–3009 directly**
-- **Never call `/internal/*` endpoints**
-- **Never query service databases directly**
-- **Never connect directly to Redis or RabbitMQ**
-- **Never upload directly to MinIO/S3/R2**
-- **Never download using `object_key` or a direct storage URL**
-- **Never store storage access keys or KEKs in the browser**
-
-## Integration Guide
-
-For detailed API integration guidance, see:
-
-[docs/frontend/frontend-development-guide.md](../docs/frontend/frontend-development-guide.md)
-
-## Suggested Directory Structure
-
-The following is a recommended convention, not implemented files:
-
-```
-frontend/
-├── src/
-│   ├── api/            # Centralized API client and typed endpoints
-│   ├── components/     # Shared reusable UI components
-│   ├── features/       # Feature modules (auth, tasks, documents, etc.)
-│   ├── layouts/        # Page layout wrappers
-│   ├── pages/          # Route-level page components
-│   ├── router/         # Route definitions and guards
-│   ├── stores/         # Global state management
-│   ├── types/          # Shared TypeScript types and DTOs
-│   ├── utils/          # Utility functions
-│   └── assets/         # Static assets (images, icons, styles)
-├── public/             # Public static files
-├── package.json
-└── README.md
-```
-
-Do not create these folders during this documentation task.
+| Document | Path |
+|---|---|
+| Frontend overview | [frontend/README.md](README.md) |
+| Web application | [frontend/web/README.md](web/README.md) |
+| Flutter Mobile application | [frontend/mobile/README.md](mobile/README.md) |
+| Frontend development guide | [docs/frontend/frontend-development-guide.md](../docs/frontend/frontend-development-guide.md) |
