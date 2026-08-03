@@ -60,6 +60,11 @@ function getRoutes(): ServiceRoute[] {
       upstreamBasePath: '/transfer-packages',
     },
     {
+      prefix: '/api/retention-disposal',
+      target: process.env.DOCUMENT_SERVICE_URL || 'http://localhost:3004',
+      upstreamBasePath: '/retention-disposal',
+    },
+    {
       prefix: '/api/security',
       target: process.env.DOCUMENT_SECURITY_SERVICE_URL || 'http://localhost:3005',
       upstreamBasePath: '/security',
@@ -135,6 +140,11 @@ export class GatewayController {
     await this.proxy(req, res);
   }
 
+  @All(['api/retention-disposal', 'api/retention-disposal/*path'])
+  async proxyRetentionDisposal(@Req() req: Request, @Res() res: Response): Promise<void> {
+    await this.proxy(req, res);
+  }
+
   @All(['api/security', 'api/security/*path'])
   async proxySecurity(@Req() req: Request, @Res() res: Response): Promise<void> {
     await this.proxy(req, res);
@@ -161,6 +171,8 @@ export class GatewayController {
   }
 
   private async proxy(req: Request, res: Response): Promise<void> {
+    this.enforcePublicAuthorizationPolicy(req);
+
     const route = this.routes.find((r) => req.originalUrl.startsWith(r.prefix));
     if (!route) {
       res.status(404).json({ statusCode: 404, message: 'Route not found' });
@@ -260,6 +272,61 @@ export class GatewayController {
         `Proxy error: ${req.method} ${req.originalUrl} — ${error instanceof Error ? error.message : 'unknown'}`,
       );
       throw new ServiceUnavailableException('Upstream service unavailable');
+    }
+  }
+
+  /**
+   * The downstream services are intentionally thin HTTP services. Enforce the public API's
+   * control-plane boundary here, after JwtAuthGuard has established the caller and before any
+   * request is forwarded to an internal service.
+   */
+  private enforcePublicAuthorizationPolicy(req: Request): void {
+    const user = (req as unknown as Record<string, unknown>)['user'] as
+      { userId: string; role: string } | undefined;
+    const path = req.originalUrl.split('?')[0];
+    const isAdmin = user?.role === 'ADMIN';
+
+    if (path.startsWith('/api/monitoring/events')) {
+      throw new ForbiddenException('Security event ingestion is internal-only');
+    }
+
+    if (
+      path === '/api/users' ||
+      path.startsWith('/api/users/') ||
+      path.startsWith('/api/monitoring/') ||
+      path === '/api/monitoring' ||
+      path.startsWith('/api/audit/') ||
+      path === '/api/audit' ||
+      path.startsWith('/api/permissions/grants')
+    ) {
+      if (!isAdmin) throw new ForbiddenException('Administrator role required');
+    }
+
+    if (path === '/api/audit/events' && req.method === 'POST') {
+      throw new ForbiddenException('Audit event append is internal-only');
+    }
+
+    if (path === '/api/notifications' && !isAdmin) {
+      const recipientId = typeof req.query.recipient_id === 'string' ? req.query.recipient_id : '';
+      if (!user || recipientId !== user.userId) {
+        throw new ForbiddenException('Notifications may only be accessed for the caller');
+      }
+    }
+
+    if (path === '/api/notifications/read-all' && !isAdmin) {
+      const recipientId = (req.body as { recipient_id?: unknown } | undefined)?.recipient_id;
+      if (!user || recipientId !== user.userId) {
+        throw new ForbiddenException('Notifications may only be changed for the caller');
+      }
+    }
+
+    const preferenceMatch = path.match(/^\/api\/notifications\/preferences\/([^/]+)$/);
+    if (preferenceMatch && !isAdmin && (!user || preferenceMatch[1] !== user.userId)) {
+      throw new ForbiddenException('Notification preferences may only be changed for the caller');
+    }
+
+    if (path === '/api/notifications' && req.method === 'POST' && !isAdmin) {
+      throw new ForbiddenException('Only administrators may create notifications');
     }
   }
 

@@ -167,8 +167,24 @@ export class DocumentsController {
     @Query('owner_id') owner_id?: string,
     @Query('creator_id') creator_id?: string,
     @Query('status') status?: string,
+    @CurrentUser() user?: AuthContext,
   ): Promise<DocumentDto[]> {
-    return this.documentsService.listDocuments({ owner_id, creator_id, status });
+    if (!user) throw new ForbiddenException('Authentication required');
+    const documents = await this.documentsService.listDocuments({ owner_id, creator_id, status });
+    const visible = await Promise.all(
+      documents.map(async (document) => {
+        const decision = await this.permissionClient.check({
+          actor_id: user.userId,
+          actor_role: user.role,
+          resource_type: 'DOCUMENT',
+          resource_id: document.id,
+          action: 'PREVIEW',
+          correlation_id: getCorrelationId() ?? randomUUID(),
+        });
+        return decision.allowed ? document : null;
+      }),
+    );
+    return visible.filter((document): document is DocumentDto => document !== null);
   }
 
   @Post('upload')
@@ -343,6 +359,17 @@ export class DocumentsController {
   ): Promise<DocumentVersionDto> {
     if (!user) throw new ForbiddenException('Authentication required');
 
+    const permCheck = await this.permissionClient.check({
+      actor_id: user.userId,
+      actor_role: user.role,
+      resource_type: 'DOCUMENT',
+      resource_id: documentId,
+      action: 'UPDATE',
+      correlation_id: getCorrelationId() ?? randomUUID(),
+    });
+    if (!permCheck.allowed)
+      throw new ForbiddenException(`Document update denied: ${permCheck.reason_code}`);
+
     const parsed = documentVersionSchema.safeParse(body);
     if (!parsed.success) {
       throw new BadRequestException(parsed.error.issues);
@@ -375,7 +402,11 @@ export class DocumentsController {
 
   @Get(':id/versions')
   @ApiOperation({ summary: 'List document versions' })
-  async getVersions(@Param('id') documentId: string): Promise<DocumentVersionDto[]> {
+  async getVersions(
+    @Param('id') documentId: string,
+    @CurrentUser() user?: AuthContext,
+  ): Promise<DocumentVersionDto[]> {
+    await this.requireDocumentPreview(documentId, user);
     return this.documentsService.getDocumentVersions(documentId);
   }
 
@@ -384,10 +415,26 @@ export class DocumentsController {
   async getVersion(
     @Param('id') documentId: string,
     @Param('version') version: string,
+    @CurrentUser() user?: AuthContext,
   ): Promise<DocumentVersionDto> {
+    await this.requireDocumentPreview(documentId, user);
     const versionNum = parseInt(version, 10);
     if (isNaN(versionNum)) throw new BadRequestException('Invalid version number');
     return this.documentsService.getDocumentVersion(documentId, versionNum);
+  }
+
+  private async requireDocumentPreview(documentId: string, user?: AuthContext): Promise<void> {
+    if (!user) throw new ForbiddenException('Authentication required');
+    const decision = await this.permissionClient.check({
+      actor_id: user.userId,
+      actor_role: user.role,
+      resource_type: 'DOCUMENT',
+      resource_id: documentId,
+      action: 'PREVIEW',
+      correlation_id: getCorrelationId() ?? randomUUID(),
+    });
+    if (!decision.allowed)
+      throw new ForbiddenException(`Document access denied: ${decision.reason_code}`);
   }
 
   @Post(':id/download-ticket')
@@ -713,8 +760,10 @@ export class RecordsController {
   async listRecords(
     @Query('creator_id') creator_id?: string,
     @Query('status') status?: string,
+    @CurrentUser() user?: AuthContext,
   ): Promise<RecordDto[]> {
-    return this.documentsService.listRecords({ creator_id, status });
+    if (!user) throw new ForbiddenException('Authentication required');
+    return this.documentsService.listRecords({ creator_id: creator_id || user.userId, status });
   }
 
   @Post()
@@ -750,8 +799,16 @@ export class RecordsController {
 
   @Get(':id')
   @ApiOperation({ summary: 'Get record by ID' })
-  async getRecord(@Param('id') recordId: string): Promise<RecordDto> {
-    return this.documentsService.getRecord(recordId);
+  async getRecord(
+    @Param('id') recordId: string,
+    @CurrentUser() user?: AuthContext,
+  ): Promise<RecordDto> {
+    if (!user) throw new ForbiddenException('Authentication required');
+    const record = await this.documentsService.getRecord(recordId);
+    if (record.creator_id !== user.userId) {
+      throw new ForbiddenException('Only the record custodian may access this record');
+    }
+    return record;
   }
 
   @Post(':id/entries')
@@ -767,6 +824,11 @@ export class RecordsController {
     const parsed = recordEntrySchema.safeParse(body);
     if (!parsed.success) {
       throw new BadRequestException(parsed.error.issues);
+    }
+
+    const record = await this.documentsService.getRecord(recordId);
+    if (record.creator_id !== user.userId) {
+      throw new ForbiddenException('Only the record custodian may modify this record');
     }
 
     const entry = await this.documentsService.addDocumentToRecord(
@@ -1096,8 +1158,20 @@ export class TransferPackagesController {
 
   @Get(':id')
   @ApiOperation({ summary: 'Get transfer package by ID' })
-  async getPackage(@Param('id') packageId: string): Promise<TransferPackageDto> {
-    return this.documentsService.getTransferPackage(packageId);
+  async getPackage(
+    @Param('id') packageId: string,
+    @CurrentUser() user?: AuthContext,
+  ): Promise<TransferPackageDto> {
+    if (!user) throw new ForbiddenException('Authentication required');
+    const pkg = await this.documentsService.getTransferPackage(packageId);
+    if (
+      !isAdmin(user) &&
+      pkg.submitter_id !== user.userId &&
+      !hasCapability(user, Capability.ARCHIVE_RECEIVE)
+    ) {
+      throw new ForbiddenException('Transfer package access denied');
+    }
+    return pkg;
   }
 
   @Get()
@@ -1106,7 +1180,16 @@ export class TransferPackagesController {
     @Query('record_id') record_id?: string,
     @Query('status') status?: string,
     @Query('submitter_id') submitter_id?: string,
+    @CurrentUser() user?: AuthContext,
   ): Promise<TransferPackageDto[]> {
+    if (!user) throw new ForbiddenException('Authentication required');
+    if (!isAdmin(user) && !hasCapability(user, Capability.ARCHIVE_RECEIVE)) {
+      return this.documentsService.listTransferPackages({
+        record_id,
+        status,
+        submitter_id: user.userId,
+      });
+    }
     return this.documentsService.listTransferPackages({ record_id, status, submitter_id });
   }
 }
