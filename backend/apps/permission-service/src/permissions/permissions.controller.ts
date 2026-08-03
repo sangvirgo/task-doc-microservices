@@ -11,7 +11,10 @@ import {
   Param,
   Delete,
   Query,
+  ForbiddenException,
+  Req,
 } from '@nestjs/common';
+import type { Request } from 'express';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import { randomUUID } from 'crypto';
 import { z } from 'zod';
@@ -109,10 +112,17 @@ export class PermissionsController {
 
   @Post('grants')
   @ApiOperation({ summary: 'Create a new grant' })
-  async createGrant(@Body() body: z.infer<typeof createGrantSchema>): Promise<GrantDto> {
+  async createGrant(
+    @Body() body: z.infer<typeof createGrantSchema>,
+    @Req() req: Request,
+  ): Promise<GrantDto> {
     const parsed = createGrantSchema.safeParse(body);
     if (!parsed.success) {
       throw new BadRequestException(parsed.error.issues);
+    }
+    const caller = this.caller(req);
+    if (caller?.role === 'EMPLOYEE') {
+      throw new ForbiddenException('Only administrators may create primary grants');
     }
 
     return this.permissionService.createGrant({
@@ -135,9 +145,14 @@ export class PermissionsController {
     @Query('resource_id') resource_id?: string,
     @Query('status') status?: string,
     @Query('task_id') task_id?: string,
+    @Req() req?: Request,
   ): Promise<GrantDto[]> {
+    const caller = this.caller(req);
+    if (caller?.role === 'EMPLOYEE' && actor_id && actor_id !== caller.userId) {
+      throw new ForbiddenException('Employees may only list their own grants');
+    }
     return this.permissionService.listGrants({
-      actor_id,
+      actor_id: caller?.role === 'EMPLOYEE' ? caller.userId : actor_id,
       resource_type,
       resource_id,
       status,
@@ -147,8 +162,10 @@ export class PermissionsController {
 
   @Get('grants/:id')
   @ApiOperation({ summary: 'Get a grant by ID' })
-  async getGrant(@Param('id') id: string): Promise<GrantDto> {
-    return this.permissionService.getGrant(id);
+  async getGrant(@Param('id') id: string, @Req() req: Request): Promise<GrantDto> {
+    const grant = await this.permissionService.getGrant(id);
+    this.requireVisibleGrant(req, grant);
+    return grant;
   }
 
   @Post('grants/:id/delegate')
@@ -157,11 +174,14 @@ export class PermissionsController {
   async delegateGrant(
     @Param('id') parentGrantId: string,
     @Body() body: z.infer<typeof delegateSchema>,
+    @Req() req: Request,
   ): Promise<GrantDto> {
     const parsed = delegateSchema.safeParse(body);
     if (!parsed.success) {
       throw new BadRequestException(parsed.error.issues);
     }
+    const parent = await this.permissionService.getGrant(parentGrantId);
+    this.requireVisibleGrant(req, parent);
 
     return this.permissionService.delegateGrant({
       parent_grant_id: parentGrantId,
@@ -176,12 +196,32 @@ export class PermissionsController {
   async revokeGrant(
     @Param('id') id: string,
     @Body() body: z.infer<typeof revokeSchema>,
+    @Req() req: Request,
   ): Promise<GrantDto> {
     const parsed = revokeSchema.safeParse(body);
     if (!parsed.success) {
       throw new BadRequestException(parsed.error.issues);
     }
+    const grant = await this.permissionService.getGrant(id);
+    this.requireVisibleGrant(req, grant);
 
     return this.permissionService.revokeGrant(id, parsed.data.reason);
+  }
+
+  private caller(req?: Request): { userId: string; role: string } | undefined {
+    const userId = req?.header('x-user-id');
+    const role = req?.header('x-user-role');
+    return userId && role ? { userId, role } : undefined;
+  }
+
+  private requireVisibleGrant(req: Request, grant: GrantDto): void {
+    const caller = this.caller(req);
+    if (
+      caller?.role === 'EMPLOYEE' &&
+      grant.actor_id !== caller.userId &&
+      grant.grantor_id !== caller.userId
+    ) {
+      throw new ForbiddenException('Employees may only access their own grants');
+    }
   }
 }

@@ -296,8 +296,7 @@ export class GatewayController {
       path.startsWith('/api/monitoring/') ||
       path === '/api/monitoring' ||
       path.startsWith('/api/audit/') ||
-      path === '/api/audit' ||
-      path.startsWith('/api/permissions/grants')
+      path === '/api/audit'
     ) {
       if (!isAdmin) throw new ForbiddenException('Administrator role required');
     }
@@ -310,6 +309,13 @@ export class GatewayController {
       const recipientId = typeof req.query.recipient_id === 'string' ? req.query.recipient_id : '';
       if (!user || recipientId !== user.userId) {
         throw new ForbiddenException('Notifications may only be accessed for the caller');
+      }
+    }
+
+    if (path === '/api/permissions/grants' && !isAdmin) {
+      const actorId = typeof req.query.actor_id === 'string' ? req.query.actor_id : undefined;
+      if (actorId && (!user || actorId !== user.userId)) {
+        throw new ForbiddenException('Employees may only query their own grants');
       }
     }
 

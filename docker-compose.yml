@@ -16,15 +16,15 @@ x-service-base: &service-base
     JWT_SECRET: ${JWT_SECRET:-dev-secret-min-32-chars-required-000000}
     JWT_TTL_SECONDS: ${JWT_TTL_SECONDS:-1800}
     RABBITMQ_URL: amqp://${RABBITMQ_USER:-c17}:${RABBITMQ_PASSWORD:?set RABBITMQ_PASSWORD}@rabbitmq:5672
-    MESSAGING_IN_MEMORY: 'false'
+    MESSAGING_IN_MEMORY: "false"
   depends_on: &rabbitmq-dependency
     rabbitmq:
       condition: service_healthy
   healthcheck: &app-healthcheck
     test:
       [
-        'CMD-SHELL',
-        "node -e \"fetch('http://127.0.0.1:' + process.env.PORT + '/health').then((response) => process.exit(response.ok ? 0 : 1)).catch(() => process.exit(1))\"",
+        "CMD-SHELL",
+        'node -e "fetch(''http://127.0.0.1:'' + process.env.PORT + ''/health'').then((response) => process.exit(response.ok ? 0 : 1)).catch(() => process.exit(1))"',
       ]
     interval: 15s
     timeout: 10s
@@ -44,13 +44,13 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}
       POSTGRES_DB: ${POSTGRES_DB:-c17}
     ports:
-      - '${POSTGRES_PORT:-5432}:5432'
+      - "127.0.0.1:${POSTGRES_PORT:-5432}:5432"
     volumes:
       - postgres-data:/var/lib/postgresql/data
       # One database per owning service (V3 §7). Runs only on first initialisation.
       - ./infra/postgres/init-databases.sh:/docker-entrypoint-initdb.d/10-init-databases.sh:ro
     healthcheck:
-      test: ['CMD-SHELL', 'pg_isready -U ${POSTGRES_USER:-c17}']
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-c17}"]
       interval: 10s
       timeout: 5s
       retries: 10
@@ -58,13 +58,13 @@ services:
   redis:
     image: redis:7.4.7-alpine
     restart: unless-stopped
-    command: ['redis-server', '--appendonly', 'yes']
+    command: ["redis-server", "--appendonly", "yes"]
     ports:
-      - '${REDIS_PORT:-6379}:6379'
+      - "127.0.0.1:${REDIS_PORT:-6379}:6379"
     volumes:
       - redis-data:/data
     healthcheck:
-      test: ['CMD', 'redis-cli', 'ping']
+      test: ["CMD", "redis-cli", "ping"]
       interval: 10s
       timeout: 5s
       retries: 10
@@ -76,12 +76,12 @@ services:
       RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER:-c17}
       RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD:?set RABBITMQ_PASSWORD}
     ports:
-      - '${RABBITMQ_PORT:-5672}:5672'
-      - '${RABBITMQ_MANAGEMENT_PORT:-15672}:15672'
+      - "127.0.0.1:${RABBITMQ_PORT:-5672}:5672"
+      - "127.0.0.1:${RABBITMQ_MANAGEMENT_PORT:-15672}:15672"
     volumes:
       - rabbitmq-data:/var/lib/rabbitmq
     healthcheck:
-      test: ['CMD', 'rabbitmq-diagnostics', '-q', 'ping']
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
       interval: 15s
       timeout: 10s
       retries: 10
@@ -89,17 +89,17 @@ services:
   minio:
     image: minio/minio:RELEASE.2025-09-07T16-13-09Z
     restart: unless-stopped
-    command: ['server', '/data', '--console-address', ':9001']
+    command: ["server", "/data", "--console-address", ":9001"]
     environment:
       MINIO_ROOT_USER: ${MINIO_ACCESS_KEY:?set MINIO_ACCESS_KEY}
       MINIO_ROOT_PASSWORD: ${MINIO_SECRET_KEY:?set MINIO_SECRET_KEY}
     ports:
-      - '${MINIO_PORT:-9000}:9000'
-      - '${MINIO_CONSOLE_PORT:-9001}:9001'
+      - "127.0.0.1:${MINIO_PORT:-9000}:9000"
+      - "127.0.0.1:${MINIO_CONSOLE_PORT:-9001}:9001"
     volumes:
       - minio-data:/data
     healthcheck:
-      test: ['CMD', 'mc', 'ready', 'local']
+      test: ["CMD", "mc", "ready", "local"]
       interval: 15s
       timeout: 10s
       retries: 10
@@ -108,11 +108,11 @@ services:
     image: clamav/clamav:1.4.5
     restart: unless-stopped
     ports:
-      - '${CLAMAV_PORT:-3310}:3310'
+      - "127.0.0.1:${CLAMAV_PORT:-3310}:3310"
     volumes:
       - clamav-data:/var/lib/clamav
     healthcheck:
-      test: ['CMD', 'clamdcheck.sh']
+      test: ["CMD", "clamdcheck.sh"]
       interval: 30s
       timeout: 20s
       start_period: 300s
@@ -161,7 +161,7 @@ services:
       security-monitoring-service:
         condition: service_healthy
     ports:
-      - '3000:3000'
+      - "3000:3000"
 
   authentication-identity-service:
     <<: *service-base
@@ -182,7 +182,7 @@ services:
       redis:
         condition: service_healthy
     ports:
-      - '3001:3001'
+      - "127.0.0.1:3001:3001"
 
   user-role-management-service:
     <<: *service-base
@@ -200,7 +200,7 @@ services:
       postgres:
         condition: service_healthy
     ports:
-      - '3002:3002'
+      - "127.0.0.1:3002:3002"
 
   task-management-service:
     <<: *service-base
@@ -226,7 +226,7 @@ services:
       audit-log-service:
         condition: service_healthy
     ports:
-      - '3003:3003'
+      - "127.0.0.1:3003:3003"
 
   document-management-service:
     <<: *service-base
@@ -256,7 +256,7 @@ services:
       document-security-service:
         condition: service_healthy
     ports:
-      - '3004:3004'
+      - "127.0.0.1:3004:3004"
 
   document-security-service:
     <<: *service-base
@@ -273,7 +273,7 @@ services:
       MINIO_PORT: 9000
       MINIO_ACCESS_KEY: ${MINIO_ACCESS_KEY:?set MINIO_ACCESS_KEY}
       MINIO_SECRET_KEY: ${MINIO_SECRET_KEY:?set MINIO_SECRET_KEY}
-      MINIO_USE_SSL: 'false'
+      MINIO_USE_SSL: "false"
       MINIO_BUCKET: ${MINIO_BUCKET:-documents}
       CLAMAV_HOST: clamav
       CLAMAV_PORT: 3310
@@ -290,7 +290,7 @@ services:
       clamav:
         condition: service_healthy
     ports:
-      - '3005:3005'
+      - "127.0.0.1:3005:3005"
 
   permission-service:
     <<: *service-base
@@ -308,7 +308,7 @@ services:
       postgres:
         condition: service_healthy
     ports:
-      - '3006:3006'
+      - "127.0.0.1:3006:3006"
 
   # Runs at exactly one replica. The audit chain has a single writer by design (V3 §5.7.1,
   # ADR-0002); a second replica would fork it. Do not scale this service.
@@ -328,7 +328,7 @@ services:
       postgres:
         condition: service_healthy
     ports:
-      - '3007:3007'
+      - "127.0.0.1:3007:3007"
     deploy:
       replicas: 1
 
@@ -348,7 +348,7 @@ services:
       postgres:
         condition: service_healthy
     ports:
-      - '3008:3008'
+      - "127.0.0.1:3008:3008"
 
   security-monitoring-service:
     <<: *service-base
@@ -366,7 +366,7 @@ services:
       postgres:
         condition: service_healthy
     ports:
-      - '3009:3009'
+      - "127.0.0.1:3009:3009"
 
 volumes:
   postgres-data:

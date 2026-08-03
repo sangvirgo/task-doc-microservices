@@ -758,12 +758,13 @@ export class RecordsController {
   @Get()
   @ApiOperation({ summary: 'List records' })
   async listRecords(
-    @Query('creator_id') creator_id?: string,
+    @Query('creator_id') _creator_id?: string,
     @Query('status') status?: string,
     @CurrentUser() user?: AuthContext,
   ): Promise<RecordDto[]> {
     if (!user) throw new ForbiddenException('Authentication required');
-    return this.documentsService.listRecords({ creator_id: creator_id || user.userId, status });
+    if (isAdmin(user)) throw new ForbiddenException('ADMIN cannot access records');
+    return this.documentsService.listRecords({ creator_id: user.userId, status });
   }
 
   @Post()
@@ -1163,6 +1164,7 @@ export class TransferPackagesController {
     @CurrentUser() user?: AuthContext,
   ): Promise<TransferPackageDto> {
     if (!user) throw new ForbiddenException('Authentication required');
+    if (isAdmin(user)) throw new ForbiddenException('ADMIN cannot access transfer packages');
     const pkg = await this.documentsService.getTransferPackage(packageId);
     if (
       !isAdmin(user) &&
@@ -1183,6 +1185,7 @@ export class TransferPackagesController {
     @CurrentUser() user?: AuthContext,
   ): Promise<TransferPackageDto[]> {
     if (!user) throw new ForbiddenException('Authentication required');
+    if (isAdmin(user)) throw new ForbiddenException('ADMIN cannot access transfer packages');
     if (!isAdmin(user) && !hasCapability(user, Capability.ARCHIVE_RECEIVE)) {
       return this.documentsService.listTransferPackages({
         record_id,
