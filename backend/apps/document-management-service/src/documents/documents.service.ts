@@ -1126,13 +1126,19 @@ export class DocumentsService {
     };
   }
 
-  async releaseRetentionHold(hold_id: string): Promise<{ id: string; released_at: string }> {
+  async releaseRetentionHold(
+    hold_id: string,
+    actor_id: string,
+  ): Promise<{ id: string; released_at: string }> {
     const hold = await this.prisma.retentionHold.findUnique({
       where: { id: hold_id },
     });
     if (!hold) throw new NotFoundException('Retention hold not found');
     if (hold.released_at) {
       throw new BadRequestException('Retention hold already released');
+    }
+    if (hold.placed_by !== actor_id) {
+      throw new ForbiddenException('Only the hold placer can release this retention hold');
     }
 
     const updated = await this.prisma.retentionHold.update({
@@ -1146,7 +1152,11 @@ export class DocumentsService {
     };
   }
 
-  async listRetentionHolds(filters?: { document_id?: string; released?: boolean }): Promise<
+  async listRetentionHolds(filters?: {
+    document_id?: string;
+    released?: boolean;
+    placed_by?: string;
+  }): Promise<
     Array<{
       id: string;
       document_id: string;
@@ -1158,6 +1168,7 @@ export class DocumentsService {
   > {
     const where: Record<string, unknown> = {};
     if (filters?.document_id) where.document_id = filters.document_id;
+    if (filters?.placed_by) where.placed_by = filters.placed_by;
     if (filters?.released === true) where.released_at = { not: null };
     if (filters?.released === false) where.released_at = null;
 
@@ -1176,7 +1187,7 @@ export class DocumentsService {
     }));
   }
 
-  async listDisposalApprovals(filters?: { document_id?: string }): Promise<
+  async listDisposalApprovals(filters?: { document_id?: string; approver_id?: string }): Promise<
     Array<{
       id: string;
       document_id: string;
@@ -1187,6 +1198,7 @@ export class DocumentsService {
   > {
     const where: Record<string, unknown> = {};
     if (filters?.document_id) where.document_id = filters.document_id;
+    if (filters?.approver_id) where.approver_id = filters.approver_id;
 
     const approvals = await this.prisma.disposalApproval.findMany({
       where,

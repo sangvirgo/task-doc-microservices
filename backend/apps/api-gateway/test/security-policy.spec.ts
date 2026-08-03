@@ -34,6 +34,11 @@ describe('API Gateway security policy', () => {
       ['get', '/api/monitoring/alerts'],
       ['post', '/api/monitoring/events'],
       ['post', '/api/audit/events'],
+      ['get', '/api/security/kek/active'],
+      ['get', '/api/security/records'],
+      ['post', '/api/permissions/internal/permissions/check'],
+      ['post', '/api/auth/internal/sessions/revoke-all'],
+      ['post', '/api/documents/30000000-0000-4000-8000-000000000003/versions'],
     ] as const) {
       await request(app.getHttpServer())
         [method](path)
@@ -62,6 +67,20 @@ describe('API Gateway security policy', () => {
     await request(app.getHttpServer())
       .get('/api/permissions/grants?actor_id=20000000-0000-4000-8000-000000000002')
       .set('authorization', `Bearer ${token}`)
+      .expect(403);
+  });
+
+  it('blocks audit append even when the public path has a trailing slash', async () => {
+    const token = jwtService.sign({
+      sub: '20000000-0000-4000-8000-000000000002',
+      role: 'ADMIN',
+      capabilities: [],
+    });
+
+    await request(app.getHttpServer())
+      .post('/api/audit/events/')
+      .set('authorization', `Bearer ${token}`)
+      .send({})
       .expect(403);
   });
 });

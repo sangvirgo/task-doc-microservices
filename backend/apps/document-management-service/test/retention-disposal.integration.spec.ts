@@ -28,6 +28,7 @@ const minioMock: {
 type MockFetch = typeof fetch & jest.MockedFunction<typeof fetch>;
 
 const EMPLOYEE_ID = '10000000-0000-4000-8000-000000000001';
+const OTHER_EMPLOYEE_ID = '20000000-0000-4000-8000-000000000002';
 const ADMIN_ID = '30000000-0000-4000-8000-000000000003';
 
 function employeeHeaders(): Record<string, string> {
@@ -43,6 +44,15 @@ function adminHeaders(): Record<string, string> {
   return {
     'x-user-id': ADMIN_ID,
     'x-user-role': 'ADMIN',
+    'x-user-capabilities': '[]',
+    'x-correlation-id': randomUUID(),
+  };
+}
+
+function otherEmployeeHeaders(): Record<string, string> {
+  return {
+    'x-user-id': OTHER_EMPLOYEE_ID,
+    'x-user-role': 'EMPLOYEE',
     'x-user-capabilities': '[]',
     'x-correlation-id': randomUUID(),
   };
@@ -205,6 +215,37 @@ describe('Retention and disposal integration (PostgreSQL)', () => {
         .expect(200);
 
       expect(releaseRes.body.released_at).toBeDefined();
+    });
+
+    it("does not expose or release another employee's hold", async () => {
+      const doc = await prisma.document.create({
+        data: {
+          title: 'Scoped Hold',
+          document_type: 'REPORT',
+          owner_id: EMPLOYEE_ID,
+          creator_id: EMPLOYEE_ID,
+        },
+      });
+
+      const placeRes = await request(app.getHttpServer())
+        .post('/retention-disposal/holds')
+        .set(employeeHeaders())
+        .send({ document_id: doc.id, reason: 'Legal hold' })
+        .expect(201);
+
+      await request(app.getHttpServer())
+        .get('/retention-disposal/holds')
+        .set(otherEmployeeHeaders())
+        .expect(200)
+        .expect([]);
+
+      await request(app.getHttpServer())
+        .post(`/retention-disposal/holds/${placeRes.body.id}/release`)
+        .set(otherEmployeeHeaders())
+        .expect(403);
+
+      const hold = await prisma.retentionHold.findUnique({ where: { id: placeRes.body.id } });
+      expect(hold?.released_at).toBeNull();
     });
 
     it('rejects duplicate active hold', async () => {

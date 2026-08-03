@@ -2,6 +2,7 @@ import {
   BadRequestException,
   Body,
   Controller,
+  ForbiddenException,
   Get,
   HttpCode,
   HttpStatus,
@@ -13,6 +14,7 @@ import {
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import { z } from 'zod';
 
+import { CurrentUser, type AuthContext, isAdmin } from '@c17/auth-context';
 import { MonitoringService, SecurityAlertDto, SecurityRuleDto } from './monitoring.service';
 
 const recordEventSchema = z.object({
@@ -42,6 +44,10 @@ const toggleRuleSchema = z.object({
 export class MonitoringController {
   constructor(private readonly monitoringService: MonitoringService) {}
 
+  private requireAdmin(user: AuthContext): void {
+    if (!isAdmin(user)) throw new ForbiddenException('Administrator role required');
+  }
+
   @Post('events')
   @ApiOperation({ summary: 'Record a security event against a rule' })
   async recordEvent(@Body() body: z.infer<typeof recordEventSchema>) {
@@ -57,36 +63,52 @@ export class MonitoringController {
     @Query('severity') severity?: string,
     @Query('actor_id') actor_id?: string,
     @Query('rule_id') rule_id?: string,
+    @CurrentUser() user?: AuthContext,
   ): Promise<SecurityAlertDto[]> {
+    this.requireAdmin(user as AuthContext);
     return this.monitoringService.listAlerts({ status, severity, actor_id, rule_id });
   }
 
   @Get('alerts/:id')
   @ApiOperation({ summary: 'Get a security alert by ID' })
-  async getAlert(@Param('id') id: string): Promise<SecurityAlertDto> {
+  async getAlert(
+    @Param('id') id: string,
+    @CurrentUser() user?: AuthContext,
+  ): Promise<SecurityAlertDto> {
+    this.requireAdmin(user as AuthContext);
     return this.monitoringService.getAlert(id);
   }
 
   @Post('alerts/:id/resolve')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Resolve a security alert' })
-  async resolveAlert(@Param('id') id: string, @Body() body: z.infer<typeof resolveAlertSchema>) {
+  async resolveAlert(
+    @Param('id') id: string,
+    @Body() body: z.infer<typeof resolveAlertSchema>,
+    @CurrentUser() user?: AuthContext,
+  ) {
     const parsed = resolveAlertSchema.safeParse(body);
     if (!parsed.success) throw new BadRequestException(parsed.error.issues);
-    return this.monitoringService.resolveAlert(id, parsed.data.resolved_by);
+    this.requireAdmin(user as AuthContext);
+    return this.monitoringService.resolveAlert(id, (user as AuthContext).userId);
   }
 
   @Post('rules')
   @ApiOperation({ summary: 'Create a security rule' })
-  async createRule(@Body() body: z.infer<typeof createRuleSchema>): Promise<SecurityRuleDto> {
+  async createRule(
+    @Body() body: z.infer<typeof createRuleSchema>,
+    @CurrentUser() user?: AuthContext,
+  ): Promise<SecurityRuleDto> {
     const parsed = createRuleSchema.safeParse(body);
     if (!parsed.success) throw new BadRequestException(parsed.error.issues);
+    this.requireAdmin(user as AuthContext);
     return this.monitoringService.createRule(parsed.data);
   }
 
   @Get('rules')
   @ApiOperation({ summary: 'List security rules' })
-  async listRules(): Promise<SecurityRuleDto[]> {
+  async listRules(@CurrentUser() user?: AuthContext): Promise<SecurityRuleDto[]> {
+    this.requireAdmin(user as AuthContext);
     return this.monitoringService.listRules();
   }
 
@@ -95,9 +117,11 @@ export class MonitoringController {
   async toggleRule(
     @Param('id') id: string,
     @Body() body: z.infer<typeof toggleRuleSchema>,
+    @CurrentUser() user?: AuthContext,
   ): Promise<SecurityRuleDto> {
     const parsed = toggleRuleSchema.safeParse(body);
     if (!parsed.success) throw new BadRequestException(parsed.error.issues);
+    this.requireAdmin(user as AuthContext);
     return this.monitoringService.toggleRule(id, parsed.data.enabled);
   }
 }

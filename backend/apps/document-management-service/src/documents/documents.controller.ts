@@ -201,6 +201,7 @@ export class DocumentsController {
     @CurrentUser() user?: AuthContext,
   ): Promise<UploadedDocumentResult> {
     if (!user) throw new ForbiddenException('Authentication required');
+    if (isAdmin(user)) throw new ForbiddenException('ADMIN cannot upload documents');
     if (!file) throw new BadRequestException('A file upload is required');
 
     const parsed = multipartUploadSchema.safeParse(body);
@@ -229,6 +230,7 @@ export class DocumentsController {
     @CurrentUser() user?: AuthContext,
   ): Promise<UploadedDocumentResult> {
     if (!user) throw new ForbiddenException('Authentication required');
+    if (isAdmin(user)) throw new ForbiddenException('ADMIN cannot upload documents');
 
     const parsed = rawUploadHeaderSchema.safeParse({
       title: firstHeader(headers['x-document-title']),
@@ -273,6 +275,7 @@ export class DocumentsController {
     @CurrentUser() user?: AuthContext,
   ): Promise<DocumentDto> {
     if (!user) throw new ForbiddenException('Authentication required');
+    if (isAdmin(user)) throw new ForbiddenException('ADMIN cannot create documents');
 
     const parsed = createDocumentSchema.safeParse(body);
     if (!parsed.success) {
@@ -358,6 +361,7 @@ export class DocumentsController {
     @CurrentUser() user?: AuthContext,
   ): Promise<DocumentVersionDto> {
     if (!user) throw new ForbiddenException('Authentication required');
+    if (isAdmin(user)) throw new ForbiddenException('ADMIN cannot create document versions');
 
     const permCheck = await this.permissionClient.check({
       actor_id: user.userId,
@@ -805,6 +809,7 @@ export class RecordsController {
     @CurrentUser() user?: AuthContext,
   ): Promise<RecordDto> {
     if (!user) throw new ForbiddenException('Authentication required');
+    if (isAdmin(user)) throw new ForbiddenException('ADMIN cannot access records');
     const record = await this.documentsService.getRecord(recordId);
     if (record.creator_id !== user.userId) {
       throw new ForbiddenException('Only the record custodian may access this record');
@@ -1215,6 +1220,9 @@ export class RetentionDisposalController {
   @ApiOperation({ summary: 'Check retention eligibility (idempotent worker)' })
   async checkEligibility(@CurrentUser() user?: AuthContext) {
     if (!user) throw new ForbiddenException('Authentication required');
+    if (isAdmin(user)) {
+      throw new ForbiddenException('ADMIN cannot run retention eligibility checks');
+    }
 
     const eligibleIds = await this.documentsService.checkRetentionEligibility();
 
@@ -1337,7 +1345,7 @@ export class RetentionDisposalController {
     @Body() body: { document_id: string; reason: string },
     @CurrentUser() user?: AuthContext,
   ) {
-    if (!user) throw new ForbiddenException('Authentication required');
+    const operator = this.requireRetentionEmployee(user);
 
     const parsed = z
       .object({
@@ -1352,7 +1360,7 @@ export class RetentionDisposalController {
     return this.documentsService.placeRetentionHold({
       document_id: parsed.data.document_id,
       reason: parsed.data.reason,
-      placed_by: user.userId,
+      placed_by: operator.userId,
     });
   }
 
@@ -1360,8 +1368,8 @@ export class RetentionDisposalController {
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Release a retention hold' })
   async releaseHold(@Param('id') holdId: string, @CurrentUser() user?: AuthContext) {
-    if (!user) throw new ForbiddenException('Authentication required');
-    return this.documentsService.releaseRetentionHold(holdId);
+    const operator = this.requireRetentionEmployee(user);
+    return this.documentsService.releaseRetentionHold(holdId, operator.userId);
   }
 
   @Get('holds')
@@ -1369,16 +1377,32 @@ export class RetentionDisposalController {
   async listHolds(
     @Query('document_id') document_id?: string,
     @Query('released') released?: string,
+    @CurrentUser() user?: AuthContext,
   ) {
+    const operator = this.requireRetentionEmployee(user);
     return this.documentsService.listRetentionHolds({
       document_id,
       released: released === 'true' ? true : released === 'false' ? false : undefined,
+      placed_by: operator.userId,
     });
   }
 
   @Get('approvals')
   @ApiOperation({ summary: 'List disposal approvals' })
-  async listApprovals(@Query('document_id') document_id?: string) {
-    return this.documentsService.listDisposalApprovals({ document_id });
+  async listApprovals(
+    @Query('document_id') document_id?: string,
+    @CurrentUser() user?: AuthContext,
+  ) {
+    const operator = this.requireRetentionEmployee(user);
+    return this.documentsService.listDisposalApprovals({
+      document_id,
+      approver_id: operator.userId,
+    });
+  }
+
+  private requireRetentionEmployee(user?: AuthContext): AuthContext {
+    if (!user) throw new ForbiddenException('Authentication required');
+    if (isAdmin(user)) throw new ForbiddenException('ADMIN cannot manage retention state');
+    return user;
   }
 }

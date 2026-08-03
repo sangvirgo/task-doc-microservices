@@ -283,8 +283,24 @@ export class GatewayController {
   private enforcePublicAuthorizationPolicy(req: Request): void {
     const user = (req as unknown as Record<string, unknown>)['user'] as
       { userId: string; role: string } | undefined;
-    const path = req.originalUrl.split('?')[0];
+    const path = req.originalUrl.split('?')[0].replace(/\/+$/, '') || '/';
     const isAdmin = user?.role === 'ADMIN';
+
+    if (path === '/api/security' || path.startsWith('/api/security/')) {
+      throw new ForbiddenException('Document security endpoints are internal-only');
+    }
+
+    if (path.startsWith('/api/permissions/internal/')) {
+      throw new ForbiddenException('Permission decision endpoints are internal-only');
+    }
+
+    if (path.startsWith('/api/auth/internal/')) {
+      throw new ForbiddenException('Authentication control-plane endpoints are internal-only');
+    }
+
+    if (/^\/api\/documents\/[^/]+\/versions$/.test(path) && req.method === 'POST') {
+      throw new ForbiddenException('Document version processing is internal-only');
+    }
 
     if (path.startsWith('/api/monitoring/events')) {
       throw new ForbiddenException('Security event ingestion is internal-only');

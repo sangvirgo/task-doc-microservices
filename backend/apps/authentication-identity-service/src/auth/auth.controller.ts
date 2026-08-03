@@ -2,6 +2,7 @@ import {
   BadRequestException,
   Body,
   Controller,
+  ForbiddenException,
   HttpCode,
   HttpStatus,
   Inject,
@@ -57,6 +58,9 @@ export class AuthController {
     const parsed = registerSchema.safeParse(body);
     if (!parsed.success) {
       throw new BadRequestException(parsed.error.issues);
+    }
+    if (parsed.data.role !== 'EMPLOYEE') {
+      throw new ForbiddenException('Public registration is limited to EMPLOYEE accounts');
     }
     return this.authService.register(parsed.data.email, parsed.data.password, parsed.data.role);
   }

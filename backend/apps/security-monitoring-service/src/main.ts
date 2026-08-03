@@ -4,6 +4,7 @@ import { NestFactory } from '@nestjs/core';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 
 import { StructuredLogger } from '@c17/observability';
+import { attachAuthContextFromHeaders } from '@c17/auth-context';
 
 import { AppModule, SERVICE } from './app.module';
 
@@ -11,6 +12,7 @@ export const DEFAULT_PORT = 3009;
 
 async function bootstrap(): Promise<void> {
   const app = await NestFactory.create(AppModule, { bufferLogs: true });
+  app.use(attachAuthContextFromHeaders);
 
   const logger = app.get(StructuredLogger);
   app.useLogger(logger);
