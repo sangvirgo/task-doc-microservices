@@ -1,0 +1,5 @@
+.card { width: min(100%, 420px); padding: var(--space-8); border: 1px solid var(--color-border); border-radius: var(--radius-md); background: var(--color-surface); box-shadow: var(--shadow-raised); }
+.product { margin: 0 0 var(--space-3); color: var(--color-accent); font-size: .875rem; font-weight: 700; }
+.card h1 { margin: 0; font-size: 1.75rem; }.copy { margin: var(--space-2) 0 var(--space-6); color: var(--color-text-muted); }
+.card form { display: grid; gap: var(--space-2); }.card label { margin-top: var(--space-2); font-weight: 600; }.card input { min-height: 44px; padding: 0 var(--space-3); border: 1px solid var(--color-border); border-radius: var(--radius-sm); }
+.card button { min-height: 44px; margin-top: var(--space-4); border: 0; border-radius: var(--radius-sm); color: white; background: var(--color-accent); font-weight: 700; }.card button:disabled { opacity: .7; cursor: wait; }.error { margin: var(--space-2) 0 0; color: var(--color-danger); }

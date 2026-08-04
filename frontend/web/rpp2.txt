@@ -1,0 +1,63 @@
+# Web Phase Stop Report
+
+## Phase and current branch
+
+- Phase: Phase 2 — partial implementation; acceptance is not complete.
+- Branch: `feat/web-ui-taskdoc`.
+- No commit, push, merge, rebase, PR, deploy, backend implementation change, or mobile change was made.
+
+## Implemented routes and verified Gateway endpoints
+
+- Implemented routes: `/tasks`, `/tasks/[id]`, `/documents`, `/documents/[id]`.
+- Gateway client routes used: `GET /api/tasks`, `GET /api/tasks/:id`, `GET/POST /api/tasks/:id/comments`, `GET /api/tasks/:id/participants`, `GET /api/tasks/:id/activity`, task status/block/submit/review routes; `GET /api/documents`, document detail/version routes, multipart `POST /api/documents/upload`, `POST /api/documents/:id/download-ticket`, and `POST /api/documents/:id/versions/:version/redeem`.
+- Current backend code was inspected. Ancestor Oversight receives the six-field summary projection; the Web client does not request participants, activity, or Comments after such a response, and has no Document link/control there.
+- Contract discrepancies found in backend source: oversize and unsupported MIME uploads return `400`, not `413/415`; ticket replay is denied as `403`, not `409`; duplicate task participation is an actual `409`; invalid lifecycle transitions are `400`.
+
+## Files and local commits
+
+- Added task/document API types and client modules, feature views, routes, Dockerfile and Web Docker ignore file.
+- Added focused tests for status normalization, ancestor-only request suppression, and one-time ticket redemption.
+- Updated `playwright.config.ts` to explicit system Chrome fallback.
+- Added only the `web` service section to the root Compose file for requested container integration.
+- Local commits: none.
+
+## Verification
+
+- lint: PASS — `corepack pnpm --filter @c17/web lint`.
+- typecheck: PASS — `corepack pnpm --filter @c17/web typecheck`.
+- unit/component tests: PASS — `corepack pnpm --filter @c17/web test`; 9 files, 40 tests.
+- Playwright: PASS for current suite — `corepack pnpm --filter @c17/web test:e2e`; 4 passed, 0 failed, 0 skipped. Chrome system executable: `C:\Program Files\Google\Chrome\Application\chrome.exe`, version `150.0.7871.187`; desktop and tablet projects.
+- build: PASS — `corepack pnpm --filter @c17/web build`.
+- desktop/tablet/accessibility review: actual Chrome desktop/tablet route-protection, keyboard focus, and horizontal-overflow tests passed. Broader Phase 2 role/accessibility fixture coverage remains incomplete.
+
+## Test fixtures and roles covered
+
+- Existing login/session fixture only in browser tests.
+- Unit coverage includes ancestor-oversight response behavior: no participants/activity/Comment request and no Comment/Document DOM.
+- Required public-Gateway isolated participant, ancestor-oversight, upload-invalid, and 409-conflict browser fixtures were not run because the containerized Gateway stack could not be started.
+
+## Security review
+
+- Browser traffic remains same-origin `/gateway/*`; no service ports or `/internal/*` calls were added.
+- Access/refresh values remain in the one sessionStorage namespace record. JWT `sub` is decoded only to prefill upload owner metadata for UX; backend authorization remains authoritative.
+- Download requests ticket then redeems it once and revokes the Blob URL. The ticket ID, raw document bytes, storage URL and object key are not rendered or logged by these modules.
+- Required exhaustive sensitive-DOM/console/HTTP tests and full upload-progress implementation remain incomplete.
+
+## Docker integration test
+
+- image tag: `c17-web-phase2:local`.
+- services running: no persistent Compose services. A temporary Web image smoke container returned HTTP `200` at `/login` and was removed.
+- Docker Compose command/result: `docker compose up -d --build` was attempted twice; both failed while pulling infrastructure images from Docker CloudFront with `failed to copy ... EOF`.
+- Playwright result against containerized stack: not run because Gateway/container stack never started.
+- compose diff, if any: added only the `web` service with build context `./frontend/web`, named root build context, Gateway dependency and port `3100:3000`.
+- Managed Chromium: installation created incomplete directories, missing both the Chrome executable and headless-shell binary. A forced reinstall stalled without progress. System Chrome fallback was explicitly authorized and used as above.
+- Docker pull troubleshooting after proxy changes: Docker Desktop was restarted with both System proxy and No proxy. In both cases `docker info` continued to show `HTTP Proxy: http.docker.internal:3128`, `HTTPS Proxy: http.docker.internal:3128`, and `No Proxy: hubproxy.docker.internal`. `docker --debug pull redis:7.4.7-alpine` continued to fail during individual CloudFront blob downloads with `failed to copy: httpReadSeeker: failed open: ... production.cloudfront.docker.com ... EOF`. PostgreSQL had previously pulled successfully, while Redis/RabbitMQ/MinIO/ClamAV did not complete.
+
+## Known gaps and deferred scope
+
+- Phase 2 is not complete: public-Gateway Playwright fixtures, containerized Playwright execution, complete participant/submission/review UI, actual byte-level upload progress, and the remaining required security assertions are unfinished.
+- Phase 3 and Phase 4 were not started.
+
+## Required user authorization
+
+Phase 2 is not yet complete. Resolve Docker registry connectivity (or provide an already-pulled/in-network stack) so the required Gateway/containerized fixtures can run. After Phase 2 is genuinely complete, separate approval is required before starting Phase 3. Phase 3/4 have not been started.

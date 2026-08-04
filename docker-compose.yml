@@ -368,6 +368,21 @@ services:
     ports:
       - '3009:3009'
 
+  web:
+    build:
+      context: ./frontend/web
+      dockerfile: Dockerfile
+      additional_contexts:
+        root: .
+    environment:
+      NEXT_PUBLIC_API_BASE_URL: http://api-gateway:3000
+      NEXT_PUBLIC_APP_ENV: development
+    depends_on:
+      api-gateway:
+        condition: service_healthy
+    ports:
+      - '3100:3000'
+
 volumes:
   postgres-data:
   redis-data:
