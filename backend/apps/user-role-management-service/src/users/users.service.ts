@@ -9,6 +9,8 @@ import { isContentAdjacentCapability, type Capability } from '@c17/contracts';
 
 import { UserRolePrismaService } from '../prisma/user-role-prisma.service';
 
+export interface MemberDirectoryDto { id: string; email: string; }
+
 export interface UserDto {
   id: string;
   email: string;
@@ -46,6 +48,10 @@ export class UsersService {
   async listUsers(): Promise<UserDto[]> {
     const users = await this.prisma.user.findMany({ include: { Capability: true } });
     return users.map((u) => this.toDto(u));
+  }
+
+  async memberDirectory(): Promise<MemberDirectoryDto[]> {
+    return this.prisma.user.findMany({ where: { role: 'EMPLOYEE', locked_at: null }, select: { id: true, email: true }, orderBy: { email: 'asc' } });
   }
 
   async lockUser(id: string): Promise<UserDto> {
