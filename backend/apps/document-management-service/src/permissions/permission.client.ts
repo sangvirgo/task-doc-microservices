@@ -1,5 +1,13 @@
-import { Injectable, Logger } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  ForbiddenException,
+  Injectable,
+  Logger,
+  ServiceUnavailableException,
+} from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import type { AuthContext } from '@c17/auth-context';
 
 import {
   denied,
@@ -8,6 +16,22 @@ import {
   type PermissionCheckRequest,
   type PermissionCheckResponse,
 } from '@c17/contracts';
+
+export interface PermissionGrantSummary {
+  id: string;
+  grantor_id: string;
+  actor_id: string;
+  resource_type: string;
+  resource_id: string;
+  permissions: string[];
+  task_id: string;
+  expires_at: string;
+  effective_expires_at: string;
+  status: string;
+  revoked_at: string | null;
+  parent_grant_id: string | null;
+  created_at: string;
+}
 
 /**
  * Permission Service HTTP Client (V3 §8.1).
@@ -67,5 +91,110 @@ export class PermissionClient {
       this.logger.error('Permission check error', { error, request });
       return denied(PermissionReasonCode.PERMISSION_SERVICE_UNAVAILABLE);
     }
+  }
+
+  async createTaskScopedGrant(data: {
+    task_id: string;
+    resource_id: string;
+    actor_id: string;
+    permissions: string[];
+    expires_at: string;
+    parent_grant_id?: string;
+    caller: AuthContext;
+  }): Promise<PermissionGrantSummary> {
+    const response = await this.fetchWithCaller('/internal/grants/task-document', data.caller, {
+      method: 'POST',
+      body: JSON.stringify({
+        task_id: data.task_id,
+        resource_type: 'DOCUMENT',
+        resource_id: data.resource_id,
+        actor_id: data.actor_id,
+        permissions: data.permissions,
+        expires_at: data.expires_at,
+        parent_grant_id: data.parent_grant_id,
+      }),
+    });
+
+    return (await response.json()) as PermissionGrantSummary;
+  }
+
+  async revokeTaskDocumentGrants(data: {
+    task_id: string;
+    resource_id: string;
+    reason: string;
+  }): Promise<number> {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), this.checkTimeoutMs);
+    try {
+      const response = await fetch(
+        `${this.permissionServiceUrl}/internal/grants/task-document/revoke`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            task_id: data.task_id,
+            resource_type: 'DOCUMENT',
+            resource_id: data.resource_id,
+            reason: data.reason,
+          }),
+          signal: controller.signal,
+        },
+      );
+
+      if (!response.ok) {
+        throw new ServiceUnavailableException(
+          `Task-document grant revocation failed: ${response.status}`,
+        );
+      }
+
+      const body = (await response.json().catch(() => undefined)) as
+        { revoked?: number } | undefined;
+      if (typeof body?.revoked !== 'number') {
+        throw new ServiceUnavailableException('Task-document grant revocation response invalid');
+      }
+      return body.revoked;
+    } catch (error) {
+      if (error instanceof ServiceUnavailableException) throw error;
+      throw new ServiceUnavailableException('Task-document grant revocation unavailable');
+    } finally {
+      clearTimeout(timeout);
+    }
+  }
+
+  private async fetchWithCaller(
+    path: string,
+    caller: AuthContext,
+    init: RequestInit,
+  ): Promise<Response> {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), this.checkTimeoutMs);
+    let response: Response;
+    try {
+      response = await fetch(`${this.permissionServiceUrl}${path}`, {
+        ...init,
+        headers: {
+          'Content-Type': 'application/json',
+          'x-user-id': caller.userId,
+          'x-user-role': caller.role,
+          'x-user-capabilities': JSON.stringify(caller.capabilities),
+          ...(init.headers || {}),
+        },
+        signal: controller.signal,
+      });
+    } catch (error) {
+      this.logger.error('Permission service request error', error);
+      throw new ServiceUnavailableException('Permission service unavailable');
+    } finally {
+      clearTimeout(timeout);
+    }
+
+    if (response.ok) return response;
+
+    const body = (await response.json().catch(() => undefined)) as { message?: string } | undefined;
+    const message = body?.message || 'Permission service request failed';
+    if (response.status === 400) throw new BadRequestException(message);
+    if (response.status === 403) throw new ForbiddenException(message);
+    if (response.status === 409) throw new ConflictException(message);
+    throw new ServiceUnavailableException(message);
   }
 }

@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  ForbiddenException,
   Inject,
   Injectable,
   Logger,
@@ -15,10 +16,13 @@ import {
   PermissionReasonCode,
   Producer,
   ResourceType,
+  isPermissionAction,
   isAdminForbiddenAction,
 } from '@c17/contracts';
 import { EVENT_PUBLISHER, type EventPublisher } from '@c17/messaging';
 import { PermissionPrismaService } from '../prisma/permission-prisma.service';
+import { TaskContextClient } from '../tasks/task-context.client';
+import { TaskDocumentClient } from '../tasks/task-document.client';
 
 export interface GrantDto {
   id: string;
@@ -57,6 +61,8 @@ export class PermissionService {
 
   constructor(
     private readonly prisma: PermissionPrismaService,
+    private readonly taskContextClient: TaskContextClient,
+    private readonly taskDocumentClient: TaskDocumentClient,
     @Optional() @Inject(EVENT_PUBLISHER) private readonly eventPublisher?: EventPublisher,
   ) {}
 
@@ -101,66 +107,69 @@ export class PermissionService {
         };
       }
 
-      // Step 2: Look up active grant for actor + resource (V3 §5.5.2)
-      const grant = await this.prisma.grant.findFirst({
+      // Step 2: Look up grants for actor + resource (V3 §5.5.2). A document grant is
+      // usable only while its task-document association remains present.
+      const grants = await this.prisma.grant.findMany({
         where: {
           actor_id: request.actor_id,
           resource_type: request.resource_type,
           resource_id: request.resource_id,
+          task_id: request.task_id ?? undefined,
           revoked_at: null,
         },
         orderBy: { created_at: 'desc' },
       });
 
-      if (!grant) {
-        return {
-          allowed: false,
-          reason_code: PermissionReasonCode.NO_GRANT,
-          effective_expires_at: null,
-        };
-      }
+      let expiredGrant: (typeof grants)[number] | undefined;
+      let missingPermissionGrant: (typeof grants)[number] | undefined;
 
-      if (grant.status === 'EXPIRED') {
+      for (const grant of grants) {
+        if (
+          grant.resource_type === ResourceType.DOCUMENT &&
+          !(await this.taskDocumentClient.exists(grant.task_id, grant.resource_id))
+        ) {
+          continue;
+        }
+
+        if (grant.status === 'EXPIRED' || grant.effective_expires_at.getTime() <= Date.now()) {
+          expiredGrant ??= grant;
+          continue;
+        }
+
+        if (grant.status !== 'ACTIVE') continue;
+
+        if (!grant.permissions.includes(request.action)) {
+          missingPermissionGrant ??= grant;
+          continue;
+        }
+
         return {
-          allowed: false,
-          reason_code: PermissionReasonCode.GRANT_EXPIRED,
+          allowed: true,
+          reason_code: null,
           effective_expires_at: grant.effective_expires_at.toISOString(),
         };
       }
 
-      if (grant.status !== 'ACTIVE') {
-        return {
-          allowed: false,
-          reason_code: PermissionReasonCode.NO_GRANT,
-          effective_expires_at: null,
-        };
-      }
-
-      // Step 3: Check expiration (V3 §5.5.2, ADR-0001)
-      // effective_expires_at is denormalized; check it at request time
-      const now = new Date();
-      if (now > grant.effective_expires_at) {
+      if (expiredGrant) {
         return {
           allowed: false,
           reason_code: PermissionReasonCode.GRANT_EXPIRED,
-          effective_expires_at: grant.effective_expires_at.toISOString(),
+          effective_expires_at: expiredGrant.effective_expires_at.toISOString(),
         };
       }
 
-      // Step 4: Check permission is in the grant's action set
-      if (!grant.permissions.includes(request.action)) {
+      if (missingPermissionGrant) {
         return {
           allowed: false,
           reason_code: PermissionReasonCode.MISSING_CAPABILITY,
-          effective_expires_at: grant.effective_expires_at.toISOString(),
+          effective_expires_at: missingPermissionGrant.effective_expires_at.toISOString(),
         };
       }
 
-      // Step 5: Grant is valid, allow access
       return {
-        allowed: true,
-        reason_code: null,
-        effective_expires_at: grant.effective_expires_at.toISOString(),
+        allowed: false,
+        reason_code: PermissionReasonCode.NO_GRANT,
+        effective_expires_at: null,
       };
     } catch (error) {
       // Fail-closed on any error (V3 §5.5.3, ADR-0001)
@@ -188,6 +197,42 @@ export class PermissionService {
     effective_expires_at?: Date;
     parent_grant_id?: string;
   }): Promise<GrantDto> {
+    this.assertKnownPermissions(data.permissions);
+
+    const taskContext = await this.taskContextClient.getContext(data.task_id);
+    if (
+      data.resource_type === ResourceType.DOCUMENT &&
+      !(await this.taskDocumentClient.exists(data.task_id, data.resource_id))
+    ) {
+      throw new BadRequestException('A document grant requires a valid task-document association');
+    }
+    if (
+      data.resource_type === ResourceType.DOCUMENT &&
+      !isDirectTaskParticipant(taskContext, data.actor_id)
+    ) {
+      throw new ForbiddenException('Grant recipient must be a direct task participant');
+    }
+
+    const now = new Date();
+    if (data.expires_at.getTime() <= now.getTime()) {
+      throw new BadRequestException('Grant expiration must be in the future');
+    }
+
+    let parentEffectiveExpiry: Date | undefined;
+    if (data.parent_grant_id) {
+      const parent = await this.requireActiveParent(data.parent_grant_id, data);
+      parentEffectiveExpiry = parent.effective_expires_at;
+      this.assertPermissionSubset(data.permissions, parent.permissions);
+    }
+
+    const taskDeadline = taskContext.task.deadline
+      ? new Date(taskContext.task.deadline)
+      : undefined;
+    const effectiveExpiresAt = earliestDate(data.expires_at, taskDeadline, parentEffectiveExpiry);
+    if (effectiveExpiresAt.getTime() <= now.getTime()) {
+      throw new BadRequestException('Grant is already expired under the task or parent grant');
+    }
+
     const grant = await this.prisma.grant.create({
       data: {
         grantor_id: data.grantor_id,
@@ -197,12 +242,51 @@ export class PermissionService {
         permissions: data.permissions,
         task_id: data.task_id,
         expires_at: data.expires_at,
-        effective_expires_at: data.effective_expires_at || data.expires_at,
+        effective_expires_at: effectiveExpiresAt,
         status: 'ACTIVE',
         parent_grant_id: data.parent_grant_id || null,
       },
     });
     return this.toDto(grant);
+  }
+
+  async createTaskScopedGrant(data: {
+    grantor_id: string;
+    actor_id: string;
+    resource_id: string;
+    permissions: string[];
+    task_id: string;
+    expires_at: Date;
+    parent_grant_id?: string;
+  }): Promise<GrantDto> {
+    const context = await this.taskContextClient.getContext(data.task_id);
+    if (!isDirectTaskParticipant(context, data.actor_id)) {
+      throw new ForbiddenException('Grant recipient must be a direct task participant');
+    }
+
+    return this.createGrant({
+      ...data,
+      resource_type: ResourceType.DOCUMENT,
+    });
+  }
+
+  async revokeTaskDocumentGrants(
+    task_id: string,
+    resource_id: string,
+    revocation_reason: string,
+  ): Promise<number> {
+    const grants = await this.prisma.grant.findMany({
+      where: { task_id, resource_type: ResourceType.DOCUMENT, resource_id },
+      select: { id: true },
+    });
+
+    if (grants.length === 0) return 0;
+    await this.cascadeRevoke(
+      grants.map((grant) => grant.id),
+      new Date(),
+      revocation_reason,
+    );
+    return grants.length;
   }
 
   async revokeGrant(grant_id: string, revocation_reason?: string): Promise<GrantDto> {
@@ -250,12 +334,32 @@ export class PermissionService {
       throw new BadRequestException('Parent grant is expired');
     }
 
+    this.assertKnownPermissions(parent.permissions);
+    if (parent.resource_type === ResourceType.DOCUMENT) {
+      if (!(await this.taskDocumentClient.exists(parent.task_id, parent.resource_id))) {
+        throw new BadRequestException(
+          'Parent document grant has no valid task-document association',
+        );
+      }
+
+      const context = await this.taskContextClient.getContext(parent.task_id);
+      if (!isDirectTaskParticipant(context, data.actor_id)) {
+        throw new ForbiddenException('Grant recipient must be a direct task participant');
+      }
+    }
+
     const delegatedPermissions = data.permissions || parent.permissions;
     for (const perm of delegatedPermissions) {
       if (!parent.permissions.includes(perm)) {
         throw new BadRequestException(`Cannot delegate permission not held by parent: ${perm}`);
       }
     }
+
+    const taskContext = await this.taskContextClient.getContext(parent.task_id);
+    const taskDeadline = taskContext.task.deadline
+      ? new Date(taskContext.task.deadline)
+      : undefined;
+    const effectiveExpiresAt = earliestDate(parent.effective_expires_at, taskDeadline);
 
     const delegated = await this.prisma.grant.create({
       data: {
@@ -266,12 +370,58 @@ export class PermissionService {
         permissions: delegatedPermissions,
         task_id: parent.task_id,
         expires_at: parent.expires_at,
-        effective_expires_at: parent.effective_expires_at,
+        effective_expires_at: effectiveExpiresAt,
         status: 'ACTIVE',
         parent_grant_id: data.parent_grant_id,
       },
     });
     return this.toDto(delegated);
+  }
+
+  private async requireActiveParent(
+    parentGrantId: string,
+    data: {
+      actor_id: string;
+      resource_type: string;
+      resource_id: string;
+      task_id: string;
+    },
+  ) {
+    const parent = await this.prisma.grant.findUnique({ where: { id: parentGrantId } });
+    if (!parent) throw new NotFoundException('Parent grant not found');
+    if (parent.status !== 'ACTIVE') throw new BadRequestException('Parent grant must be ACTIVE');
+    if (parent.revoked_at) throw new BadRequestException('Parent grant is revoked');
+    if (parent.effective_expires_at.getTime() <= Date.now()) {
+      throw new BadRequestException('Parent grant is expired');
+    }
+    if (
+      parent.resource_type !== data.resource_type ||
+      parent.resource_id !== data.resource_id ||
+      parent.task_id !== data.task_id
+    ) {
+      throw new BadRequestException('Parent grant does not match the requested task resource');
+    }
+    if (
+      parent.resource_type === ResourceType.DOCUMENT &&
+      !(await this.taskDocumentClient.exists(parent.task_id, parent.resource_id))
+    ) {
+      throw new BadRequestException('Parent document grant has no valid task-document association');
+    }
+    return parent;
+  }
+
+  private assertKnownPermissions(permissions: string[]): void {
+    if (permissions.some((permission) => !isPermissionAction(permission))) {
+      throw new BadRequestException('Grant contains an invalid permission action');
+    }
+  }
+
+  private assertPermissionSubset(requested: string[], available: string[]): void {
+    for (const permission of requested) {
+      if (!available.includes(permission)) {
+        throw new BadRequestException(`Cannot grant permission not held by parent: ${permission}`);
+      }
+    }
   }
 
   async expireDueGrants(now: Date = new Date()): Promise<number> {
@@ -430,4 +580,28 @@ export class PermissionService {
       created_at: grant.created_at.toISOString(),
     };
   }
+}
+
+function earliestDate(...dates: Array<Date | undefined>): Date {
+  const defined = dates.filter((date): date is Date => Boolean(date));
+  if (defined.length === 0) {
+    throw new BadRequestException('At least one expiration date is required');
+  }
+  return new Date(Math.min(...defined.map((date) => date.getTime())));
+}
+
+function isDirectTaskParticipant(
+  context: {
+    task: { creator_id: string; assignee_id: string | null };
+    participants: Array<{ user_id: string; role: string }>;
+  },
+  userId: string,
+): boolean {
+  return (
+    context.task.creator_id === userId ||
+    context.task.assignee_id === userId ||
+    context.participants.some(
+      (participant) => participant.user_id === userId && participant.role !== 'ASSIGNEE',
+    )
+  );
 }

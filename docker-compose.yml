@@ -242,7 +242,9 @@ services:
       PERMISSION_SERVICE_URL: http://permission-service:3006
       AUDIT_SERVICE_URL: http://audit-log-service:3007
       DOCUMENT_SECURITY_URL: http://document-security-service:3005
+      TASK_SERVICE_URL: http://task-management-service:3003
       PERMISSION_CHECK_TIMEOUT_MS: ${PERMISSION_CHECK_TIMEOUT_MS:-2000}
+      TASK_LOOKUP_TIMEOUT_MS: ${TASK_LOOKUP_TIMEOUT_MS:-2000}
       AUDIT_TIMEOUT_MS: ${AUDIT_TIMEOUT_MS:-2000}
       SECURITY_TIMEOUT_MS: ${SECURITY_TIMEOUT_MS:-5000}
     depends_on:
@@ -254,6 +256,8 @@ services:
       audit-log-service:
         condition: service_healthy
       document-security-service:
+        condition: service_healthy
+      task-management-service:
         condition: service_healthy
     ports:
       - "127.0.0.1:3004:3004"
@@ -303,6 +307,10 @@ services:
       <<: *service-env
       PORT: 3006
       PERMISSION_DATABASE_URL: postgresql://${POSTGRES_USER:-c17}:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}@postgres:5432/permission_db
+      TASK_SERVICE_URL: http://task-management-service:3003
+      DOCUMENT_SERVICE_URL: http://document-management-service:3004
+      TASK_LOOKUP_TIMEOUT_MS: ${TASK_LOOKUP_TIMEOUT_MS:-2000}
+      DOCUMENT_ASSOCIATION_TIMEOUT_MS: ${DOCUMENT_ASSOCIATION_TIMEOUT_MS:-2000}
     depends_on:
       <<: *rabbitmq-dependency
       postgres:

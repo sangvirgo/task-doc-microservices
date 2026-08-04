@@ -62,6 +62,7 @@ const documentVersionSchema = z.object({
 });
 
 const downloadTicketSchema = z.object({
+  task_id: z.string().uuid(),
   version: z.number().int().positive(),
   expires_in_seconds: z.number().int().positive().default(3600),
 });
@@ -461,6 +462,7 @@ export class DocumentsController {
       resource_type: 'DOCUMENT',
       resource_id: documentId,
       action: 'DOWNLOAD',
+      task_id: parsed.data.task_id,
       correlation_id: getCorrelationId() ?? randomUUID(),
     });
 
@@ -471,6 +473,7 @@ export class DocumentsController {
     return this.documentsService
       .createDownloadTicket({
         document_id: documentId,
+        task_id: parsed.data.task_id,
         version: parsed.data.version,
         actor_id: user.userId,
         expires_in_seconds: parsed.data.expires_in_seconds,
@@ -496,9 +499,12 @@ export class DocumentsController {
   })
   async getDocumentDownload(
     @Param('id') documentId: string,
+    @Query('task_id') taskId: string | undefined,
     @CurrentUser() user?: AuthContext,
   ): Promise<DownloadTicketDto> {
     if (!user) throw new ForbiddenException('Authentication required');
+    const parsedTaskId = z.string().uuid().safeParse(taskId);
+    if (!parsedTaskId.success) throw new BadRequestException('task_id is required');
 
     const permCheck = await this.permissionClient.check({
       actor_id: user.userId,
@@ -506,6 +512,7 @@ export class DocumentsController {
       resource_type: 'DOCUMENT',
       resource_id: documentId,
       action: 'DOWNLOAD',
+      task_id: parsedTaskId.data,
       correlation_id: getCorrelationId() ?? randomUUID(),
     });
 
@@ -516,6 +523,7 @@ export class DocumentsController {
     const document = await this.documentsService.getDocument(documentId);
     return this.documentsService.createDownloadTicket({
       document_id: documentId,
+      task_id: parsedTaskId.data,
       version: document.current_version,
       actor_id: user.userId,
       expires_in_seconds: 3600,
@@ -557,20 +565,6 @@ export class DocumentsController {
       });
     };
 
-    const permCheck = await this.permissionClient.check({
-      actor_id: user.userId,
-      actor_role: user.role,
-      resource_type: 'DOCUMENT',
-      resource_id: documentId,
-      action: 'DOWNLOAD',
-      correlation_id: correlationId,
-    });
-
-    if (!permCheck.allowed) {
-      await auditDeny(permCheck.reason_code || 'DOWNLOAD_DENIED');
-      throw new ForbiddenException('Download denied');
-    }
-
     const ticket = await this.documentsService
       .getDownloadTicket(parsed.data.ticket_id)
       .catch(async () => {
@@ -595,6 +589,28 @@ export class DocumentsController {
 
     if (ticket.expires_at.getTime() <= Date.now()) {
       await auditDeny('DOWNLOAD_TICKET_EXPIRED');
+      throw new ForbiddenException('Download denied');
+    }
+
+    // Tickets issued before task binding have no safe context for a detachment
+    // recheck, so deny them rather than allowing a legacy ticket to bypass it.
+    if (!ticket.task_id) {
+      await auditDeny('DOWNLOAD_TICKET_TASK_CONTEXT_MISSING');
+      throw new ForbiddenException('Download denied');
+    }
+
+    const permCheck = await this.permissionClient.check({
+      actor_id: user.userId,
+      actor_role: user.role,
+      resource_type: 'DOCUMENT',
+      resource_id: documentId,
+      action: 'DOWNLOAD',
+      task_id: ticket.task_id,
+      correlation_id: correlationId,
+    });
+
+    if (!permCheck.allowed) {
+      await auditDeny(permCheck.reason_code || 'DOWNLOAD_DENIED');
       throw new ForbiddenException('Download denied');
     }
 
