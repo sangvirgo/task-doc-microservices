@@ -6,6 +6,8 @@ import { randomUUID } from 'crypto';
 import { PermissionsController } from '../src/permissions/permissions.controller';
 import { PermissionService } from '../src/permissions/permission.service';
 import { PermissionPrismaService } from '../src/prisma/permission-prisma.service';
+import { TaskContextClient } from '../src/tasks/task-context.client';
+import { TaskDocumentClient } from '../src/tasks/task-document.client';
 
 /**
  * Integration tests for Permission Service against real PostgreSQL (port 5433).
@@ -18,14 +20,43 @@ describe('Permission Service Integration (PostgreSQL)', () => {
 
   const ACTOR_ID = randomUUID();
   const GRANTOR_ID = randomUUID();
+  const ADMIN_ID = randomUUID();
   const RESOURCE_ID = randomUUID();
   const TASK_ID = randomUUID();
   let grantId: string;
 
+  function adminHeaders(): Record<string, string> {
+    return { 'x-user-id': ADMIN_ID, 'x-user-role': 'ADMIN' };
+  }
+
   beforeAll(async () => {
     const moduleRef = await Test.createTestingModule({
       controllers: [PermissionsController],
-      providers: [PermissionService, PermissionPrismaService],
+      providers: [
+        PermissionService,
+        PermissionPrismaService,
+        {
+          provide: TaskContextClient,
+          useValue: {
+            getContext: jest.fn().mockResolvedValue({
+              task: {
+                id: TASK_ID,
+                creator_id: GRANTOR_ID,
+                assignee_id: ACTOR_ID,
+                deadline: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
+              },
+              participants: [
+                { user_id: GRANTOR_ID, role: 'CREATOR' },
+                { user_id: ACTOR_ID, role: 'ASSIGNEE' },
+              ],
+            }),
+          },
+        },
+        {
+          provide: TaskDocumentClient,
+          useValue: { exists: jest.fn().mockResolvedValue(true) },
+        },
+      ],
     }).compile();
 
     app = moduleRef.createNestApplication();
@@ -38,7 +69,7 @@ describe('Permission Service Integration (PostgreSQL)', () => {
     // Clean up test grants
     try {
       await prisma.grant.deleteMany({
-        where: { OR: [{ actor_id: ACTOR_ID }, { grantor_id: GRANTOR_ID }] },
+        where: { OR: [{ actor_id: ACTOR_ID }, { grantor_id: ADMIN_ID }] },
       });
     } catch {
       /* ignore */
@@ -51,6 +82,7 @@ describe('Permission Service Integration (PostgreSQL)', () => {
 
     const res = await request(app.getHttpServer())
       .post('/grants')
+      .set(adminHeaders())
       .send({
         grantor_id: GRANTOR_ID,
         actor_id: ACTOR_ID,
@@ -74,14 +106,20 @@ describe('Permission Service Integration (PostgreSQL)', () => {
   });
 
   it('should retrieve the grant by ID', async () => {
-    const res = await request(app.getHttpServer()).get(`/grants/${grantId}`).expect(200);
+    const res = await request(app.getHttpServer())
+      .get(`/grants/${grantId}`)
+      .set(adminHeaders())
+      .expect(200);
 
     expect(res.body.id).toBe(grantId);
     expect(res.body.permissions).toEqual(['PREVIEW', 'DOWNLOAD']);
   });
 
   it('should list grants filtered by actor_id', async () => {
-    const res = await request(app.getHttpServer()).get(`/grants?actor_id=${ACTOR_ID}`).expect(200);
+    const res = await request(app.getHttpServer())
+      .get(`/grants?actor_id=${ACTOR_ID}`)
+      .set(adminHeaders())
+      .expect(200);
 
     expect(res.body.length).toBeGreaterThanOrEqual(1);
     expect(res.body[0].actor_id).toBe(ACTOR_ID);
@@ -156,10 +194,11 @@ describe('Permission Service Integration (PostgreSQL)', () => {
   });
 
   it('should delegate a grant to another actor', async () => {
-    const delegateeId = randomUUID();
+    const delegateeId = GRANTOR_ID;
 
     const res = await request(app.getHttpServer())
       .post(`/grants/${grantId}/delegate`)
+      .set(adminHeaders())
       .send({
         actor_id: delegateeId,
         permissions: ['PREVIEW'],
@@ -177,6 +216,7 @@ describe('Permission Service Integration (PostgreSQL)', () => {
   it('should revoke a grant', async () => {
     const res = await request(app.getHttpServer())
       .delete(`/grants/${grantId}`)
+      .set(adminHeaders())
       .send({ reason: 'Integration test cleanup' })
       .expect(200);
 
@@ -189,13 +229,14 @@ describe('Permission Service Integration (PostgreSQL)', () => {
   });
 
   it('denies request-time access after effective expiry', async () => {
-    const actorId = randomUUID();
+    const actorId = ACTOR_ID;
     const resourceId = randomUUID();
     const taskId = randomUUID();
-    const expiresAt = new Date('2026-07-27T23:00:00.000Z').toISOString();
+    const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
 
     await request(app.getHttpServer())
       .post('/grants')
+      .set(adminHeaders())
       .send({
         grantor_id: GRANTOR_ID,
         actor_id: actorId,
@@ -207,6 +248,8 @@ describe('Permission Service Integration (PostgreSQL)', () => {
       })
       .expect(201);
 
+    await permissionService.expireDueGrants(new Date(Date.now() + 2 * 24 * 60 * 60 * 1000));
+
     const res = await request(app.getHttpServer())
       .post('/internal/permissions/check')
       .send({
@@ -215,6 +258,7 @@ describe('Permission Service Integration (PostgreSQL)', () => {
         resource_type: 'DOCUMENT',
         resource_id: resourceId,
         action: 'DOWNLOAD',
+        task_id: taskId,
         correlation_id: randomUUID(),
       })
       .expect(200);
@@ -224,14 +268,15 @@ describe('Permission Service Integration (PostgreSQL)', () => {
   });
 
   it('cascades parent revocation to delegated child grants', async () => {
-    const parentActorId = randomUUID();
-    const childActorId = randomUUID();
+    const parentActorId = ACTOR_ID;
+    const childActorId = GRANTOR_ID;
     const resourceId = randomUUID();
     const taskId = randomUUID();
     const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
 
     const parentGrant = await request(app.getHttpServer())
       .post('/grants')
+      .set(adminHeaders())
       .send({
         grantor_id: GRANTOR_ID,
         actor_id: parentActorId,
@@ -245,6 +290,7 @@ describe('Permission Service Integration (PostgreSQL)', () => {
 
     const childGrant = await request(app.getHttpServer())
       .post(`/grants/${parentGrant.body.id}/delegate`)
+      .set(adminHeaders())
       .send({
         actor_id: childActorId,
         permissions: ['PREVIEW'],
@@ -253,6 +299,7 @@ describe('Permission Service Integration (PostgreSQL)', () => {
 
     await request(app.getHttpServer())
       .delete(`/grants/${parentGrant.body.id}`)
+      .set(adminHeaders())
       .send({ reason: 'Parent revoked' })
       .expect(200);
 
@@ -278,10 +325,11 @@ describe('Permission Service Integration (PostgreSQL)', () => {
   });
 
   it('expires due grants idempotently', async () => {
-    const actorId = randomUUID();
+    const actorId = ACTOR_ID;
     const resourceId = randomUUID();
     const taskId = randomUUID();
-    const workerNow = new Date('2026-07-28T00:00:00.000Z');
+    const workerNow = new Date(Date.now() + 2 * 24 * 60 * 60 * 1000);
+    const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
     const beforeCount = await prisma.grant.count({
       where: {
         status: 'ACTIVE',
@@ -291,6 +339,7 @@ describe('Permission Service Integration (PostgreSQL)', () => {
     });
     const expiredGrant = await request(app.getHttpServer())
       .post('/grants')
+      .set(adminHeaders())
       .send({
         grantor_id: GRANTOR_ID,
         actor_id: actorId,
@@ -298,7 +347,7 @@ describe('Permission Service Integration (PostgreSQL)', () => {
         resource_id: resourceId,
         permissions: ['PREVIEW'],
         task_id: taskId,
-        expires_at: '2026-07-27T00:00:00.000Z',
+        expires_at: expiresAt,
       })
       .expect(201);
 
@@ -313,11 +362,15 @@ describe('Permission Service Integration (PostgreSQL)', () => {
   });
 
   it('shrinks effective expiry on earlier task deadlines without widening it later', async () => {
-    const actorId = randomUUID();
+    const actorId = ACTOR_ID;
     const resourceId = randomUUID();
     const taskId = randomUUID();
+    const initialExpiresAt = new Date(Date.now() + 5 * 24 * 60 * 60 * 1000);
+    const shortenedDeadline = new Date(Date.now() + 2 * 24 * 60 * 60 * 1000);
+    const extendedDeadline = new Date(Date.now() + 10 * 24 * 60 * 60 * 1000);
     const created = await request(app.getHttpServer())
       .post('/grants')
+      .set(adminHeaders())
       .send({
         grantor_id: GRANTOR_ID,
         actor_id: actorId,
@@ -325,29 +378,23 @@ describe('Permission Service Integration (PostgreSQL)', () => {
         resource_id: resourceId,
         permissions: ['DOWNLOAD'],
         task_id: taskId,
-        expires_at: '2026-07-31T00:00:00.000Z',
+        expires_at: initialExpiresAt.toISOString(),
       })
       .expect(201);
 
     const initialGrant = await prisma.grant.findUniqueOrThrow({ where: { id: created.body.id } });
-    expect(initialGrant.effective_expires_at.toISOString()).toBe('2026-07-31T00:00:00.000Z');
+    expect(initialGrant.effective_expires_at.toISOString()).toBe(initialExpiresAt.toISOString());
 
-    const shortened = await permissionService.handleTaskDeadlineChanged(
-      taskId,
-      new Date('2026-07-29T00:00:00.000Z'),
-    );
+    const shortened = await permissionService.handleTaskDeadlineChanged(taskId, shortenedDeadline);
     expect(shortened).toBe(1);
 
     const afterShorten = await prisma.grant.findUniqueOrThrow({ where: { id: created.body.id } });
-    expect(afterShorten.effective_expires_at.toISOString()).toBe('2026-07-29T00:00:00.000Z');
+    expect(afterShorten.effective_expires_at.toISOString()).toBe(shortenedDeadline.toISOString());
 
-    const extended = await permissionService.handleTaskDeadlineChanged(
-      taskId,
-      new Date('2026-08-02T00:00:00.000Z'),
-    );
+    const extended = await permissionService.handleTaskDeadlineChanged(taskId, extendedDeadline);
     expect(extended).toBe(0);
 
     const afterExtend = await prisma.grant.findUniqueOrThrow({ where: { id: created.body.id } });
-    expect(afterExtend.effective_expires_at.toISOString()).toBe('2026-07-29T00:00:00.000Z');
+    expect(afterExtend.effective_expires_at.toISOString()).toBe(shortenedDeadline.toISOString());
   });
 });
