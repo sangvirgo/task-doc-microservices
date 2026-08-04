@@ -1,5 +1,6 @@
 import {
   Injectable,
+  ConflictException,
   NotFoundException,
   BadRequestException,
   ForbiddenException,
@@ -38,6 +39,19 @@ export interface DocumentVersionDto {
   created_at: string;
 }
 
+export interface TaskDocumentAssociationDto {
+  id: string;
+  task_id: string;
+  document_id: string;
+  attached_by: string;
+  attached_at: string;
+}
+
+export interface TaskDocumentWithDocumentDto {
+  association: TaskDocumentAssociationDto;
+  document: DocumentDto;
+}
+
 export interface RecordDto {
   id: string;
   title: string;
@@ -61,6 +75,7 @@ export interface RecordEntryDto {
 export interface DownloadTicketDto {
   id: string;
   document_id: string;
+  task_id: string;
   version: number;
   actor_id: string;
   expires_at: string;
@@ -69,6 +84,7 @@ export interface DownloadTicketDto {
 export interface DownloadTicketRecord {
   id: string;
   document_id: string;
+  task_id: string | null;
   version: number;
   actor_id: string;
   expires_at: Date;
@@ -98,6 +114,73 @@ export interface TransferPackageDto {
 @Injectable()
 export class DocumentsService {
   constructor(private readonly prisma: DocumentPrismaService) {}
+
+  async attachDocumentToTask(data: {
+    task_id: string;
+    document_id: string;
+    attached_by: string;
+  }): Promise<TaskDocumentAssociationDto> {
+    try {
+      const association = await this.prisma.taskDocument.create({ data });
+      return this.taskDocumentToDto(association);
+    } catch (error) {
+      if (this.isUniqueViolation(error)) {
+        throw new ConflictException('Document is already attached to this task');
+      }
+      throw error;
+    }
+  }
+
+  async listTaskDocuments(taskId: string): Promise<TaskDocumentWithDocumentDto[]> {
+    const associations = await this.prisma.taskDocument.findMany({
+      where: { task_id: taskId },
+      include: { document: true },
+      orderBy: { attached_at: 'asc' },
+    });
+
+    return associations.map((association) => ({
+      association: this.taskDocumentToDto(association),
+      document: this.toDto(association.document),
+    }));
+  }
+
+  async getTaskDocument(
+    taskId: string,
+    documentId: string,
+  ): Promise<TaskDocumentWithDocumentDto | null> {
+    const association = await this.prisma.taskDocument.findUnique({
+      where: { task_id_document_id: { task_id: taskId, document_id: documentId } },
+      include: { document: true },
+    });
+
+    if (!association) return null;
+
+    return {
+      association: this.taskDocumentToDto(association),
+      document: this.toDto(association.document),
+    };
+  }
+
+  async hasTaskDocument(taskId: string, documentId: string): Promise<boolean> {
+    const association = await this.prisma.taskDocument.findUnique({
+      where: { task_id_document_id: { task_id: taskId, document_id: documentId } },
+      select: { id: true },
+    });
+    return Boolean(association);
+  }
+
+  async detachDocumentFromTask(taskId: string, documentId: string): Promise<void> {
+    try {
+      await this.prisma.taskDocument.delete({
+        where: { task_id_document_id: { task_id: taskId, document_id: documentId } },
+      });
+    } catch (error) {
+      if (this.isNotFound(error)) {
+        throw new NotFoundException('Task-document association not found');
+      }
+      throw error;
+    }
+  }
 
   async createDocument(data: {
     id?: string;
@@ -317,6 +400,7 @@ export class DocumentsService {
 
   async createDownloadTicket(data: {
     document_id: string;
+    task_id: string;
     version: number;
     actor_id: string;
     expires_in_seconds: number;
@@ -335,6 +419,7 @@ export class DocumentsService {
     const ticket = await this.prisma.downloadTicket.create({
       data: {
         document_id: data.document_id,
+        task_id: data.task_id,
         version: data.version,
         actor_id: data.actor_id,
         object_key: documentVersion.object_key,
@@ -352,6 +437,7 @@ export class DocumentsService {
     return {
       id: ticket.id,
       document_id: ticket.document_id,
+      task_id: ticket.task_id,
       version: ticket.version,
       actor_id: ticket.actor_id,
       expires_at: ticket.expires_at,
@@ -828,6 +914,30 @@ export class DocumentsService {
     };
   }
 
+  private taskDocumentToDto(association: {
+    id: string;
+    task_id: string;
+    document_id: string;
+    attached_by: string;
+    attached_at: Date;
+  }): TaskDocumentAssociationDto {
+    return {
+      id: association.id,
+      task_id: association.task_id,
+      document_id: association.document_id,
+      attached_by: association.attached_by,
+      attached_at: association.attached_at.toISOString(),
+    };
+  }
+
+  private isUniqueViolation(error: unknown): boolean {
+    return Boolean(error && typeof error === 'object' && 'code' in error && error.code === 'P2002');
+  }
+
+  private isNotFound(error: unknown): boolean {
+    return Boolean(error && typeof error === 'object' && 'code' in error && error.code === 'P2025');
+  }
+
   private versionToDto(version: {
     id: string;
     document_id: string;
@@ -854,14 +964,20 @@ export class DocumentsService {
   private ticketToDto(ticket: {
     id: string;
     document_id: string;
+    task_id: string | null;
     version: number;
     actor_id: string;
     expires_at: Date;
     object_key: string;
   }): DownloadTicketDto {
+    if (!ticket.task_id) {
+      throw new BadRequestException('Download ticket requires a task context');
+    }
+
     return {
       id: ticket.id,
       document_id: ticket.document_id,
+      task_id: ticket.task_id,
       version: ticket.version,
       actor_id: ticket.actor_id,
       expires_at: ticket.expires_at.toISOString(),

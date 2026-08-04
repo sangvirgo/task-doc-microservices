@@ -87,6 +87,11 @@ export interface TaskParticipantDto {
   added_at: string;
 }
 
+export interface TaskContextDto {
+  task: TaskDto;
+  participants: TaskParticipantDto[];
+}
+
 export interface AncestorTaskSummaryDto {
   title: string;
   status: string;
@@ -107,6 +112,19 @@ export interface TaskCommentDto {
 @Injectable()
 export class TasksService {
   constructor(private readonly prisma: TaskPrismaService) {}
+
+  async getTaskContext(id: string): Promise<TaskContextDto> {
+    const task = await this.requireTask(id);
+    const participants = await this.prisma.taskParticipant.findMany({
+      where: { task_id: id },
+      orderBy: { added_at: 'asc' },
+    });
+
+    return {
+      task: this.toDto(task),
+      participants: participants.map((participant) => this.participantToDto(participant)),
+    };
+  }
 
   async createTask(data: {
     title: string;

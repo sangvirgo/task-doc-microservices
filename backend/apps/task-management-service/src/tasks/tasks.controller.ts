@@ -18,7 +18,13 @@ import { CurrentUser, AuthContext } from '@c17/auth-context';
 import { PermissionAction, ResourceType } from '@c17/contracts';
 import { getCorrelationId } from '@c17/observability';
 
-import { AncestorTaskSummaryDto, TasksService, TaskCommentDto, TaskDto } from './tasks.service';
+import {
+  AncestorTaskSummaryDto,
+  TasksService,
+  TaskCommentDto,
+  TaskDto,
+  TaskContextDto,
+} from './tasks.service';
 import { PermissionClient } from '../permissions/permission.client';
 import { AuditClient } from '../audit/audit.client';
 import { UserRoleClient } from '../users/user-role.client';
@@ -100,6 +106,16 @@ export class TasksController {
     private readonly auditClient: AuditClient,
     private readonly userRoleClient: UserRoleClient,
   ) {}
+
+  /**
+   * Internal service-to-service context lookup. The API Gateway blocks /api/tasks/internal/*;
+   * Document and Permission services use the service network to validate task scope.
+   */
+  @Get('internal/:id/context')
+  @ApiOperation({ summary: 'Get task context for internal service authorization' })
+  async getInternalTaskContext(@Param('id') taskId: string): Promise<TaskContextDto> {
+    return this.tasksService.getTaskContext(taskId);
+  }
 
   @Get()
   @ApiOperation({ summary: 'List tasks with filters' })

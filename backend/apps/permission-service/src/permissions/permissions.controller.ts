@@ -35,7 +35,7 @@ import { EVENT_PUBLISHER, type EventPublisher } from '@c17/messaging';
 import { PermissionService, GrantDto } from './permission.service';
 
 const createGrantSchema = z.object({
-  grantor_id: z.string().uuid(),
+  grantor_id: z.string().uuid().optional(),
   actor_id: z.string().uuid(),
   resource_type: z.string().min(1),
   resource_id: z.string().uuid(),
@@ -53,6 +53,27 @@ const delegateSchema = z.object({
 const revokeSchema = z.object({
   reason: z.string().optional(),
 });
+
+const taskDocumentGrantSchema = z
+  .object({
+    task_id: z.string().uuid(),
+    resource_type: z.literal('DOCUMENT'),
+    resource_id: z.string().uuid(),
+    actor_id: z.string().uuid(),
+    permissions: z.array(z.string()).min(1),
+    expires_at: z.string().datetime(),
+    parent_grant_id: z.string().uuid().optional(),
+  })
+  .strict();
+
+const revokeTaskDocumentGrantsSchema = z
+  .object({
+    task_id: z.string().uuid(),
+    resource_type: z.literal('DOCUMENT'),
+    resource_id: z.string().uuid(),
+    reason: z.string().min(1),
+  })
+  .strict();
 
 /**
  * Permission Service (V3 §8.1). Sole authority for content access decisions.
@@ -110,6 +131,43 @@ export class PermissionsController {
     return result;
   }
 
+  @Post('internal/grants/task-document')
+  @ApiOperation({ summary: 'Create a task-scoped document grant for an internal orchestrator' })
+  async createTaskDocumentGrant(@Body() body: unknown, @Req() req: Request): Promise<GrantDto> {
+    const parsed = taskDocumentGrantSchema.safeParse(body);
+    if (!parsed.success) throw new BadRequestException(parsed.error.issues);
+
+    const caller = this.caller(req);
+    if (!caller) throw new ForbiddenException('Trusted caller context is required');
+    if (caller.role === 'ADMIN') {
+      throw new ForbiddenException('ADMIN cannot create document content grants');
+    }
+
+    return this.permissionService.createTaskScopedGrant({
+      grantor_id: caller.userId,
+      actor_id: parsed.data.actor_id,
+      resource_id: parsed.data.resource_id,
+      permissions: parsed.data.permissions,
+      task_id: parsed.data.task_id,
+      expires_at: new Date(parsed.data.expires_at),
+      parent_grant_id: parsed.data.parent_grant_id,
+    });
+  }
+
+  @Post('internal/grants/task-document/revoke')
+  @ApiOperation({ summary: 'Revoke all grants scoped to a task-document association' })
+  async revokeTaskDocumentGrants(@Body() body: unknown): Promise<{ revoked: number }> {
+    const parsed = revokeTaskDocumentGrantsSchema.safeParse(body);
+    if (!parsed.success) throw new BadRequestException(parsed.error.issues);
+
+    const revoked = await this.permissionService.revokeTaskDocumentGrants(
+      parsed.data.task_id,
+      parsed.data.resource_id,
+      parsed.data.reason,
+    );
+    return { revoked };
+  }
+
   @Post('grants')
   @ApiOperation({ summary: 'Create a new grant' })
   async createGrant(
@@ -121,12 +179,12 @@ export class PermissionsController {
       throw new BadRequestException(parsed.error.issues);
     }
     const caller = this.caller(req);
-    if (caller?.role === 'EMPLOYEE') {
+    if (!caller || caller.role !== 'ADMIN') {
       throw new ForbiddenException('Only administrators may create primary grants');
     }
 
     return this.permissionService.createGrant({
-      grantor_id: parsed.data.grantor_id,
+      grantor_id: caller.userId,
       actor_id: parsed.data.actor_id,
       resource_type: parsed.data.resource_type,
       resource_id: parsed.data.resource_id,

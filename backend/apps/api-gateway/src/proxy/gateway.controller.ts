@@ -21,7 +21,10 @@ interface ServiceRoute {
   prefix: string;
   target: string;
   upstreamBasePath: string;
+  matches?: (path: string) => boolean;
 }
+
+const TASK_DOCUMENT_ROUTE = /^\/api\/tasks\/[^/]+\/documents(?:\/[^/]+(?:\/grants)?)?$/;
 
 /**
  * Route table: maps URL prefixes to internal service base URLs.
@@ -38,6 +41,12 @@ function getRoutes(): ServiceRoute[] {
       prefix: '/api/users',
       target: process.env.USER_ROLE_SERVICE_URL || 'http://localhost:3002',
       upstreamBasePath: '/users',
+    },
+    {
+      prefix: '/api/tasks/',
+      target: process.env.DOCUMENT_SERVICE_URL || 'http://localhost:3004',
+      upstreamBasePath: '/tasks/',
+      matches: (path) => TASK_DOCUMENT_ROUTE.test(path),
     },
     {
       prefix: '/api/tasks',
@@ -173,7 +182,10 @@ export class GatewayController {
   private async proxy(req: Request, res: Response): Promise<void> {
     this.enforcePublicAuthorizationPolicy(req);
 
-    const route = this.routes.find((r) => req.originalUrl.startsWith(r.prefix));
+    const requestPath = req.originalUrl.split('?')[0];
+    const route = this.routes.find(
+      (r) => requestPath.startsWith(r.prefix) && (!r.matches || r.matches(requestPath)),
+    );
     if (!route) {
       res.status(404).json({ statusCode: 404, message: 'Route not found' });
       return;
@@ -296,6 +308,10 @@ export class GatewayController {
 
     if (path.startsWith('/api/auth/internal/')) {
       throw new ForbiddenException('Authentication control-plane endpoints are internal-only');
+    }
+
+    if (path.startsWith('/api/tasks/internal/')) {
+      throw new ForbiddenException('Task context endpoints are internal-only');
     }
 
     if (/^\/api\/documents\/[^/]+\/versions$/.test(path) && req.method === 'POST') {

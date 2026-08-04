@@ -413,6 +413,33 @@ Rules:
 - ClamAV internals
 - Backend stack traces
 
+### Task–Document Sharing
+
+Tasks and Documents are linked by an explicit many-to-many association. Task membership
+alone never grants Document access. The frontend must use the Gateway business endpoints:
+
+```text
+POST   /api/tasks/:taskId/documents
+GET    /api/tasks/:taskId/documents
+POST   /api/tasks/:taskId/documents/:documentId/grants
+DELETE /api/tasks/:taskId/documents/:documentId
+```
+
+The attach request contains one or more recipients, canonical permission actions such as
+`PREVIEW` and `DOWNLOAD`, and an optional parent Grant. Recipients must be direct Task
+participants. The backend verifies Document sharing authority, permission subsets, the
+Task–Document association, and the effective expiry; the frontend must not calculate or
+override those values.
+
+Use `GET /api/tasks/:taskId/documents` to render only Documents currently allowed to the
+caller. A valid explicit task-scoped Grant is still required; Creator, Assignee, mention,
+notification, ADMIN role, and ancestor oversight do not create implicit Document access.
+
+Detaching removes only the association and revokes Grants scoped to that Task–Document
+pair. It does not delete the Document, versions, or object-storage data. Download tickets
+are rechecked at redemption, so detachment, revocation, parent expiry, and Task deadline
+continue to deny access.
+
 ## 11. Secure Download
 
 Downloads use a two-step ticket flow.
@@ -425,6 +452,7 @@ Authorization: Bearer <token>
 Content-Type: application/json
 
 {
+  "task_id": "task-uuid",
   "version": 1,
   "expires_in_seconds": 3600
 }
@@ -436,6 +464,7 @@ Content-Type: application/json
 {
   "id": "ticket-uuid",
   "document_id": "document-uuid",
+  "task_id": "task-uuid",
   "version": 1,
   "actor_id": "user-uuid",
   "expires_at": "2026-07-31T12:00:00.000Z"
@@ -460,7 +489,8 @@ Content-Type: application/json
 
 - Ticket is single-use — once redeemed, it cannot be reused
 - Ticket expires after the specified duration or the Grant's effective expiry, whichever is sooner
-- Permission is rechecked at redemption time
+- The ticket is bound to the Task–Document association named by `task_id`
+- Permission and association are rechecked at redemption time
 - Do not cache tickets longer than necessary
 - Do not reuse a redeemed ticket
 - Do not expose or request `object_key`
@@ -730,6 +760,10 @@ All paths below are prefixed with the API Gateway base URL (default: `http://loc
 | POST | `/api/tasks/:id/submit` | JWT | `{ content }` | submission | 400, 403 | task-management-service | Submit result | Submit result |
 | POST | `/api/tasks/submissions/:submission_id/review` | JWT | `{ decision, comment? }` | review result | 400, 403 | task-management-service | Review submission | — |
 | GET | `/api/tasks/:id/activity` | JWT | — | activity log | 403 | task-management-service | Activity log | Activity log |
+| POST | `/api/tasks/:id/documents` | JWT | `{ document_id, grants[] }` | association, safe Document, Grant summaries | 400, 403, 409 | document-management-service | Attach/share Document | Attach/share Document |
+| GET | `/api/tasks/:id/documents` | JWT | — | accessible Task Documents | 403 | document-management-service | List accessible Documents | List accessible Documents |
+| POST | `/api/tasks/:id/documents/:documentId/grants` | JWT | `{ actor_id, permissions[], expires_at, parent_grant_id? }` | Grant summary | 400, 403, 404 | document-management-service | Add task-scoped Grant | Add task-scoped Grant |
+| DELETE | `/api/tasks/:id/documents/:documentId` | JWT | — | 204 | 403, 404 | document-management-service | Detach and revoke Task Grants | Detach and revoke Task Grants |
 
 ### Documents
 
@@ -742,7 +776,7 @@ All paths below are prefixed with the API Gateway base URL (default: `http://loc
 | POST | `/api/documents/upload` | JWT | multipart/form-data | `{ document, version }` | 400, 401, 413, 415 | document-management-service | Upload document | Upload document |
 | GET | `/api/documents/:id/versions` | JWT | — | `DocumentVersionDto[]` | — | document-management-service | Version list | Version list |
 | GET | `/api/documents/:id/versions/:version` | JWT | — | `DocumentVersionDto` | 400, 404 | document-management-service | Version detail | — |
-| POST | `/api/documents/:id/download-ticket` | JWT | `{ version, expires_in_seconds? }` | `DownloadTicketDto` | 403, 404 | document-management-service | Request download | Request download |
+| POST | `/api/documents/:id/download-ticket` | JWT | `{ task_id, version, expires_in_seconds? }` | `DownloadTicketDto` | 403, 404 | document-management-service | Request download | Request download |
 | POST | `/api/documents/:id/versions/:version/redeem` | JWT | `{ ticket_id }` | binary stream | 403, 404, 409 | document-management-service | Redeem download | Redeem download |
 
 ### Grants
