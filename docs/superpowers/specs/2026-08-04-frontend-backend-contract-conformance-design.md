@@ -70,4 +70,3 @@ The audit covers:
 - Frontend lint, typecheck, unit tests, and production build pass.
 - Containerized web and Gateway smoke checks pass, with backend runtime blockers
   clearly distinguished from frontend failures.
-
