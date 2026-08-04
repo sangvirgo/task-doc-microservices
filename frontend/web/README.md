@@ -1,179 +1,93 @@
-# Web Application
+# C17 Web application
 
-- **Path:** `frontend/web/`
-- **Framework decision:** Next.js
-- **Language:** TypeScript
-- **Primary target:** desktop/laptop browsers
-- **Secondary target:** tablet browsers
-- **Mobile browser support:** secondary — the official mobile app is Flutter
-- **Implementation status:** Planned — not initialized
+Next.js 16 frontend for the Task Document platform. It only talks to the public API Gateway through the same-origin `/gateway/*` rewrite; browser code never calls backend service ports directly.
 
-No Next.js package, source application, or framework code exists yet under
-`frontend/web/`. This README documents the planned architecture.
+## Included surfaces
 
-## 1. Purpose
+- Employee: tasks, documents (upload, preview metadata, ticketed download), grants, notifications, records, transfer packages, retention/disposal.
+- Administrator: user/capability management, monitoring alerts/rules, and read-only audit metadata.
+- Role separation is enforced in the UI and again by the Gateway/backend. Audit never renders payloads, hashes, actor IDs, or resource IDs and cannot append events.
 
-The Web application provides a responsive desktop/laptop-optimized interface for:
+## Run the full Docker stack
 
-- Login and session management
-- Task dashboards and task lists
-- Task creation and assignment
-- Task detail and lifecycle transitions
-- Comments and activity logs
-- Submissions and reviews
-- Document list, detail, upload, and download
-- Permission Grant management (create, delegate, revoke)
-- Notification list and preferences
-- Records and Transfer Packages
-- Retention and Disposal operations where exposed
-- Administrator user and capability management
-- Security Alert listing and resolution
+Prerequisites: Docker Desktop running in Linux-container mode, Compose v2, and at least 8 GB RAM available to Docker. Node 24 plus Corepack is needed only for local (non-Docker) frontend checks.
 
-Only features supported by public backend API endpoints are listed. The Web application
-is **not** the official mobile product — mobile browser layout is secondary.
+From the repository root:
 
-## 2. Proposed Architecture
-
-The following is a recommended convention, not implemented files:
-
-```
-frontend/web/
-├── src/
-│   ├── app/              Next.js App Router pages
-│   ├── api/              centralized API client
-│   ├── components/       shared reusable UI components
-│   ├── features/         feature modules (auth, tasks, documents, etc.)
-│   ├── layouts/          page layout wrappers
-│   ├── stores/           global state management
-│   ├── types/            TypeScript types and DTOs
-│   ├── utils/            utility functions
-│   └── assets/           static assets (images, icons, styles)
-├── public/               public static files
-├── package.json
-├── next.config.*
-├── tsconfig.json
-└── README.md
+```powershell
+Copy-Item .env.example .env
+# Edit .env: replace every `replace-me-local-only` value with local throwaway secrets.
+docker compose config --services
+docker compose up --build
 ```
 
-Do not create these files during documentation tasks. This is a convention for future
-implementation.
+Wait until `api-gateway` and `web` are healthy, then open:
 
-## 3. API Layer
+| Service | URL |
+| --- | --- |
+| Web frontend | http://localhost:3100 |
+| API Gateway | http://localhost:3000 |
+| RabbitMQ management | http://localhost:15672 |
+| MinIO console | http://localhost:9001 |
 
-Rules for the centralized API client:
+Do not use ports 3001–3009 from the browser; they are internal service ports. The Web container is configured with `NEXT_PUBLIC_API_BASE_URL=http://api-gateway:3000`, and Next.js rewrites browser `/gateway/*` requests to Gateway `/api/*`.
 
-- One centralized API client module — all HTTP calls go through it
-- No endpoint strings scattered through components
-- No direct calls to service ports (3001–3009)
-- No direct calls to infrastructure (MinIO, Redis, RabbitMQ)
-- Typed request and response models matching backend DTOs
-- Centralized error normalization
-- Correlation ID preservation from error responses
-- Authentication refresh handled centrally (token refresh on 401)
-- No `fetch` calls in view-only components
+Useful diagnostics:
 
-## 4. Authentication
+```powershell
+docker compose ps
+docker compose logs -f web api-gateway
+docker compose down                 # stop services, retain volumes
+docker compose down -v              # reset all local Docker data
+```
 
-### Current Backend Token Transport
+If Docker reports `dockerDesktopLinuxEngine` missing, start Docker Desktop and wait for it to finish initializing before retrying. If an image pull ends in EOF, retry after Docker is healthy; this is registry/runtime setup, not a frontend test pass.
 
-- Access token: `Authorization: Bearer <token>` header
-- Refresh token: returned in login/refresh response body; sent in request body for refresh/logout
-- Access token TTL: 30 minutes (1800 seconds)
-- Refresh token TTL: 7 days
-- Refresh rotation: old refresh token is revoked, new pair issued on each refresh
+## Accounts and manual test flow
 
-### Recommended Browser Storage Strategy
+Public registration creates **EMPLOYEE** accounts only. Create an employee at `http://localhost:3100/login` (password minimum 8 characters), then sign in.
 
-The backend uses Bearer tokens. The frontend must decide how to store tokens in the
-browser. Common options include:
+For ADMIN pages, use an administrator provisioned by the deployment/DB owner. Do not invent or commit an admin password: public registration intentionally rejects ADMIN creation. An existing admin can create users and manage employee capabilities.
 
-- `localStorage` — persists across tabs, survives browser close, but vulnerable to XSS
-- `sessionStorage` — per-tab, cleared on tab close
-- HttpOnly cookies — set by the backend, not accessible to JavaScript
+Suggested employee smoke test:
 
-The backend does not currently set HttpOnly cookies. If cookies are desired, backend
-changes would be required. The current contract returns tokens in JSON response bodies.
+1. Register and log in; verify the workspace navigation shows employee features only.
+2. Create a task; open it, assign/add a participant, add a comment, change lifecycle, submit and review where server role permits.
+3. Upload an allowed file (PDF, TXT, PNG, JPEG, DOC or DOCX; default maximum 25 MiB), open document metadata, request a ticketed download once.
+4. Exercise grants and notification preferences; verify server-denied requests remain denied in UI.
+5. Create a record, add a document version, seal it; create/submit/receive/decide a transfer package using appropriately capable employee accounts.
+6. Open Retention & disposal; place/release a hold, run eligibility, and test approval/execution only with an employee granted `DISPOSAL_APPROVE` and document `DISPOSE` permission.
 
-### Limitations
+Suggested administrator smoke test:
 
-- Browser token storage is inherently less secure than native platform secure storage
-- Tokens in `localStorage` or `sessionStorage` are accessible to any JavaScript on the page
-- Do not log tokens, do not persist private document content in long-lived browser caches
-- Handle 401 responses by clearing tokens and redirecting to login
+1. Sign in as provisioned ADMIN; verify employee navigation is absent.
+2. Visit Users & capabilities, Monitoring, and Audit metadata.
+3. Create/lock/unlock employee accounts and alter their capabilities.
+4. Create/toggle monitoring rules and resolve alerts.
+5. In Audit metadata, verify the chain. Confirm no event payload/hash/identifier field or write action is exposed.
 
-## 5. Desktop-First UI Rules
+## Local frontend checks
 
-The Web application is designed for desktop and laptop screens:
+```powershell
+corepack pnpm --filter @c17/web lint
+corepack pnpm --filter @c17/web typecheck
+corepack pnpm --filter @c17/web test
+corepack pnpm --filter @c17/web build
+corepack pnpm --filter @c17/web test:e2e
+```
 
-- Design primarily for widths such as laptop (1024px+) and desktop (1280px+) layouts
-- Desktop navigation may use sidebar or top navigation
-- Data tables may remain tables on large screens — do not convert to cards on desktop
-- Split panes and dense information layouts are acceptable on large screens
-- Use responsive breakpoints for tablet adaptation (768px–1023px)
-- Do not copy desktop density unchanged to narrow widths — adapt layout for tablet
-- Keyboard navigation must work throughout the application
-- Mouse and trackpad interactions must work throughout the application
-- Accessible labels and focus states are required
-- Long task and document names must wrap or truncate safely
-- Loading, empty, error, retry, and permission-denied states are mandatory
-- Destructive actions require explicit confirmation
-- Mobile browser support must not be described as the official mobile app
+Playwright E2E requires its managed browser once per machine:
 
-Do not call the design "mobile-first." The official mobile interface is the Flutter
-application at `frontend/mobile/`.
+```powershell
+corepack pnpm --filter @c17/web exec playwright install chromium
+```
 
-## 6. Browser Security Rules
+`test:e2e` is not a passing check until Chromium is installed and launches. The current frontend’s static verification is lint, TypeScript, unit tests, and production build; Docker/Gateway validation must be performed against a running stack.
 
-- Do not log access tokens
-- Do not log refresh tokens
-- Do not log Comment content
-- Do not log document bytes
-- Do not persist private document content in long-lived browser caches
-- Sanitize file names for display
-- Create temporary Blob URLs only when needed
-- Revoke Blob URLs after use
-- Do not expose `object_key`
-- Do not render raw backend stack traces
-- Do not store infrastructure secrets in `NEXT_PUBLIC_*` environment variables
+## Security rules
 
-## 7. Environment Variables
-
-Only public configuration:
-
-| Variable | Purpose | Example |
-|---|---|---|
-| `NEXT_PUBLIC_API_BASE_URL` | API Gateway base URL | `http://localhost:3000` |
-| `NEXT_PUBLIC_APP_ENV` | Application environment | `development`, `staging`, `production` |
-| `NEXT_PUBLIC_FEATURE_*` | Optional public feature flags | `NEXT_PUBLIC_FEATURE_NOTIFICATIONS=true` |
-
-Never include:
-
-- JWT signing secret
-- KEK
-- Database credentials
-- RabbitMQ credentials
-- MinIO/S3/R2 access secret
-- Internal service URLs (ports 3001–3009)
-
-## 8. Web Development Checklist
-
-For every frontend pull request:
-
-- [ ] TypeScript — no arbitrary `any`
-- [ ] Centralized API client — no scattered `fetch` calls
-- [ ] Typed DTOs matching backend contracts
-- [ ] Desktop/laptop primary layout
-- [ ] Tablet responsiveness
-- [ ] Keyboard accessibility
-- [ ] Safe Blob handling (create, revoke)
-- [ ] Loading, empty, error, retry, and permission-denied states
-- [ ] 401 handling (clear tokens, redirect to login)
-- [ ] 403 handling (clear "access denied" message)
-- [ ] 409 handling (conflict message)
-- [ ] No service ports (3001–3009)
-- [ ] No internal routes
-- [ ] No `object_key` exposure
-- [ ] No browser secret exposure
-- [ ] Canonical task statuses from backend
-- [ ] Correlation IDs preserved in error reports
-- [ ] No sensitive data in console logging
+- Tokens live only in `sessionStorage`; a 401 triggers refresh once, then local session cleanup.
+- All requests use typed `gatewayClient`, normalized errors, and correlation IDs.
+- Document ticket redemption is single-use; temporary Blob URLs are revoked.
+- Never add browser calls to `/api/security`, `/internal`, infrastructure URLs, or service ports.
+- Never put secrets in `NEXT_PUBLIC_*` variables or log tokens, document bytes, object keys, or raw backend errors.
