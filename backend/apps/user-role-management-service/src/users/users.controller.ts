@@ -35,6 +35,12 @@ export class UsersController {
     return this.usersService.listUsers();
   }
 
+  @Get('directory')
+  @ApiOperation({ summary: 'List active employee choices for assignment' })
+  memberDirectory(): Promise<Array<{ id: string; email: string }>> {
+    return this.usersService.memberDirectory();
+  }
+
   @Get(':id')
   @ApiOperation({ summary: 'Get a user by id' })
   getUser(@Param('id') id: string): Promise<UserDto> {

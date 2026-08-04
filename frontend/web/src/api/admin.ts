@@ -1,7 +1,8 @@
 import { gatewayClient } from './client';
-import type { ManagedUser, SecurityAlert, SecurityRule } from '@/types/admin';
+import type { ManagedUser, MemberOption, SecurityAlert, SecurityRule } from '@/types/admin';
 
 export const adminApi = {
+  directory: () => gatewayClient.get<MemberOption[]>('/users/directory'),
   users: () => gatewayClient.get<ManagedUser[]>('/users'),
   user: (id: string) => gatewayClient.get<ManagedUser>(`/users/${encodeURIComponent(id)}`),
   createUser: (input: Pick<ManagedUser, 'id' | 'email' | 'role'>) => gatewayClient.post<ManagedUser>('/users', input),

@@ -307,8 +307,7 @@ export class GatewayController {
     }
 
     if (
-      path === '/api/users' ||
-      path.startsWith('/api/users/') ||
+      (path !== '/api/users/directory' && (path === '/api/users' || path.startsWith('/api/users/'))) ||
       path.startsWith('/api/monitoring/') ||
       path === '/api/monitoring' ||
       path.startsWith('/api/audit/') ||

@@ -104,7 +104,6 @@ const rawBooleanSchema = z
 const multipartUploadSchema = z.object({
   title: z.string().min(1),
   document_type: z.string().min(1),
-  owner_id: z.string().uuid(),
   security_level: z.enum(['PUBLIC', 'INTERNAL', 'CONFIDENTIAL', 'RESTRICTED']).default('INTERNAL'),
   retention_policy: z.string().optional(),
   declared_state_secret: rawBooleanSchema.default(false),
@@ -217,7 +216,7 @@ export class DocumentsController {
         mimeType: normalizeMimeType(file.mimetype),
         originalName: file.originalname,
       },
-      parsed.data,
+      { ...parsed.data, owner_id: user.userId },
       user,
     );
   }
