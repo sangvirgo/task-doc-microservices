@@ -61,7 +61,6 @@ Thumbs.db
 
 # Generated documentation artifacts
 docs/c17-api-postman-collection.json
-docs/project-overview.html
 
 # Claude local settings
 .claude/
