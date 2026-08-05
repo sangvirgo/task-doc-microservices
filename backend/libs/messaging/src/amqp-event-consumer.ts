@@ -28,6 +28,7 @@ export interface EventConsumerOptions {
 export class AmqpEventConsumer implements OnApplicationShutdown {
   private connection?: AmqpConnectionManager;
   private channel?: ChannelWrapper;
+  private shuttingDown = false;
 
   constructor(
     private readonly url: string,
@@ -91,6 +92,7 @@ export class AmqpEventConsumer implements OnApplicationShutdown {
   }
 
   async onApplicationShutdown(): Promise<void> {
+    this.shuttingDown = true;
     await this.channel?.close();
     await this.connection?.close();
   }
@@ -127,26 +129,46 @@ export class AmqpEventConsumer implements OnApplicationShutdown {
           },
           'AmqpEventConsumer',
         );
-        this.publishDeadLetter(
-          channel,
-          options.queue,
-          message,
-          error instanceof Error ? error.message : 'handler-failed',
-        );
-        channel.ack(message);
+        if (this.shuttingDown) return;
+        try {
+          this.publishDeadLetter(
+            channel,
+            options.queue,
+            message,
+            error instanceof Error ? error.message : 'handler-failed',
+          );
+          channel.ack(message);
+        } catch (publishError) {
+          if (!this.shuttingDown) {
+            this.logger.warn(
+              `Unable to dead-letter ${options.queue}: ${publishError instanceof Error ? publishError.message : 'unknown'}`,
+              'AmqpEventConsumer',
+            );
+          }
+        }
         return;
       }
 
-      channel.publish(RETRY_EXCHANGE, message.fields.routingKey, message.content, {
-        ...clonePublishProperties(message.properties),
-        persistent: true,
-        expiration: String(retryDelayMs),
-        headers: {
-          ...readHeaders(message.properties.headers),
-          'x-retry-attempt': attempts,
-        },
-      });
-      channel.ack(message);
+      if (this.shuttingDown) return;
+      try {
+        channel.publish(RETRY_EXCHANGE, message.fields.routingKey, message.content, {
+          ...clonePublishProperties(message.properties),
+          persistent: true,
+          expiration: String(retryDelayMs),
+          headers: {
+            ...readHeaders(message.properties.headers),
+            'x-retry-attempt': attempts,
+          },
+        });
+        channel.ack(message);
+      } catch (publishError) {
+        if (!this.shuttingDown) {
+          this.logger.warn(
+            `Unable to retry ${options.queue}: ${publishError instanceof Error ? publishError.message : 'unknown'}`,
+            'AmqpEventConsumer',
+          );
+        }
+      }
     }
   }
 
