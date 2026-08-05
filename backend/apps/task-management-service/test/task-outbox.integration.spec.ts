@@ -30,14 +30,14 @@ describe('Task outbox relay integration (PostgreSQL)', () => {
     prisma = moduleRef.get(TaskPrismaService);
     tasksService = moduleRef.get(TasksService);
     publisher = moduleRef.get<InMemoryEventPublisher>(EVENT_PUBLISHER);
+    await prisma.$connect();
+    await clearTaskData(prisma);
     await app.init();
   });
 
   beforeEach(async () => {
     publisher.clear();
-    await prisma.outboxEvent.deleteMany();
-    await prisma.taskParticipant.deleteMany();
-    await prisma.task.deleteMany();
+    await clearTaskData(prisma);
   });
 
   afterAll(async () => {
@@ -74,6 +74,12 @@ describe('Task outbox relay integration (PostgreSQL)', () => {
     expect(rows[0].published_at).not.toBeNull();
   });
 });
+
+async function clearTaskData(prisma: TaskPrismaService): Promise<void> {
+  await prisma.outboxEvent.deleteMany();
+  await prisma.taskParticipant.deleteMany();
+  await prisma.task.deleteMany();
+}
 
 async function waitFor(predicate: () => Promise<boolean>, timeoutMs = 5_000): Promise<void> {
   const startedAt = Date.now();
