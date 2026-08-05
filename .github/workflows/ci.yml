@@ -151,7 +151,7 @@ jobs:
           build-contexts: |
             root=.
           build-args: |
-            NEXT_PUBLIC_API_BASE_URL=http://api-gateway:3000
+            NEXT_PUBLIC_API_BASE_URL=http://13.229.104.126:3000
           push: true
           tags: |
             ghcr.io/${{ github.repository }}/web:sha-${{ github.sha }}

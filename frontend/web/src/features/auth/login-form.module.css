@@ -1,7 +1,43 @@
-.card { width: min(100%, 420px); padding: var(--space-8); border: 1px solid var(--color-border); border-radius: var(--radius-md); background: var(--color-surface); box-shadow: var(--shadow-raised); }
-.product { margin: 0 0 var(--space-3); color: var(--color-accent); font-size: .875rem; font-weight: 700; }
-.card h1 { margin: 0; font-size: 1.75rem; }.copy { margin: var(--space-2) 0 var(--space-6); color: var(--color-text-muted); }
-.card form { display: grid; gap: var(--space-2); }.card label { margin-top: var(--space-2); font-weight: 600; }.card input { min-height: 44px; padding: 0 var(--space-3); border: 1px solid var(--color-border); border-radius: var(--radius-sm); }
-.card button { min-height: 44px; margin-top: var(--space-4); border: 0; border-radius: var(--radius-sm); color: white; background: var(--color-accent); font-weight: 700; }.card button:disabled { opacity: .7; cursor: wait; }.error { margin: var(--space-2) 0 0; color: var(--color-danger); }
-
-.switch { width: 100%; margin-top: var(--space-3); border: 0; color: var(--color-accent); background: transparent; font-weight: 700; }
+.authLayout { min-height: 100vh; display: grid; grid-template-columns: minmax(360px, .92fr) minmax(440px, 1.08fr); overflow: hidden; color: #172b4d; background: #f7f8fa; }
+.storyPanel { position: relative; display: flex; min-height: 100vh; flex-direction: column; justify-content: space-between; overflow: hidden; padding: 52px clamp(36px, 6vw, 88px); color: white; background: linear-gradient(145deg, #172b4d 0%, #1d255d 48%, #45205c 100%); }
+.storyGlow { position: absolute; width: 560px; height: 560px; right: -220px; top: 16%; border: 1px solid rgb(255 255 255 / 13%); border-radius: 42% 58% 63% 37%; transform: rotate(24deg); box-shadow: 0 0 0 42px rgb(255 255 255 / 3%), 0 0 0 84px rgb(255 255 255 / 2%); }
+.storyGlow::before, .storyGlow::after { position: absolute; content: ''; border-radius: 50%; filter: blur(2px); }
+.storyGlow::before { width: 180px; height: 180px; top: 35px; left: 42px; background: #4c9aff33; }
+.storyGlow::after { width: 130px; height: 130px; right: 45px; bottom: 80px; background: #c97bff2e; }
+.brandLockup { position: relative; z-index: 1; display: flex; align-items: center; gap: 12px; }
+.brandName { color: inherit; font-size: 1rem; font-weight: 800; letter-spacing: -.02em; }
+.slackMark { position: relative; display: grid; width: 30px; height: 30px; grid-template-columns: repeat(2, 10px); grid-template-rows: repeat(2, 10px); gap: 3px; transform: rotate(-8deg); }
+.slackMark i { display: block; border-radius: 6px; }
+.slackMark i:nth-child(1) { background: #36c5f0; border-radius: 7px 3px 3px 7px; }
+.slackMark i:nth-child(2) { background: #2eb67d; border-radius: 7px 7px 3px 3px; }
+.slackMark i:nth-child(3) { background: #ecb22e; border-radius: 3px 3px 3px 7px; }
+.slackMark i:nth-child(4) { background: #e01e5a; border-radius: 3px 3px 7px 3px; }
+.storyContent { position: relative; z-index: 1; max-width: 480px; margin: auto 0; }
+.kicker, .eyebrow { margin: 0 0 14px; color: #9fcbff; font-size: .72rem; font-weight: 800; letter-spacing: .13em; text-transform: uppercase; }
+.storyContent h2 { max-width: 480px; margin: 0; color: white; font-size: clamp(2.3rem, 4vw, 4rem); line-height: 1.03; letter-spacing: -.065em; }
+.storyContent > p:last-child { max-width: 390px; margin: 22px 0 0; color: #d8def0; font-size: 1rem; line-height: 1.7; }
+.storyFooter { position: relative; z-index: 1; display: flex; align-items: center; gap: 9px; color: #b8c5df; font-size: .76rem; }
+.statusDot { width: 7px; height: 7px; border-radius: 50%; background: #36c5f0; box-shadow: 0 0 0 4px #36c5f01f; }
+.card { display: flex; width: min(100%, 540px); min-height: 100vh; flex-direction: column; justify-content: center; margin: 0 auto; padding: 56px clamp(32px, 7vw, 100px); background: #fff; box-shadow: -18px 0 42px rgb(9 30 66 / 7%); }
+.cardHeading { margin-bottom: 34px; }
+.cardHeading h1 { margin: 0; color: #172b4d; font-size: clamp(2rem, 4vw, 2.65rem); line-height: 1.05; letter-spacing: -.055em; }
+.copy { max-width: 370px; margin: 14px 0 0; color: #626f86; font-size: .94rem; line-height: 1.6; }
+.card form { display: grid; gap: 18px; }
+.card label { display: grid; gap: 8px; color: #344563; font-size: .8rem; font-weight: 800; }
+.card input { min-height: 52px; padding: 0 15px; border: 1px solid #c7cbd4; border-radius: 8px; color: #172b4d; background: #fbfcfe; font-size: .92rem; transition: border-color .16s, box-shadow .16s, background .16s; }
+.card input::placeholder { color: #8993a5; }
+.card input:hover { border-color: #8590a3; background: white; }
+.card input:focus { outline: none; border-color: #0c66e4; background: white; box-shadow: 0 0 0 4px #0c66e426; }
+.submit { display: flex; min-height: 52px; align-items: center; justify-content: space-between; margin-top: 6px; padding: 0 17px 0 19px; border: 0; border-radius: 8px; color: white; background: #0c66e4; font-weight: 800; box-shadow: 0 8px 16px #0c66e426; }
+.submit:hover { background: #0747a6; box-shadow: 0 10px 20px #0c66e43b; transform: translateY(-1px); }
+.submit span { font-size: 1.2rem; font-weight: 400; }
+.card button:disabled { cursor: wait; opacity: .7; }
+.error { margin: 0; padding: 11px 13px; border: 1px solid #ffbdad; border-radius: 7px; color: #ae2e24; background: #fff4f2; font-size: .82rem; line-height: 1.45; }
+.divider { display: flex; align-items: center; gap: 12px; margin: 30px 0 12px; color: #8993a5; font-size: .72rem; font-weight: 700; text-transform: uppercase; letter-spacing: .08em; }
+.divider::before, .divider::after { flex: 1; height: 1px; content: ''; background: #e5e7eb; }
+.securityNote { display: flex; align-items: center; justify-content: center; gap: 7px; margin: 0; color: #626f86; font-size: .75rem; }
+.lockIcon { display: inline-grid; width: 17px; height: 17px; place-items: center; border-radius: 50%; color: #1f845a; background: #dff7e9; font-size: .9rem; }
+.switch { align-self: center; min-height: auto; margin-top: 28px; padding: 4px; border: 0; color: #0c66e4; background: transparent; font-size: .84rem; font-weight: 800; }
+.switch:hover { color: #0747a6; background: transparent; box-shadow: none; transform: none; }
+@media (max-width: 820px) { .authLayout { display: block; } .storyPanel { min-height: 300px; padding: 28px 28px 30px; } .storyContent { margin: 48px 0 34px; } .storyContent h2 { max-width: 520px; font-size: 2.4rem; } .storyContent > p:last-child { margin-top: 13px; } .card { width: 100%; min-height: auto; padding: 42px 28px 48px; box-shadow: none; } }
+@media (max-width: 520px) { .storyPanel { min-height: 250px; } .storyContent { margin: 37px 0 26px; } .storyContent h2 { font-size: 2rem; } .storyContent > p:last-child { display: none; } .storyFooter { font-size: .68rem; } .card { padding: 34px 22px 42px; } }
