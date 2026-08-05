@@ -5,6 +5,7 @@ import { createHash, randomUUID } from 'crypto';
 
 import { AuthPrismaService } from '../prisma/auth-prisma.service';
 import { RedisService } from '../redis/redis.service';
+import { UserRoleClient } from '../users/user-role.client';
 
 export class AuthLoginFailedError extends UnauthorizedException {
   constructor(
@@ -41,6 +42,7 @@ export class AuthService {
     private readonly jwtService: JwtService,
     private readonly prisma: AuthPrismaService,
     private readonly redis: RedisService,
+    private readonly userRoleClient: UserRoleClient,
   ) {}
 
   hashPassword(password: string): string {
@@ -58,8 +60,17 @@ export class AuthService {
   ): Promise<{ id: string; email: string; role: string }> {
     const passwordHash = this.hashPassword(password);
     const user = await this.prisma.user.create({
-      data: { email, password_hash: passwordHash, role },
+      data: { id: randomUUID(), email, password_hash: passwordHash, role },
     });
+
+    try {
+      await this.userRoleClient.provisionUser({ id: user.id, email: user.email, role: user.role });
+    } catch (error) {
+      // Keep the credential store and the user-role directory from drifting after a failed signup.
+      await this.prisma.user.delete({ where: { id: user.id } }).catch(() => undefined);
+      throw error;
+    }
+
     return { id: user.id, email: user.email, role: user.role };
   }
 
@@ -145,8 +156,9 @@ export class AuthService {
   }
 
   private async issueTokenPair(userId: string, email: string, role: string): Promise<TokenPair> {
+    const capabilities = await this.userRoleClient.getCapabilities(userId);
     const accessToken = this.jwtService.sign(
-      { sub: userId, role, capabilities: [] },
+      { sub: userId, role, capabilities },
       { expiresIn: ACCESS_TOKEN_TTL_SECONDS },
     );
 
@@ -164,7 +176,7 @@ export class AuthService {
 
     await this.redis.setSession(
       refreshTokenRecord.id,
-      { userId, email, role, capabilities: [], refreshTokenId: refreshTokenRecord.id },
+      { userId, email, role, capabilities, refreshTokenId: refreshTokenRecord.id },
       SESSION_TTL_SECONDS,
     );
 
