@@ -1,0 +1,3281 @@
+{
+  "info": {
+    "name": "C17 Task & Document Platform — Full API Collection",
+    "description": "Complete Postman collection for the C17 Task & Document Platform.\n\nBASE URL: http://localhost:3000 (API Gateway)\nAll external requests go through the Gateway with /api/ prefix.\n\nAuthentication:\n- Login as employee: employee@c17.local / Employee123!\n- Login as admin: admin@c17.local / Admin123!\n- All authenticated endpoints require Bearer token from login response.\n\nDynamic Data:\n- Timestamps use {{currentTimestamp}} variable (auto-generated).\n- UUIDs use pre-request scripts to generate unique IDs.\n- Save tokens/IDs via Tests scripts for chaining requests.\n\nWorkflow Steps:\n1. Authentication — login, get tokens\n2. User Management — create users, assign capabilities\n3. Task Management — create tasks, lifecycle transitions\n4. Document Upload — multipart upload, security pipeline\n5. Permission Management — create grants, delegate, revoke\n6. Secure Download — ticket creation, redeem, decrypt\n7. Audit Log — query events, verify chain\n8. Records & Transfer — create records, transfer packages\n9. Retention & Disposal — eligibility, holds, disposal\n10. Notification — preferences, read notifications\n11. Security Monitoring — rules, alerts, session revocation\n12. Health & Verification — service health, audit chain verify",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:3000"
+    },
+    {
+      "key": "authUrl",
+      "value": "http://localhost:3001"
+    },
+    {
+      "key": "permUrl",
+      "value": "http://localhost:3006"
+    },
+    {
+      "key": "auditUrl",
+      "value": "http://localhost:3007"
+    },
+    {
+      "key": "notifUrl",
+      "value": "http://localhost:3008"
+    },
+    {
+      "key": "monitorUrl",
+      "value": "http://localhost:3009"
+    },
+    {
+      "key": "empToken",
+      "value": "",
+      "description": "Backward-compatible alias for creatorToken"
+    },
+    {
+      "key": "empRefreshToken",
+      "value": "",
+      "description": "Backward-compatible alias for creatorRefreshToken"
+    },
+    {
+      "key": "creatorToken",
+      "value": "",
+      "description": "Task creator EMPLOYEE access token (saved by 1.1)"
+    },
+    {
+      "key": "creatorRefreshToken",
+      "value": "",
+      "description": "Task creator EMPLOYEE refresh token (saved by 1.1)"
+    },
+    {
+      "key": "assigneeToken",
+      "value": "",
+      "description": "Task assignee EMPLOYEE access token (saved by 1.3.1 / 1.4.1)"
+    },
+    {
+      "key": "assigneeRefreshToken",
+      "value": "",
+      "description": "Task assignee EMPLOYEE refresh token"
+    },
+    {
+      "key": "assigneeEmail",
+      "value": "",
+      "description": "Dynamic task assignee email (saved by 1.3)"
+    },
+    {
+      "key": "assigneePassword",
+      "value": "TestPass123!",
+      "description": "Dynamic task assignee password"
+    },
+    {
+      "key": "assigneeId",
+      "value": "",
+      "description": "Dynamic task assignee user ID (saved by 1.3)"
+    },
+    {
+      "key": "assignedAssigneeId",
+      "value": "",
+      "description": "Assignee ID returned by 3.4 task assignment"
+    },
+    {
+      "key": "registeredEmail",
+      "value": "",
+      "description": "Email returned by 1.3 Register New User"
+    },
+    {
+      "key": "registeredPassword",
+      "value": "",
+      "description": "Password used by 1.3 Register New User"
+    },
+    {
+      "key": "registeredUserId",
+      "value": "",
+      "description": "User ID returned by 1.3 Register New User"
+    },
+    {
+      "key": "archivistEmail",
+      "value": "",
+      "description": "Dynamic archivist EMPLOYEE email (saved by 1.3.2)"
+    },
+    {
+      "key": "archivistPassword",
+      "value": "TestPass123!",
+      "description": "Dynamic archivist EMPLOYEE password"
+    },
+    {
+      "key": "archivistId",
+      "value": "",
+      "description": "Dynamic archivist user ID (saved by 1.3.2)"
+    },
+    {
+      "key": "archivistRefreshToken",
+      "value": "",
+      "description": "Archivist EMPLOYEE refresh token"
+    },
+    {
+      "key": "adminToken",
+      "value": "",
+      "description": "Admin access token (set after login)"
+    },
+    {
+      "key": "adminRefreshToken",
+      "value": "",
+      "description": "Admin refresh token (saved by 1.2)"
+    },
+    {
+      "key": "archivistToken",
+      "value": "",
+      "description": "Second EMPLOYEE token with ARCHIVE_RECEIVE capability (required for package reception)"
+    },
+    {
+      "key": "empId",
+      "value": "00000000-0000-4000-a000-000000000002",
+      "description": "Seeded employee user ID"
+    },
+    {
+      "key": "adminId",
+      "value": "00000000-0000-4000-a000-000000000001",
+      "description": "Seeded admin user ID"
+    },
+    {
+      "key": "currentTimestamp",
+      "value": "",
+      "description": "Auto-generated ISO timestamp"
+    },
+    {
+      "key": "randomId",
+      "value": "",
+      "description": "Auto-generated random short ID"
+    },
+    {
+      "key": "submissionId",
+      "value": "",
+      "description": "Task submission ID (set after submitting a task for review)"
+    },
+    {
+      "key": "docVersion",
+      "value": "1",
+      "description": "Document version (set after document upload)"
+    },
+    {
+      "key": "documentVersionId",
+      "value": "",
+      "description": "Document version database ID (set after document upload)"
+    },
+    {
+      "key": "taskId",
+      "value": "",
+      "description": "Task ID (saved by 3.1)"
+    },
+    {
+      "key": "taskDeadline",
+      "value": "2026-08-11T17:00:00.000Z",
+      "description": "Future Task deadline used by task-document grant requests"
+    },
+    {
+      "key": "grantExpiresAt",
+      "value": "2026-08-10T17:00:00.000Z",
+      "description": "Requested grant expiry; Permission Service caps it at Task deadline"
+    },
+    {
+      "key": "documentId",
+      "value": "",
+      "description": "Document ID (saved by 4.1)"
+    },
+    {
+      "key": "taskDocumentAssociationId",
+      "value": "",
+      "description": "TaskDocument association ID (saved by task-document attach)"
+    },
+    {
+      "key": "taskDocumentGrantId",
+      "value": "",
+      "description": "Task-scoped Document Grant ID (saved by task-document attach)"
+    },
+    {
+      "key": "downloadTicketId",
+      "value": "",
+      "description": "Download ticket ID (saved by task-document download request)"
+    },
+    {
+      "key": "auditEventId",
+      "value": "",
+      "description": "Audit event ID (set after listing audit events)"
+    },
+    {
+      "key": "notificationId",
+      "value": "",
+      "description": "Notification ID (set after listing notifications)"
+    },
+    {
+      "key": "alertId",
+      "value": "",
+      "description": "Security alert ID (set after listing alerts)"
+    }
+  ],
+  "event": [
+    {
+      "listen": "prerequest",
+      "script": {
+        "type": "text/javascript",
+        "exec": [
+          "pm.collectionVariables.set('currentTimestamp', new Date().toISOString());",
+          "pm.collectionVariables.set('taskDeadline', new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString());",
+          "pm.collectionVariables.set('grantExpiresAt', new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString());",
+          "pm.collectionVariables.set('randomId', pm.variables.replaceIn('{{$guid}}'));"
+        ]
+      }
+    },
+    {
+      "listen": "test",
+      "script": {
+        "type": "text/javascript",
+        "exec": [
+          "const requestName = pm.info.requestName || '';",
+          "const expectedNegative = /\\(Should (REJECT|DENY)\\)/.test(requestName);",
+          "pm.test('No server error', function () { pm.expect(pm.response.code).to.be.below(500); });",
+          "if (expectedNegative) {",
+          "  pm.test('Expected denial is returned', function () { pm.expect(pm.response.code).to.be.within(400, 499); });",
+          "}"
+        ]
+      }
+    }
+  ],
+  "item": [
+    {
+      "name": "1. Authentication",
+      "description": "Login/register multiple identities. Each login test script automatically saves access_token and refresh_token into creatorToken, adminToken, assigneeToken, or archivistToken.",
+      "item": [
+        {
+          "name": "1.1 Login as Task Creator (EMPLOYEE)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"employee@c17.local\",\n  \"password\": \"Employee123!\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/auth/login",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "auth",
+                "login"
+              ]
+            },
+            "description": "Login as the seeded EMPLOYEE who creates and reviews the task. The test script saves access_token to {{creatorToken}} and keeps {{empToken}} as a backward-compatible alias."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "var res = pm.response.json();",
+                  "if (res.access_token) {",
+                  "  pm.collectionVariables.set('creatorToken', res.access_token);",
+                  "  pm.collectionVariables.set('creatorRefreshToken', res.refresh_token);",
+                  "  pm.collectionVariables.set('empToken', res.access_token);",
+                  "  pm.collectionVariables.set('empRefreshToken', res.refresh_token);",
+                  "  console.log('Task creator JWT saved.');",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "1.2 Login as Admin",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"admin@c17.local\",\n  \"password\": \"Admin123!\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/auth/login",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "auth",
+                "login"
+              ]
+            },
+            "description": "Login as the seeded admin user.\n\nSave access_token to variable {{adminToken}}."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "var res = pm.response.json();",
+                  "if (res.access_token) {",
+                  "  pm.collectionVariables.set('adminToken', res.access_token);",
+                  "  pm.collectionVariables.set('adminRefreshToken', res.refresh_token);",
+                  "  console.log('Admin JWT saved.');",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "1.3 Register Task Assignee (EMPLOYEE)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"assignee-{{$timestamp}}@c17.local\",\n  \"password\": \"{{assigneePassword}}\",\n  \"role\": \"EMPLOYEE\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/auth/register",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "auth",
+                "register"
+              ]
+            },
+            "description": "Register a dynamic EMPLOYEE who will receive the task. The backend provisions this identity in the user-role directory. Run 1.3.1 next to login and save its JWT."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "var res = pm.response.json();",
+                  "if (res.email) {",
+                  "  pm.collectionVariables.set('assigneeEmail', res.email);",
+                  "  pm.collectionVariables.set('assigneeId', res.id);",
+                  "  pm.collectionVariables.set('registeredEmail', res.email);",
+                  "  pm.collectionVariables.set('registeredPassword', pm.collectionVariables.get('assigneePassword'));",
+                  "  pm.collectionVariables.set('registeredUserId', res.id);",
+                  "  console.log('Assignee identity saved.');",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "1.3.1 Login as Task Assignee (EMPLOYEE)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{assigneeEmail}}\",\n  \"password\": \"{{assigneePassword}}\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/auth/login",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "auth",
+                "login"
+              ]
+            },
+            "description": "Login as the dynamic task assignee. The test script saves access_token to {{assigneeToken}} and refresh_token to {{assigneeRefreshToken}}."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "var res = pm.response.json();",
+                  "if (res.access_token) {",
+                  "  pm.collectionVariables.set('assigneeToken', res.access_token);",
+                  "  pm.collectionVariables.set('assigneeRefreshToken', res.refresh_token);",
+                  "  pm.collectionVariables.set('registeredToken', res.access_token);",
+                  "  pm.collectionVariables.set('registeredRefreshToken', res.refresh_token);",
+                  "  console.log('Task assignee JWT saved.');",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "1.3.2 Register Archivist (EMPLOYEE)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"archivist-{{$timestamp}}@c17.local\",\n  \"password\": \"{{archivistPassword}}\",\n  \"role\": \"EMPLOYEE\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/auth/register",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "auth",
+                "register"
+              ]
+            },
+            "description": "Register a second dynamic EMPLOYEE for archive receiving. Run 1.3.3 next, then use 2.4 to grant ARCHIVE_RECEIVE."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "var res = pm.response.json();",
+                  "if (res.email) {",
+                  "  pm.collectionVariables.set('archivistEmail', res.email);",
+                  "  pm.collectionVariables.set('archivistId', res.id);",
+                  "  console.log('Archivist identity saved.');",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "1.3.3 Login as Archivist (EMPLOYEE)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{archivistEmail}}\",\n  \"password\": \"{{archivistPassword}}\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/auth/login",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "auth",
+                "login"
+              ]
+            },
+            "description": "Login as the second EMPLOYEE. The test script saves the JWT to {{archivistToken}}. Refresh it with 1.4.2 after ADMIN grants ARCHIVE_RECEIVE."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "var res = pm.response.json();",
+                  "if (res.access_token) {",
+                  "  pm.collectionVariables.set('archivistToken', res.access_token);",
+                  "  pm.collectionVariables.set('archivistRefreshToken', res.refresh_token);",
+                  "  console.log('Archivist JWT saved.');",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "1.4 Refresh Task Creator Token",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"refresh_token\": \"{{creatorRefreshToken}}\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/auth/refresh",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "auth",
+                "refresh"
+              ]
+            },
+            "description": "Rotate the task creator refresh token. The new JWT is saved to {{creatorToken}}."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "var res = pm.response.json();",
+                  "if (res.access_token) {",
+                  "  pm.collectionVariables.set('creatorToken', res.access_token);",
+                  "  pm.collectionVariables.set('creatorRefreshToken', res.refresh_token);",
+                  "  pm.collectionVariables.set('empToken', res.access_token);",
+                  "  pm.collectionVariables.set('empRefreshToken', res.refresh_token);",
+                  "  console.log('Task creator JWT refreshed.');",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "1.4.1 Refresh Task Assignee Token",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"refresh_token\": \"{{assigneeRefreshToken}}\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/auth/refresh",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "auth",
+                "refresh"
+              ]
+            },
+            "description": "Run after ADMIN grants ARCHIVE_SUBMIT or DISPOSAL_APPROVE. The refreshed JWT is saved to {{assigneeToken}}."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "var res = pm.response.json();",
+                  "if (res.access_token) {",
+                  "  pm.collectionVariables.set('assigneeToken', res.access_token);",
+                  "  pm.collectionVariables.set('assigneeRefreshToken', res.refresh_token);",
+                  "  console.log('Task assignee JWT refreshed.');",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "1.4.2 Refresh Archivist Token",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"refresh_token\": \"{{archivistRefreshToken}}\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/auth/refresh",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "auth",
+                "refresh"
+              ]
+            },
+            "description": "Run after ADMIN grants ARCHIVE_RECEIVE. The refreshed JWT is saved to {{archivistToken}}."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "var res = pm.response.json();",
+                  "if (res.access_token) {",
+                  "  pm.collectionVariables.set('archivistToken', res.access_token);",
+                  "  pm.collectionVariables.set('archivistRefreshToken', res.refresh_token);",
+                  "  console.log('Archivist JWT refreshed.');",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "1.5 Logout Creator",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"refresh_token\": \"{{empRefreshToken}}\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/auth/logout",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "auth",
+                "logout"
+              ]
+            },
+            "description": "Revoke the refresh token and clear the Redis session.\n\nAfter logout, the refresh token is no longer valid."
+          }
+        }
+      ]
+    },
+    {
+      "name": "2. User Management",
+      "description": "ADMIN-only user directory and capability flow. Run 2.3/2.4/2.5 with adminToken, then 1.4.1/1.4.2 to refresh the affected employee JWTs and verify the new claims.",
+      "item": [
+        {
+          "name": "2.1 List All Users",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/api/users",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "users"
+              ]
+            },
+            "description": "List all users in the user-role directory. Seeded users include admin@c17.local and employee@c17.local. A newly registered employee appears here after 1.3 succeeds with the synchronized backend. Requires the ADMIN token.",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              }
+            ]
+          }
+        },
+        {
+          "name": "2.2 Get User by ID",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/api/users/{{empId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "users",
+                "{{empId}}"
+              ]
+            },
+            "description": "Get the seeded employee user by ID.",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              }
+            ]
+          }
+        },
+        {
+          "name": "2.3 Grant ARCHIVE_SUBMIT Capability",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"capability\": \"ARCHIVE_SUBMIT\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/users/{{assigneeId}}/capabilities",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "users",
+                "{{assigneeId}}",
+                "capabilities"
+              ]
+            },
+            "description": "ADMIN grants ARCHIVE_SUBMIT to the dynamic task assignee. Run 1.4.1 afterwards so the new JWT contains the capability."
+          }
+        },
+        {
+          "name": "2.4 Grant ARCHIVE_RECEIVE Capability",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"capability\": \"ARCHIVE_RECEIVE\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/users/{{archivistId}}/capabilities",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "users",
+                "{{archivistId}}",
+                "capabilities"
+              ]
+            },
+            "description": "ADMIN grants ARCHIVE_RECEIVE to the dynamic archivist. Run 1.4.2 afterwards so the archivist JWT contains the capability."
+          }
+        },
+        {
+          "name": "2.5 Grant DISPOSAL_APPROVE Capability",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"capability\": \"DISPOSAL_APPROVE\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/users/{{assigneeId}}/capabilities",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "users",
+                "{{assigneeId}}",
+                "capabilities"
+              ]
+            },
+            "description": "ADMIN grants DISPOSAL_APPROVE to the dynamic task assignee. Run 1.4.1 afterwards if testing disposal."
+          }
+        },
+        {
+          "name": "2.6 Lock User Account",
+          "request": {
+            "method": "POST",
+            "url": {
+              "raw": "{{baseUrl}}/api/users/{{empId}}/lock",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "users",
+                "{{empId}}",
+                "lock"
+              ]
+            },
+            "description": "Lock the employee account.\n\nLocked accounts cannot login.",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              }
+            ]
+          }
+        },
+        {
+          "name": "2.7 Unlock User Account",
+          "request": {
+            "method": "POST",
+            "url": {
+              "raw": "{{baseUrl}}/api/users/{{empId}}/unlock",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "users",
+                "{{empId}}",
+                "unlock"
+              ]
+            },
+            "description": "Unlock the employee account.\n\nRe-enables login.",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              }
+            ]
+          }
+        },
+        {
+          "name": "2.8 Employee Tries to Grant Capability (Should REJECT)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{assigneeToken}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"capability\": \"ARCHIVE_RECEIVE\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/users/{{archivistId}}/capabilities",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "users",
+                "{{archivistId}}",
+                "capabilities"
+              ]
+            },
+            "description": "Security check: an EMPLOYEE token must not be able to grant capabilities. Expected response: 403 Forbidden."
+          }
+        }
+      ]
+    },
+    {
+      "name": "3. Task Management",
+      "description": "Multi-user task flow: creator creates/assigns/reviews; dynamic assignee starts/submits. Run 3.1 → 3.4 → 3.5 → 3.6 → 3.7 in order.",
+      "item": [
+        {
+          "name": "3.1 Creator Creates Task (CREATED)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{creatorToken}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"title\": \"Test Task {{$timestamp}}\",\n  \"description\": \"Created via Postman for manual testing\",\n  \"deadline\": \"{{taskDeadline}}\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/tasks",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "tasks"
+              ]
+            },
+            "description": "The seeded task creator creates a task. The response ID is saved to {{taskId}}. Status starts as CREATED; it must be assigned before work can start.",
+            "event": [
+              {
+                "listen": "test",
+                "script": {
+                  "exec": [
+                    "var res = pm.response.json();",
+                    "if (res.id) {",
+                    "  pm.collectionVariables.set('taskId', res.id);",
+                    "  console.log('Task ID saved: ' + res.id);",
+                    "}"
+                  ]
+                }
+              }
+            ]
+          }
+        },
+        {
+          "name": "3.2 List Tasks",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{creatorToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/tasks?creator_id={{empId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "tasks"
+              ],
+              "query": [
+                {
+                  "key": "creator_id",
+                  "value": "{{empId}}"
+                }
+              ]
+            },
+            "description": "List tasks visible to the creator, filtered by the seeded creator ID."
+          }
+        },
+        {
+          "name": "3.3 Get Task Detail",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{creatorToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/tasks/{{taskId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "tasks",
+                "{{taskId}}"
+              ]
+            },
+            "description": "Get full task detail (only participants can see full detail)."
+          }
+        },
+        {
+          "name": "3.4 Creator Assigns Task to Assignee (ASSIGNED)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{creatorToken}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"assignee_id\": \"{{assigneeId}}\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/tasks/{{taskId}}/assign",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "tasks",
+                "{{taskId}}",
+                "assign"
+              ]
+            },
+    "description": "The creator assigns the task to the dynamic EMPLOYEE from 1.3. Task moves CREATED → ASSIGNED and the assignee becomes a direct participant."
+  },
+  "event": [
+    {
+      "listen": "test",
+      "script": {
+        "exec": [
+          "var res = pm.response.json();",
+          "if (res.assignee_id) {",
+          "  pm.collectionVariables.set('assignedAssigneeId', res.assignee_id);",
+          "  console.log('Assigned employee ID saved: ' + res.assignee_id);",
+          "}",
+          "pm.test('Task is assigned to the selected employee', function () {",
+          "  pm.expect(res.assignee_id).to.eql(pm.collectionVariables.get('assigneeId'));",
+          "  pm.expect(res.status).to.eql('ASSIGNED');",
+          "});"
+        ]
+      }
+    }
+  ]
+        },
+        {
+          "name": "3.5 Assignee Starts Work (IN_PROGRESS)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{assigneeToken}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status\": \"IN_PROGRESS\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/tasks/{{taskId}}/status",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "tasks",
+                "{{taskId}}",
+                "status"
+              ]
+            },
+            "description": "The dynamic assignee starts work. This succeeds only after 3.4 because CREATED → IN_PROGRESS is invalid."
+          }
+        },
+        {
+          "name": "3.6 Submit for Review (WAITING_REVIEW)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{assigneeToken}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"content\": \"Task completed, ready for review\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/tasks/{{taskId}}/submit",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "tasks",
+                "{{taskId}}",
+                "submit"
+              ]
+            },
+            "description": "The dynamic assignee submits the task. Task moves to WAITING_REVIEW and the submission ID is saved to {{submissionId}}.",
+            "event": [
+              {
+                "listen": "test",
+                "script": {
+                  "exec": [
+                    "var res = pm.response.json();",
+                    "if (res.id) {",
+                    "  pm.collectionVariables.set('submissionId', res.id);",
+                    "  console.log('Submission ID saved: ' + res.id);",
+                    "}"
+                  ]
+                }
+              }
+            ]
+          }
+        },
+        {
+          "name": "3.7 Approve Task",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{creatorToken}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"decision\": \"APPROVED\",\n  \"comment\": \"Looks good!\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/tasks/submissions/{{submissionId}}/review",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "tasks",
+                "submissions",
+                "{{submissionId}}",
+                "review"
+              ]
+            },
+            "description": "The original creator reviews the assignee submission. Task moves WAITING_REVIEW → APPROVED."
+          }
+        },
+        {
+          "name": "3.8 Block Task [ALTERNATIVE FLOW]",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{empToken}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"reason\": \"Waiting for external dependency\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/tasks/{{taskId}}/block",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "tasks",
+                "{{taskId}}",
+                "block"
+              ]
+            },
+            "description": "Alternative branch: run this before submitting/approving the task, or use a fresh task. A terminal APPROVED task cannot be blocked.\n\nStatus is preserved, task cannot transition while blocked."
+          }
+        },
+        {
+          "name": "3.9 Unblock Task [ALTERNATIVE FLOW]",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{empToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/tasks/{{taskId}}/unblock",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "tasks",
+                "{{taskId}}",
+                "unblock"
+              ]
+            },
+            "description": "Alternative branch: run after 3.8 and before completing the task. Returns to the previous status."
+          }
+        },
+        {
+          "name": "3.10 Add Comment",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{empToken}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"content\": \"Comment {{$timestamp}}\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/tasks/{{taskId}}/comments",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "tasks",
+                "{{taskId}}",
+                "comments"
+              ]
+            },
+            "description": "Add a comment to the task.\n\nOnly participants can comment."
+          }
+        },
+        {
+          "name": "3.11 List Comments",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{empToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/tasks/{{taskId}}/comments",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "tasks",
+                "{{taskId}}",
+                "comments"
+              ]
+            },
+            "description": "List comments on the task.\n\nOnly participants can view comments."
+          }
+        },
+        {
+          "name": "3.12 View Activity",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{empToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/tasks/{{taskId}}/activity",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "tasks",
+                "{{taskId}}",
+                "activity"
+              ]
+            },
+            "description": "View task activity log.\n\nOnly participants can view activity."
+          }
+        }
+      ]
+    },
+    {
+      "name": "4. Document Upload",
+      "description": "Upload documents through the secure pipeline. The file goes through Gateway → Document Management → Document Security → ClamAV scan → AES-256-GCM encryption → MinIO storage.",
+      "item": [
+        {
+          "name": "4.1 Upload Clean Document (Multipart)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{empToken}}"
+              }
+            ],
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "file",
+                  "type": "file",
+                  "src": ""
+                },
+                {
+                  "key": "title",
+                  "value": "Test Document {{$timestamp}}",
+                  "type": "text"
+                },
+                {
+                  "key": "document_type",
+                  "value": "MEMO",
+                  "type": "text"
+                },
+                {
+                  "key": "owner_id",
+                  "value": "{{empId}}",
+                  "type": "text"
+                },
+                {
+                  "key": "security_level",
+                  "value": "INTERNAL",
+                  "type": "text"
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/documents/upload",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "documents",
+                "upload"
+              ]
+            },
+            "description": "Upload a document via multipart form.\n\nThe file is:\n1. Scanned by ClamAV (real antivirus)\n2. Checksummed with SHA-256\n3. Encrypted with AES-256-GCM (random DEK, wrapped by KEK)\n4. HMAC-signed for tamper detection\n5. Stored in MinIO as ciphertext\n\nSelect a file in the 'file' field above.\n\nResponse: { document: { id, title, ... }, version: { version, file_size, mime_type, signature } }\n\nNote: object_key is EXCLUDED from the public DTO by design.",
+            "event": [
+              {
+                "listen": "test",
+                "script": {
+                  "exec": [
+                    "if (pm.response.code === 201) {",
+                    "  var res = pm.response.json();",
+                    "  if (res.document && res.document.id) {",
+                    "    pm.collectionVariables.set('documentId', res.document.id);",
+                    "    console.log('Document ID saved: ' + res.document.id);",
+                    "  }",
+                    "  if (res.version) {",
+                    "    pm.collectionVariables.set('docVersion', res.version.version || 1);",
+                    "    if (res.version.id) {",
+                    "      pm.collectionVariables.set('documentVersionId', res.version.id);",
+                    "    }",
+                    "  }",
+                    "}"
+                  ]
+                }
+              }
+            ]
+          }
+        },
+        {
+          "name": "4.2 Upload State-Secret Document (Should REJECT)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{empToken}}"
+              }
+            ],
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "file",
+                  "type": "file",
+                  "src": ""
+                },
+                {
+                  "key": "title",
+                  "value": "State Secret {{$timestamp}}",
+                  "type": "text"
+                },
+                {
+                  "key": "document_type",
+                  "value": "MEMO",
+                  "type": "text"
+                },
+                {
+                  "key": "owner_id",
+                  "value": "{{empId}}",
+                  "type": "text"
+                },
+                {
+                  "key": "declared_state_secret",
+                  "value": "true",
+                  "type": "text"
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/documents/upload",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "documents",
+                "upload"
+              ]
+            },
+            "description": "Upload with declared_state_secret=true.\n\nThis should be REJECTED (400) before Document creation.\nNo Document row, no MinIO objects, no Grants are created.\nA safe denial Audit event is recorded.\n\nSelect any file in the 'file' field."
+          }
+        },
+        {
+          "name": "4.3 Upload Infected File (ClamAV REJECT)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{empToken}}"
+              }
+            ],
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "file",
+                  "type": "text",
+                  "value": "X5O!P%@AP[4\\PZX54(P^)7CC)7}$EICAR-STANDARD-ANTIVIRUS-TEST-FILE!$H+H*"
+                },
+                {
+                  "key": "title",
+                  "value": "EICAR Test {{$timestamp}}",
+                  "type": "text"
+                },
+                {
+                  "key": "document_type",
+                  "value": "MEMO",
+                  "type": "text"
+                },
+                {
+                  "key": "owner_id",
+                  "value": "{{empId}}",
+                  "type": "text"
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/documents/upload",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "documents",
+                "upload"
+              ]
+            },
+            "description": "Upload the EICAR antivirus test file.\n\nClamAV will detect it and reject the upload (HTTP 400+).\nNo Document row or MinIO object remains after rejection.\n\nThe EICAR string is the standard antivirus test file."
+          }
+        },
+        {
+          "name": "4.4 List Documents",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{empToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/documents?owner_id={{empId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "documents"
+              ],
+              "query": [
+                {
+                  "key": "owner_id",
+                  "value": "{{empId}}"
+                }
+              ]
+            },
+            "description": "List documents owned by the employee."
+          }
+        },
+        {
+          "name": "4.5 Get Document Metadata",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{empToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/documents/{{documentId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "documents",
+                "{{documentId}}"
+              ]
+            },
+            "description": "Get document metadata.\n\nRequires PREVIEW permission on the document."
+          }
+        },
+        {
+          "name": "4.6 List Document Versions",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/api/documents/{{documentId}}/versions",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "documents",
+                "{{documentId}}",
+                "versions"
+              ]
+            },
+            "description": "List all versions of the document.",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{empToken}}"
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "5. Task–Document Sharing",
+      "description": "A Task–Document association is required before any task-scoped Document Grant is valid. Task membership alone never grants Document access. Recommended order: 3.1 → 3.4 → 4.1 → 5.1 → 5.2 → 5.3 → 5.4 → 5.5 → 5.6 → 5.7 → 5.8.",
+      "item": [
+        {
+          "name": "5.1 Attach Document and Grant Assignee (PREVIEW + DOWNLOAD)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{creatorToken}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"document_id\": \"{{documentId}}\",\n  \"grants\": [\n    {\n      \"actor_id\": \"{{assigneeId}}\",\n      \"permissions\": [\"PREVIEW\", \"DOWNLOAD\"],\n      \"expires_at\": \"{{grantExpiresAt}}\"\n    }\n  ]\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/tasks/{{taskId}}/documents",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "tasks",
+                "{{taskId}}",
+                "documents"
+              ]
+            },
+            "description": "Creator attaches the uploaded Document to the assigned Task and creates one explicit task-scoped Grant for the Assignee. The backend validates the Task, direct recipient, Document ownership/share authority, Task–Document association, and expiry. It saves both association and Grant IDs automatically.",
+            "event": [
+              {
+                "listen": "test",
+                "script": {
+                  "exec": [
+                    "pm.test('Task document attach succeeded', function () { pm.expect(pm.response.code).to.be.oneOf([200, 201]); });",
+                    "var res = pm.response.json();",
+                    "if (res.association && res.association.id) pm.collectionVariables.set('taskDocumentAssociationId', res.association.id);",
+                    "if (res.grants && res.grants[0] && res.grants[0].id) pm.collectionVariables.set('taskDocumentGrantId', res.grants[0].id);",
+                    "console.log('TaskDocument association and Grant IDs saved.');"
+                  ]
+                }
+              }
+            ]
+          }
+        },
+        {
+          "name": "5.2 List Accessible Task Documents as Assignee",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{assigneeToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/tasks/{{taskId}}/documents",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "tasks",
+                "{{taskId}}",
+                "documents"
+              ]
+            },
+            "description": "Returns only attached Documents for which the Assignee has a valid PREVIEW Grant scoped to this Task. Direct Task membership alone is not enough."
+          }
+        },
+        {
+          "name": "5.3 Get Shared Document Metadata as Assignee",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{assigneeToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/documents/{{documentId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "documents",
+                "{{documentId}}"
+              ]
+            },
+            "description": "Document detail succeeds because the Assignee has a valid task-scoped PREVIEW Grant and the association still exists."
+          }
+        },
+        {
+          "name": "5.4 Request Download Ticket as Assignee",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{assigneeToken}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+          "raw": "{\n  \"task_id\": \"{{taskId}}\",\n  \"version\": {{docVersion}},\n  \"expires_in_seconds\": 900\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/documents/{{documentId}}/download-ticket",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "documents",
+                "{{documentId}}",
+                "download-ticket"
+              ]
+            },
+            "description": "Requires DOWNLOAD on the Document. The ticket is bound to this Assignee and checked again at redemption.",
+            "event": [
+              {
+                "listen": "test",
+                "script": {
+                  "exec": [
+                    "if (pm.response.code === 201 || pm.response.code === 200) {",
+                    "  var res = pm.response.json();",
+                    "  if (res.id) pm.collectionVariables.set('downloadTicketId', res.id);",
+                    "}"
+                  ]
+                }
+              }
+            ]
+          }
+        },
+        {
+          "name": "5.5 Redeem Download Ticket as Assignee",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{assigneeToken}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"ticket_id\": \"{{downloadTicketId}}\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/documents/{{documentId}}/versions/{{docVersion}}/redeem",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "documents",
+                "{{documentId}}",
+                "versions",
+                "{{docVersion}}",
+                "redeem"
+              ]
+            },
+            "description": "Streams plaintext only after ticket, grant, association, signature, and checksum checks pass."
+          }
+        },
+        {
+          "name": "5.6 Unrelated Employee Lists Task Documents (Should REJECT)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{archivistToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/tasks/{{taskId}}/documents",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "tasks",
+                "{{taskId}}",
+                "documents"
+              ]
+            },
+            "description": "An Employee who is not the Creator, current Assignee, or explicit Task Participant must receive 403."
+          }
+        },
+        {
+          "name": "5.7 Detach Document and Revoke Task Grants",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{creatorToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/tasks/{{taskId}}/documents/{{documentId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "tasks",
+                "{{taskId}}",
+                "documents",
+                "{{documentId}}"
+              ]
+            },
+            "description": "Detaches only this Task–Document association and revokes Grants with this task_id. The Document, versions, MinIO object, and Grants belonging to another Task remain intact."
+          }
+        },
+        {
+          "name": "5.8 Assignee Access After Detach (Should REJECT)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{assigneeToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/documents/{{documentId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "documents",
+                "{{documentId}}"
+              ]
+            },
+            "description": "Should return 403 after detach because the task-scoped Grant's association is no longer valid."
+          }
+        }
+      ]
+    },
+    {
+      "name": "5. Permission Management",
+      "description": "Manage grants, delegation, and revocation. Permissions control who can access which documents.",
+      "item": [
+        {
+          "name": "5.1 Create Grant (PREVIEW + DOWNLOAD + DISPOSE)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"grantor_id\": \"{{adminId}}\",\n  \"actor_id\": \"{{assigneeId}}\",\n  \"resource_type\": \"DOCUMENT\",\n  \"resource_id\": \"{{documentId}}\",\n  \"permissions\": [\"PREVIEW\", \"DOWNLOAD\", \"DISPOSE\"],\n  \"task_id\": \"{{taskId}}\",\n  \"expires_at\": \"{{grantExpiresAt}}\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/permissions/grants",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "permissions",
+                "grants"
+              ]
+            },
+            "description": "Create a primary grant as ADMIN for the employee. The request goes through the Gateway; the employee token is intentionally not used because primary-grant creation is an administrator operation.\n\ntask_id is required — grants must be justified by a task.\nexpires_at caps when the grant becomes inactive.",
+            "event": [
+              {
+                "listen": "test",
+                "script": {
+                  "exec": [
+                    "if (pm.response.code === 201) {",
+                    "  var res = pm.response.json();",
+                    "  if (res.id) {",
+                    "    pm.collectionVariables.set('grantId', res.id);",
+                    "    console.log('Grant ID saved: ' + res.id);",
+                    "  }",
+                    "}"
+                  ]
+                }
+              }
+            ]
+          }
+        },
+        {
+          "name": "5.2 Check Permission (PREVIEW) [INTERNAL DIAGNOSTIC]",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"actor_id\": \"{{empId}}\",\n  \"actor_role\": \"EMPLOYEE\",\n  \"resource_type\": \"DOCUMENT\",\n  \"resource_id\": \"{{documentId}}\",\n  \"action\": \"PREVIEW\",\n  \"correlation_id\": \"{{$uuid}}\"\n}"
+            },
+            "url": {
+              "raw": "{{permUrl}}/internal/permissions/check",
+              "host": [
+                "{{permUrl}}"
+              ],
+              "path": [
+                "internal",
+                "permissions",
+                "check"
+              ]
+            },
+            "description": "INTERNAL DIAGNOSTIC ONLY — call the Permission Service directly to evaluate a decision. The public Gateway intentionally rejects /api/permissions/internal/* requests.\n\nShould return { allowed: true } after grant creation.\n\nNote: ADMIN + any content action = DENIED (ADMIN_CONTENT_DENIED)."
+          }
+        },
+        {
+          "name": "5.3 Check Permission (DOWNLOAD) [INTERNAL DIAGNOSTIC]",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"actor_id\": \"{{empId}}\",\n  \"actor_role\": \"EMPLOYEE\",\n  \"resource_type\": \"DOCUMENT\",\n  \"resource_id\": \"{{documentId}}\",\n  \"action\": \"DOWNLOAD\",\n  \"correlation_id\": \"{{$uuid}}\"\n}"
+            },
+            "url": {
+              "raw": "{{permUrl}}/internal/permissions/check",
+              "host": [
+                "{{permUrl}}"
+              ],
+              "path": [
+                "internal",
+                "permissions",
+                "check"
+              ]
+            },
+            "description": "INTERNAL DIAGNOSTIC ONLY — call the Permission Service directly to evaluate a decision. The public Gateway intentionally rejects /api/permissions/internal/* requests.\n\nRequired before creating a download ticket."
+          }
+        },
+        {
+          "name": "5.4 Delegate Grant",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{empToken}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"actor_id\": \"00000000-0000-4000-a000-000000000099\",\n  \"permissions\": [\"PREVIEW\"]\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/permissions/grants/{{grantId}}/delegate",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "permissions",
+                "grants",
+                "{{grantId}}",
+                "delegate"
+              ]
+            },
+            "description": "Delegate a visible employee grant through the Gateway. The authenticated caller must be the grant actor or grantor; the target actor_id is only the delegation recipient.\n\nChild grant's permissions ⊆ parent permissions.\nChild's effective_expires_at ≤ parent's."
+          }
+        },
+        {
+          "name": "5.5 Revoke Grant",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{empToken}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"reason\": \"Access no longer needed\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/permissions/grants/{{grantId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "permissions",
+                "grants",
+                "{{grantId}}"
+              ]
+            },
+            "description": "Revoke the visible employee grant through the Gateway. The authenticated caller must be the grant actor or grantor.\n\nCascades to all descendant grants. No residual access survives."
+          }
+        },
+        {
+          "name": "5.6 List Grants",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/api/permissions/grants?actor_id={{empId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "permissions",
+                "grants"
+              ],
+              "query": [
+                {
+                  "key": "actor_id",
+                  "value": "{{empId}}"
+                }
+              ]
+            },
+            "description": "List the authenticated employee's grants. The Gateway/service scope actor_id to the caller; changing it to another user should return 403.\n\nThis is the public client route.",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{empToken}}"
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "6. Secure Download",
+      "description": "Download documents via the secure ticket flow: create ticket → redeem ticket → receive decrypted plaintext.",
+      "item": [
+        {
+          "name": "6.1 Create Download Ticket",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{empToken}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"version\": {{docVersion}},\n  \"expires_in_seconds\": 3600\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/documents/{{documentId}}/download-ticket",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "documents",
+                "{{documentId}}",
+                "download-ticket"
+              ]
+            },
+            "description": "Create a time-limited download ticket.\n\nRequires DOWNLOAD permission.\nTicket is single-use, capped at grant.effective_expires_at.",
+            "event": [
+              {
+                "listen": "test",
+                "script": {
+                  "exec": [
+                    "if (pm.response.code === 201) {",
+                    "  var res = pm.response.json();",
+                    "  if (res.ticket_id) {",
+                    "    pm.collectionVariables.set('ticketId', res.ticket_id);",
+                    "    console.log('Ticket ID saved: ' + res.ticket_id);",
+                    "  }",
+                    "}"
+                  ]
+                }
+              }
+            ]
+          }
+        },
+        {
+          "name": "6.2 Redeem Ticket (Download Plaintext)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{empToken}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"ticket_id\": \"{{ticketId}}\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/documents/{{documentId}}/versions/{{docVersion}}/redeem",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "documents",
+                "{{documentId}}",
+                "versions",
+                "{{docVersion}}",
+                "redeem"
+              ]
+            },
+            "description": "Redeem the download ticket.\n\nFlow:\n1. Validates ticket (matches doc, version, actor, not used, not expired)\n2. Calls Document Security to retrieve ciphertext from MinIO\n3. Unwraps DEK using KEK\n4. AES-256-GCM decrypt\n5. Verifies SHA-256 checksum\n6. Streams plaintext back\n\nResponse: application/octet-stream (raw file bytes)\n\nIMPORTANT: The ticket is now USED and cannot be redeemed again."
+          }
+        },
+        {
+          "name": "6.3 Replay Ticket (Should DENY)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{empToken}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"ticket_id\": \"{{ticketId}}\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/documents/{{documentId}}/versions/{{docVersion}}/redeem",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "documents",
+                "{{documentId}}",
+                "versions",
+                "{{docVersion}}",
+                "redeem"
+              ]
+            },
+            "description": "Attempt to replay a used ticket.\n\nShould return 403 with reason_code: DOWNLOAD_TICKET_ALREADY_USED.\nTickets are single-use by design."
+          }
+        }
+      ]
+    },
+    {
+      "name": "7. Audit Log",
+      "description": "Query the append-only, hash-chained audit trail. Verify chain integrity.",
+      "item": [
+        {
+          "name": "7.1 Get Audit Chain Head",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/api/audit/chain/head",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "audit",
+                "chain",
+                "head"
+              ]
+            },
+            "description": "Get the current hash chain head through the ADMIN-only Gateway route.\n\nReturns the latest sequence number and hash.",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              }
+            ]
+          }
+        },
+        {
+          "name": "7.2 Verify Audit Chain Integrity",
+          "request": {
+            "method": "POST",
+            "url": {
+              "raw": "{{baseUrl}}/api/audit/chain/verify",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "audit",
+                "chain",
+                "verify"
+              ]
+            },
+            "description": "Verify the entire audit chain integrity through the ADMIN-only Gateway route.\n\nWalks from genesis, recomputing each hash.\nReturns { valid: true } or { valid: false, broken_at: sequence_number }.",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              }
+            ]
+          }
+        },
+        {
+          "name": "7.3 List Audit Events",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/api/audit/events?limit=20",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "audit",
+                "events"
+              ],
+              "query": [
+                {
+                  "key": "limit",
+                  "value": "20"
+                }
+              ]
+            },
+            "description": "List recent audit events through the ADMIN-only Gateway route.\n\nQuery params: event_type, actor_id, resource_type, resource_id, limit, offset. The first returned event ID is saved for 7.4.",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              }
+            ],
+            "event": [
+              {
+                "listen": "test",
+                "script": {
+                  "exec": [
+                    "var res = pm.response.json();",
+                    "if (Array.isArray(res) && res[0] && res[0].id) {",
+                    "  pm.collectionVariables.set('auditEventId', res[0].id);",
+                    "  console.log('Audit event ID saved: ' + res[0].id);",
+                    "}"
+                  ]
+                }
+              }
+            ]
+          }
+        },
+        {
+          "name": "7.4 Get Audit Event by ID",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/api/audit/events/{{auditEventId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "audit",
+                "events",
+                "{{auditEventId}}"
+              ]
+            },
+            "description": "Get a specific audit event by ID through the ADMIN-only Gateway route.\n\nSave an event ID from the list query to use here.",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "8. Records & Transfer Packages",
+      "description": "Manage archival records and transfer packages. Requires ARCHIVE_SUBMIT capability for submission, ARCHIVE_RECEIVE for receiving.",
+      "item": [
+        {
+          "name": "8.1 Create Record",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{empToken}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"title\": \"Record {{$timestamp}}\",\n  \"description\": \"Archival record for testing\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/records",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "records"
+              ]
+            },
+            "description": "Create a new record (EMPLOYEE only, ADMIN denied).\n\nRecord starts in DRAFT status.",
+            "event": [
+              {
+                "listen": "test",
+                "script": {
+                  "exec": [
+                    "if (pm.response.code === 201) {",
+                    "  var res = pm.response.json();",
+                    "  if (res.id) {",
+                    "    pm.collectionVariables.set('recordId', res.id);",
+                    "    console.log('Record ID saved: ' + res.id);",
+                    "  }",
+                    "}"
+                  ]
+                }
+              }
+            ]
+          }
+        },
+        {
+          "name": "8.2 Add Entry to Record",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{empToken}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"document_id\": \"{{documentId}}\",\n  \"document_version_id\": \"{{documentVersionId}}\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/records/{{recordId}}/entries",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "records",
+                "{{recordId}}",
+                "entries"
+              ]
+            },
+            "description": "Add a document version entry to the record."
+          }
+        },
+        {
+          "name": "8.3 Seal Record",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{empToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/records/{{recordId}}/seal",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "records",
+                "{{recordId}}",
+                "seal"
+              ]
+            },
+            "description": "Seal the record.\n\nNo more entries can be added after sealing. This request also requires an ADMIN-created TRANSFER grant scoped to resource_type=RECORD and this record ID; the document grant in 5.1 is not sufficient."
+          }
+        },
+        {
+          "name": "8.4 Create Transfer Package",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{empToken}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"record_id\": \"{{recordId}}\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/transfer-packages",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "transfer-packages"
+              ]
+            },
+            "description": "Create a transfer package.\n\nRequires ARCHIVE_SUBMIT capability + a TRANSFER permission grant scoped to this record/package workflow. ADMIN is denied from this operation.",
+            "event": [
+              {
+                "listen": "test",
+                "script": {
+                  "exec": [
+                    "if (pm.response.code === 201) {",
+                    "  var res = pm.response.json();",
+                    "  if (res.id) {",
+                    "    pm.collectionVariables.set('transferPackageId', res.id);",
+                    "    console.log('Transfer Package ID saved: ' + res.id);",
+                    "  }",
+                    "}"
+                  ]
+                }
+              }
+            ]
+          }
+        },
+        {
+          "name": "8.5 Submit Transfer Package",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{empToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/transfer-packages/{{transferPackageId}}/submit",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "transfer-packages",
+                "{{transferPackageId}}",
+                "submit"
+              ]
+            },
+            "description": "Submit the transfer package.\n\nStatus: DRAFT → SUBMITTED.\nRequires ARCHIVE_SUBMIT capability and a TRANSFER grant scoped to the package ID."
+          }
+        },
+        {
+          "name": "8.6 Receive Transfer Package",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{archivistToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/transfer-packages/{{transferPackageId}}/receive",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "transfer-packages",
+                "{{transferPackageId}}",
+                "receive"
+              ]
+            },
+            "description": "Receive the transfer package as a separate archivist employee.\n\nStatus: SUBMITTED → RECEIVED_CHECKING.\nThe submitter cannot receive their own package; use {{archivistToken}} for a different EMPLOYEE with ARCHIVE_RECEIVE capability."
+          }
+        },
+        {
+          "name": "8.7 Accept Transfer Package",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{archivistToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/transfer-packages/{{transferPackageId}}/accept",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "transfer-packages",
+                "{{transferPackageId}}",
+                "accept"
+              ]
+            },
+            "description": "Accept the transfer package as the archivist employee.\n\nStatus: RECEIVED_CHECKING → ACCEPTED. Requires ARCHIVE_RECEIVE capability."
+          }
+        },
+        {
+          "name": "8.8 Archive Transfer Package",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{archivistToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/transfer-packages/{{transferPackageId}}/archive",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "transfer-packages",
+                "{{transferPackageId}}",
+                "archive"
+              ]
+            },
+            "description": "Archive the transfer package as the archivist employee.\n\nStatus: ACCEPTED → ARCHIVED (terminal). Requires ARCHIVE_RECEIVE capability."
+          }
+        },
+        {
+          "name": "8.9 Reject Transfer Package [ALTERNATIVE FLOW]",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{archivistToken}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"rejection_reason\": \"Incomplete documentation\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/transfer-packages/{{transferPackageId}}/reject",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "transfer-packages",
+                "{{transferPackageId}}",
+                "reject"
+              ]
+            },
+            "description": "Alternative to accept/archive: run this on a fresh RECEIVED_CHECKING package, not after 8.7 or 8.8.\n\nRequires ARCHIVE_RECEIVE capability."
+          }
+        }
+      ]
+    },
+    {
+      "name": "9. Retention & Disposal",
+      "description": "Manage document retention policies, holds, and disposal. Requires DISPOSAL_APPROVE capability for disposal.",
+      "item": [
+        {
+          "name": "9.1 Check Retention Eligibility",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{empToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/retention-disposal/check-eligibility",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "retention-disposal",
+                "check-eligibility"
+              ]
+            },
+            "description": "Check which documents are eligible for disposal.\n\nDocuments with archive status + past expiry become DISPOSED_ELIGIBLE.\nDocuments with active retention holds are excluded."
+          }
+        },
+        {
+          "name": "9.2 Place Retention Hold",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{empToken}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"document_id\": \"{{documentId}}\",\n  \"reason\": \"Legal hold for investigation\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/retention-disposal/holds",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "retention-disposal",
+                "holds"
+              ]
+            },
+            "description": "Place a retention hold on a document.\n\nDocuments with active holds cannot be disposed.",
+            "event": [
+              {
+                "listen": "test",
+                "script": {
+                  "exec": [
+                    "if (pm.response.code === 201) {",
+                    "  var res = pm.response.json();",
+                    "  if (res.id) {",
+                    "    pm.collectionVariables.set('holdId', res.id);",
+                    "    console.log('Hold ID saved: ' + res.id);",
+                    "  }",
+                    "}"
+                  ]
+                }
+              }
+            ]
+          }
+        },
+        {
+          "name": "9.3 List Retention Holds",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/api/retention-disposal/holds?document_id={{documentId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "retention-disposal",
+                "holds"
+              ],
+              "query": [
+                {
+                  "key": "document_id",
+                  "value": "{{documentId}}"
+                }
+              ]
+            },
+            "description": "List retention holds for a document.",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{empToken}}"
+              }
+            ]
+          }
+        },
+        {
+          "name": "9.4 Release Retention Hold",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{empToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/retention-disposal/holds/{{holdId}}/release",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "retention-disposal",
+                "holds",
+                "{{holdId}}",
+                "release"
+              ]
+            },
+            "description": "Release a retention hold. Only the EMPLOYEE who placed the hold can release it; another employee or ADMIN must be rejected."
+          }
+        },
+        {
+          "name": "9.5 Approve Disposal",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{empToken}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"document_id\": \"{{documentId}}\",\n  \"reason\": \"Retention period expired\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/retention-disposal/approve-disposal",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "retention-disposal",
+                "approve-disposal"
+              ]
+            },
+            "description": "Approve document disposal.\n\nRequires DISPOSAL_APPROVE capability + DISPOSE permission.\nADMIN is denied from this operation."
+          }
+        },
+        {
+          "name": "9.6 Execute Disposal",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{empToken}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"document_id\": \"{{documentId}}\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/retention-disposal/execute-disposal",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "retention-disposal",
+                "execute-disposal"
+              ]
+            },
+            "description": "Execute the disposal.\n\nRemoves ciphertext from MinIO while preserving audit evidence.\nRequires DISPOSAL_APPROVE capability."
+          }
+        }
+      ]
+    },
+    {
+      "name": "10. Notifications",
+      "description": "Manage user notifications and preferences.",
+      "item": [
+        {
+          "name": "10.1 Get Notification Preferences",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/api/notifications/preferences/{{empId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "notifications",
+                "preferences",
+                "{{empId}}"
+              ]
+            },
+            "description": "Get the caller's notification preferences through the Gateway. An employee token must not be used to read another user's preferences.\n\nReturns email_enabled and in_app_enabled per channel.",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{empToken}}"
+              }
+            ]
+          }
+        },
+        {
+          "name": "10.2 Update Notification Preferences",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{empToken}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email_enabled\": true,\n  \"in_app_enabled\": true\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/notifications/preferences/{{empId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "notifications",
+                "preferences",
+                "{{empId}}"
+              ]
+            },
+            "description": "Update the caller's notification preferences through the Gateway. The recipient/user ID is checked against the authenticated caller."
+          }
+        },
+        {
+          "name": "10.3 List Notifications",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/api/notifications?recipient_id={{empId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "notifications"
+              ],
+              "query": [
+                {
+                  "key": "recipient_id",
+                  "value": "{{empId}}"
+                }
+              ]
+            },
+            "description": "List notifications for the authenticated employee through the Gateway. Changing recipient_id to another user should return 403.\n\nAdd unread_only=true to filter unread only. The first notification ID is saved for 10.4.",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{empToken}}"
+              }
+            ],
+            "event": [
+              {
+                "listen": "test",
+                "script": {
+                  "exec": [
+                    "var res = pm.response.json();",
+                    "if (Array.isArray(res) && res[0] && res[0].id) {",
+                    "  pm.collectionVariables.set('notificationId', res[0].id);",
+                    "  console.log('Notification ID saved: ' + res[0].id);",
+                    "}"
+                  ]
+                }
+              }
+            ]
+          }
+        },
+        {
+          "name": "10.4 Mark Notification as Read",
+          "request": {
+            "method": "POST",
+            "url": {
+              "raw": "{{baseUrl}}/api/notifications/{{notificationId}}/read",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "notifications",
+                "{{notificationId}}",
+                "read"
+              ]
+            },
+            "description": "Mark a single notification as read through the Gateway.\n\nSave a notification ID from the caller's list query. A notification belonging to another user must be rejected.",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{empToken}}"
+              }
+            ]
+          }
+        },
+        {
+          "name": "10.5 Mark All as Read",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{empToken}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"recipient_id\": \"{{empId}}\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/notifications/read-all",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "notifications",
+                "read-all"
+              ]
+            },
+            "description": "Mark all notifications as read for the authenticated employee through the Gateway. The recipient_id is checked against the caller."
+          }
+        }
+      ]
+    },
+    {
+      "name": "11. Security Monitoring",
+      "description": "Manage security rules, alerts, and automatic account lockout.",
+      "item": [
+        {
+          "name": "11.1 Create Security Rule",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Failed Login Alert {{$timestamp}}\",\n  \"description\": \"Alert on repeated failed logins\",\n  \"rule_type\": \"FAILED_LOGIN\",\n  \"threshold\": 3,\n  \"window_minutes\": 15,\n  \"action\": \"ALERT\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/monitoring/rules",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "monitoring",
+                "rules"
+              ]
+            },
+            "description": "Create a security monitoring rule through the ADMIN-only Gateway route.\n\nrule_type: FAILED_LOGIN, DENIED_CONTENT_ACCESS\naction: ALERT (MEDIUM severity) or BLOCK (HIGH severity + session revocation)\nthreshold: number of events to trigger\nwindow_minutes: time window for counting",
+            "event": [
+              {
+                "listen": "test",
+                "script": {
+                  "exec": [
+                    "if (pm.response.code === 201) {",
+                    "  var res = pm.response.json();",
+                    "  if (res.id) {",
+                    "    pm.collectionVariables.set('ruleId', res.id);",
+                    "    console.log('Rule ID saved: ' + res.id);",
+                    "  }",
+                    "}"
+                  ]
+                }
+              }
+            ]
+          }
+        },
+        {
+          "name": "11.2 Create BLOCK Rule",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Failed Login Block {{$timestamp}}\",\n  \"description\": \"Block account on repeated failed logins\",\n  \"rule_type\": \"FAILED_LOGIN\",\n  \"threshold\": 5,\n  \"window_minutes\": 15,\n  \"action\": \"BLOCK\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/monitoring/rules",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "monitoring",
+                "rules"
+              ]
+            },
+            "description": "Create a BLOCK rule through the ADMIN-only Gateway route.\n\nWhen threshold is met:\n1. Creates HIGH severity alert\n2. Revokes ALL active sessions for the user\n3. User must re-login"
+          }
+        },
+        {
+          "name": "11.3 List Security Rules",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/api/monitoring/rules",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "monitoring",
+                "rules"
+              ]
+            },
+            "description": "List all security monitoring rules through the ADMIN-only Gateway route.",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              }
+            ]
+          }
+        },
+        {
+          "name": "11.4 Toggle Rule",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"enabled\": false\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/monitoring/rules/{{ruleId}}/toggle",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "monitoring",
+                "rules",
+                "{{ruleId}}",
+                "toggle"
+              ]
+            },
+            "description": "Enable or disable a security rule through the ADMIN-only Gateway route."
+          }
+        },
+        {
+          "name": "11.5 List Security Alerts",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/api/monitoring/alerts",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "monitoring",
+                "alerts"
+              ]
+            },
+            "description": "List all security alerts through the ADMIN-only Gateway route.\n\nFilter by: status, severity, actor_id, rule_id. The first alert ID is saved for 11.6.",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              }
+            ],
+            "event": [
+              {
+                "listen": "test",
+                "script": {
+                  "exec": [
+                    "var res = pm.response.json();",
+                    "if (Array.isArray(res) && res[0] && res[0].id) {",
+                    "  pm.collectionVariables.set('alertId', res[0].id);",
+                    "  console.log('Alert ID saved: ' + res[0].id);",
+                    "}"
+                  ]
+                }
+              }
+            ]
+          }
+        },
+        {
+          "name": "11.6 Resolve Alert",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"resolved_by\": \"{{adminId}}\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/monitoring/alerts/{{alertId}}/resolve",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "monitoring",
+                "alerts",
+                "{{alertId}}",
+                "resolve"
+              ]
+            },
+            "description": "Resolve a security alert through the ADMIN-only Gateway route.\n\nSave an alert ID from the list query."
+          }
+        }
+      ]
+    },
+    {
+      "name": "12. Health & Verification",
+      "description": "Verify all services are running and audit chain is intact.",
+      "item": [
+        {
+          "name": "12.1 Gateway Health",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/health",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "health"
+              ]
+            },
+            "description": "Gateway health endpoint (no auth required)."
+          }
+        },
+        {
+          "name": "12.2 Auth Service Health [INTERNAL DIAGNOSTIC]",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{authUrl}}/health",
+              "host": [
+                "{{authUrl}}"
+              ],
+              "path": [
+                "health"
+              ]
+            },
+            "description": "Internal service health diagnostic; browser clients must use Gateway Health."
+          }
+        },
+        {
+          "name": "12.3 Document Management Health [INTERNAL DIAGNOSTIC]",
+          "request": {
+            "method": "GET",
+            "url": "http://localhost:3004/health",
+            "description": "Internal service health diagnostic; browser clients must use Gateway Health."
+          }
+        },
+        {
+          "name": "12.4 Document Security Health [INTERNAL DIAGNOSTIC]",
+          "request": {
+            "method": "GET",
+            "url": "http://localhost:3005/health",
+            "description": "Internal service health diagnostic; browser clients must use Gateway Health."
+          }
+        },
+        {
+          "name": "12.5 Permission Service Health [INTERNAL DIAGNOSTIC]",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{permUrl}}/health",
+              "host": [
+                "{{permUrl}}"
+              ],
+              "path": [
+                "health"
+              ]
+            },
+            "description": "Internal service health diagnostic; browser clients must use Gateway Health."
+          }
+        },
+        {
+          "name": "12.6 Audit Service Health [INTERNAL DIAGNOSTIC]",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{auditUrl}}/health",
+              "host": [
+                "{{auditUrl}}"
+              ],
+              "path": [
+                "health"
+              ]
+            },
+            "description": "Internal service health diagnostic; browser clients must use Gateway Health."
+          }
+        },
+        {
+          "name": "12.7 Full Audit Chain Verify",
+          "request": {
+            "method": "POST",
+            "url": {
+              "raw": "{{baseUrl}}/api/audit/chain/verify",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "audit",
+                "chain",
+                "verify"
+              ]
+            },
+            "description": "Verify the complete audit hash chain through the ADMIN-only Gateway route.\n\nWalks from genesis, recomputing each SHA-256 hash.\nReturns { valid: true } if chain is intact.",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              }
+            ]
+          }
+        }
+      ]
+    }
+  ]
+}

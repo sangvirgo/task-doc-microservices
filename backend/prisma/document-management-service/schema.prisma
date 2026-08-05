@@ -27,6 +27,7 @@ model Document {
 
   versions DocumentVersion[]
   outboxEvents OutboxEvent[]
+  taskDocuments TaskDocument[]
 
   @@index([owner_id])
   @@index([creator_id])
@@ -34,6 +35,20 @@ model Document {
   @@index([record_id])
   @@index([retention_expires_at])
   @@index([disposal_status])
+}
+
+model TaskDocument {
+  id          String   @id @default(uuid())
+  task_id     String
+  document_id String
+  attached_by String
+  attached_at DateTime @default(now())
+
+  document Document @relation(fields: [document_id], references: [id], onDelete: Cascade)
+
+  @@unique([task_id, document_id])
+  @@index([task_id])
+  @@index([document_id])
 }
 
 model OutboxEvent {
@@ -140,6 +155,7 @@ model TransferPackage {
 model DownloadTicket {
   id           String   @id @default(uuid())
   document_id  String
+  task_id      String?
   version      Int
   actor_id     String
   object_key   String
@@ -148,6 +164,7 @@ model DownloadTicket {
   created_at   DateTime @default(now())
 
   @@index([document_id])
+  @@index([task_id])
   @@index([actor_id])
   @@index([expires_at])
 }

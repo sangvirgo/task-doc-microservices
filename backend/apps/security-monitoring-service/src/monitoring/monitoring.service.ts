@@ -233,8 +233,27 @@ export class MonitoringService {
           update: { count: { increment: 1 } },
         });
 
-        if (counter.count !== rule.threshold) {
+        if (counter.count < rule.threshold) {
           return null;
+        }
+
+        const existingAlert = await tx.securityAlert.findFirst({
+          where: {
+            rule_id: rule.id,
+            actor_id: input.actorId,
+            status: 'OPEN',
+          },
+          orderBy: { created_at: 'asc' },
+        });
+
+        if (existingAlert) {
+          return rule.action === 'BLOCK'
+            ? {
+                alertId: existingAlert.id,
+                severity: existingAlert.severity,
+                shouldBlock: true,
+              }
+            : null;
         }
 
         const alert = await tx.securityAlert.create({

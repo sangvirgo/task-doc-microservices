@@ -11,12 +11,18 @@ import {
   TransferPackagesController,
   RetentionDisposalController,
 } from './documents/documents.controller';
+import {
+  InternalTaskDocumentsController,
+  TaskDocumentsController,
+} from './tasks/task-documents.controller';
 import { DocumentsService } from './documents/documents.service';
 import { DocumentPrismaService } from './prisma/document-prisma.service';
 import { PermissionClient } from './permissions/permission.client';
 import { AuditClient } from './audit/audit.client';
 import { SecurityClient } from './security/security.client';
 import { DocumentOutboxRelayService } from './messaging/document-outbox-relay.service';
+import { TaskContextClient } from './tasks/task-context.client';
+import { TaskDocumentsService } from './tasks/task-documents.service';
 
 export const SERVICE = 'document-management-service';
 
@@ -28,6 +34,8 @@ export const envSchema = baseEnvSchema.extend({
   AUDIT_SERVICE_URL: z.string().url().default('http://localhost:3007'),
   AUDIT_TIMEOUT_MS: z.coerce.number().int().positive().default(2000),
   DOCUMENT_SECURITY_URL: z.string().url().default('http://localhost:3005'),
+  TASK_SERVICE_URL: z.string().url().default('http://localhost:3003'),
+  TASK_LOOKUP_TIMEOUT_MS: z.coerce.number().int().positive().default(2000),
   SECURITY_TIMEOUT_MS: z.coerce.number().int().positive().default(5000),
   RABBITMQ_URL: z.string().url().default('amqp://guest:guest@localhost:5672'),
   OUTBOX_POLL_INTERVAL_MS: z.coerce.number().int().positive().default(1000),
@@ -46,6 +54,8 @@ export const envSchema = baseEnvSchema.extend({
   ],
   controllers: [
     DocumentsController,
+    TaskDocumentsController,
+    InternalTaskDocumentsController,
     RecordsController,
     TransferPackagesController,
     RetentionDisposalController,
@@ -57,6 +67,8 @@ export const envSchema = baseEnvSchema.extend({
     AuditClient,
     SecurityClient,
     DocumentOutboxRelayService,
+    TaskContextClient,
+    TaskDocumentsService,
   ],
 })
 export class AppModule {}

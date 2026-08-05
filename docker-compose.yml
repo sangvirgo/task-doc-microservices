@@ -124,6 +124,7 @@ services:
 
   api-gateway:
     <<: *service-base
+    image: ${IMAGE_PREFIX:-c17-task-document-platform}/api-gateway:${IMAGE_TAG:-local}
     build:
       context: .
       dockerfile: backend/infra/Dockerfile
@@ -165,6 +166,7 @@ services:
 
   authentication-identity-service:
     <<: *service-base
+    image: ${IMAGE_PREFIX:-c17-task-document-platform}/authentication-identity-service:${IMAGE_TAG:-local}
     build:
       context: .
       dockerfile: backend/infra/Dockerfile
@@ -175,17 +177,21 @@ services:
       PORT: 3001
       AUTH_DATABASE_URL: postgresql://${POSTGRES_USER:-c17}:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}@postgres:5432/auth_db
       REDIS_URL: redis://redis:6379
+      USER_ROLE_SERVICE_URL: http://user-role-management-service:3002
     depends_on:
       <<: *rabbitmq-dependency
       postgres:
         condition: service_healthy
       redis:
         condition: service_healthy
+      user-role-management-service:
+        condition: service_healthy
     ports:
       - "127.0.0.1:3001:3001"
 
   user-role-management-service:
     <<: *service-base
+    image: ${IMAGE_PREFIX:-c17-task-document-platform}/user-role-management-service:${IMAGE_TAG:-local}
     build:
       context: .
       dockerfile: backend/infra/Dockerfile
@@ -204,6 +210,7 @@ services:
 
   task-management-service:
     <<: *service-base
+    image: ${IMAGE_PREFIX:-c17-task-document-platform}/task-management-service:${IMAGE_TAG:-local}
     build:
       context: .
       dockerfile: backend/infra/Dockerfile
@@ -212,6 +219,7 @@ services:
     environment:
       <<: *service-env
       PORT: 3003
+      USER_ROLE_SERVICE_URL: http://user-role-management-service:3002
       TASK_DATABASE_URL: postgresql://${POSTGRES_USER:-c17}:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}@postgres:5432/task_db
       PERMISSION_SERVICE_URL: http://permission-service:3006
       AUDIT_SERVICE_URL: http://audit-log-service:3007
@@ -220,6 +228,8 @@ services:
     depends_on:
       <<: *rabbitmq-dependency
       postgres:
+        condition: service_healthy
+      user-role-management-service:
         condition: service_healthy
       permission-service:
         condition: service_healthy
@@ -230,6 +240,7 @@ services:
 
   document-management-service:
     <<: *service-base
+    image: ${IMAGE_PREFIX:-c17-task-document-platform}/document-management-service:${IMAGE_TAG:-local}
     build:
       context: .
       dockerfile: backend/infra/Dockerfile
@@ -242,7 +253,9 @@ services:
       PERMISSION_SERVICE_URL: http://permission-service:3006
       AUDIT_SERVICE_URL: http://audit-log-service:3007
       DOCUMENT_SECURITY_URL: http://document-security-service:3005
+      TASK_SERVICE_URL: http://task-management-service:3003
       PERMISSION_CHECK_TIMEOUT_MS: ${PERMISSION_CHECK_TIMEOUT_MS:-2000}
+      TASK_LOOKUP_TIMEOUT_MS: ${TASK_LOOKUP_TIMEOUT_MS:-2000}
       AUDIT_TIMEOUT_MS: ${AUDIT_TIMEOUT_MS:-2000}
       SECURITY_TIMEOUT_MS: ${SECURITY_TIMEOUT_MS:-5000}
     depends_on:
@@ -255,11 +268,14 @@ services:
         condition: service_healthy
       document-security-service:
         condition: service_healthy
+      task-management-service:
+        condition: service_healthy
     ports:
       - "127.0.0.1:3004:3004"
 
   document-security-service:
     <<: *service-base
+    image: ${IMAGE_PREFIX:-c17-task-document-platform}/document-security-service:${IMAGE_TAG:-local}
     build:
       context: .
       dockerfile: backend/infra/Dockerfile
@@ -294,6 +310,7 @@ services:
 
   permission-service:
     <<: *service-base
+    image: ${IMAGE_PREFIX:-c17-task-document-platform}/permission-service:${IMAGE_TAG:-local}
     build:
       context: .
       dockerfile: backend/infra/Dockerfile
@@ -303,6 +320,10 @@ services:
       <<: *service-env
       PORT: 3006
       PERMISSION_DATABASE_URL: postgresql://${POSTGRES_USER:-c17}:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}@postgres:5432/permission_db
+      TASK_SERVICE_URL: http://task-management-service:3003
+      DOCUMENT_SERVICE_URL: http://document-management-service:3004
+      TASK_LOOKUP_TIMEOUT_MS: ${TASK_LOOKUP_TIMEOUT_MS:-2000}
+      DOCUMENT_ASSOCIATION_TIMEOUT_MS: ${DOCUMENT_ASSOCIATION_TIMEOUT_MS:-2000}
     depends_on:
       <<: *rabbitmq-dependency
       postgres:
@@ -314,6 +335,7 @@ services:
   # ADR-0002); a second replica would fork it. Do not scale this service.
   audit-log-service:
     <<: *service-base
+    image: ${IMAGE_PREFIX:-c17-task-document-platform}/audit-log-service:${IMAGE_TAG:-local}
     build:
       context: .
       dockerfile: backend/infra/Dockerfile
@@ -334,6 +356,7 @@ services:
 
   notification-service:
     <<: *service-base
+    image: ${IMAGE_PREFIX:-c17-task-document-platform}/notification-service:${IMAGE_TAG:-local}
     build:
       context: .
       dockerfile: backend/infra/Dockerfile
@@ -352,6 +375,7 @@ services:
 
   security-monitoring-service:
     <<: *service-base
+    image: ${IMAGE_PREFIX:-c17-task-document-platform}/security-monitoring-service:${IMAGE_TAG:-local}
     build:
       context: .
       dockerfile: backend/infra/Dockerfile
@@ -369,11 +393,14 @@ services:
       - "127.0.0.1:3009:3009"
 
   web:
+    image: ${IMAGE_PREFIX:-c17-task-document-platform}/web:${IMAGE_TAG:-local}
     build:
       context: ./frontend/web
       dockerfile: Dockerfile
       additional_contexts:
         root: .
+      args:
+        NEXT_PUBLIC_API_BASE_URL: http://api-gateway:3000
     environment:
       NEXT_PUBLIC_API_BASE_URL: http://api-gateway:3000
       NEXT_PUBLIC_APP_ENV: development

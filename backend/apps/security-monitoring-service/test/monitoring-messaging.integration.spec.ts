@@ -11,14 +11,18 @@ import { loadLocalEnv } from '../../../test/load-local-env';
 import { AppModule as AuthAppModule } from '../../authentication-identity-service/src/app.module';
 import { AuthPrismaService } from '../../authentication-identity-service/src/prisma/auth-prisma.service';
 import { RedisService } from '../../authentication-identity-service/src/redis/redis.service';
+import { AppModule as UserRoleAppModule } from '../../user-role-management-service/src/app.module';
+import { UserRolePrismaService } from '../../user-role-management-service/src/prisma/user-role-prisma.service';
 import { AppModule as MonitoringAppModule } from '../src/app.module';
 import { SecurityMonitoringPrismaService } from '../src/prisma/security-monitoring-prisma.service';
 
 jest.setTimeout(20_000);
 
 describe('Security monitoring messaging integration (PostgreSQL + RabbitMQ + Auth)', () => {
+  let userRoleApp: INestApplication;
   let authApp: INestApplication;
   let monitoringApp: INestApplication;
+  let userRolePrisma: UserRolePrismaService;
   let authPrisma: AuthPrismaService;
   let monitoringPrisma: SecurityMonitoringPrismaService;
   let redis: RedisService;
@@ -30,6 +34,20 @@ describe('Security monitoring messaging integration (PostgreSQL + RabbitMQ + Aut
 
   beforeAll(async () => {
     loadLocalEnv();
+    // Keep the host integration consumer isolated from the Docker service using the production queue.
+    process.env.SECURITY_MONITORING_CONSUMER_NAME = `security-monitoring-service-test-${randomUUID()}`;
+
+    const userRoleModuleRef = await Test.createTestingModule({
+      imports: [UserRoleAppModule],
+    }).compile();
+    userRoleApp = userRoleModuleRef.createNestApplication();
+    userRolePrisma = userRoleModuleRef.get(UserRolePrismaService);
+    await userRoleApp.init();
+    await userRoleApp.listen(0, '127.0.0.1');
+
+    const userRolePort = (userRoleApp.getHttpServer() as { address(): { port: number } }).address()
+      .port;
+    process.env.USER_ROLE_SERVICE_URL = `http://127.0.0.1:${userRolePort}`;
 
     const authModuleRef = await Test.createTestingModule({
       imports: [AuthAppModule],
@@ -64,6 +82,8 @@ describe('Security monitoring messaging integration (PostgreSQL + RabbitMQ + Aut
     for (const userId of createdUserIds) {
       await redis.deleteUserSessions(userId);
       await authPrisma.refreshToken.deleteMany({ where: { user_id: userId } });
+      await userRolePrisma.capability.deleteMany({ where: { user_id: userId } });
+      await userRolePrisma.user.deleteMany({ where: { id: userId } });
     }
     for (const email of createdEmails) {
       await authPrisma.user.deleteMany({ where: { email } });
@@ -77,6 +97,7 @@ describe('Security monitoring messaging integration (PostgreSQL + RabbitMQ + Aut
     await connection?.close();
     await monitoringApp.close();
     await authApp.close();
+    await userRoleApp.close();
   });
 
   it('creates one deduplicated alert after repeated failed logins cross the threshold', async () => {
