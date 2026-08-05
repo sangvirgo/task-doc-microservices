@@ -13,6 +13,7 @@ const BATCH_SIZE = Number(process.env.OUTBOX_BATCH_SIZE || 20);
 export class DocumentOutboxRelayService implements OnModuleInit, OnApplicationShutdown {
   private timer?: NodeJS.Timeout;
   private running = false;
+  private activeFlush?: Promise<void>;
 
   constructor(
     private readonly prisma: DocumentPrismaService,
@@ -21,15 +22,26 @@ export class DocumentOutboxRelayService implements OnModuleInit, OnApplicationSh
   ) {}
 
   onModuleInit(): void {
-    void this.flush();
-    this.timer = setInterval(() => void this.flush(), POLL_INTERVAL_MS);
+    this.startFlush();
+    this.timer = setInterval(() => this.startFlush(), POLL_INTERVAL_MS);
     this.timer.unref();
   }
 
-  onApplicationShutdown(): void {
+  async onApplicationShutdown(): Promise<void> {
     if (this.timer) {
       clearInterval(this.timer);
     }
+    await this.activeFlush;
+  }
+
+  private startFlush(): void {
+    if (this.running) return;
+    this.activeFlush = this.flush().catch((error: unknown) => {
+      this.logger.warn(
+        `Document outbox relay failed: ${error instanceof Error ? error.message : 'unknown'}`,
+        'DocumentOutboxRelayService',
+      );
+    });
   }
 
   private async flush(): Promise<void> {
@@ -61,7 +73,7 @@ export class DocumentOutboxRelayService implements OnModuleInit, OnApplicationSh
             payload: event.payload as Record<string, unknown>,
           });
 
-          await this.prisma.outboxEvent.update({
+          await this.prisma.outboxEvent.updateMany({
             where: { id: event.id },
             data: {
               published_at: new Date(),
@@ -70,7 +82,7 @@ export class DocumentOutboxRelayService implements OnModuleInit, OnApplicationSh
             },
           });
         } catch (error) {
-          await this.prisma.outboxEvent.update({
+          await this.prisma.outboxEvent.updateMany({
             where: { id: event.id },
             data: {
               attempts: { increment: 1 },
