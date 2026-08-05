@@ -43,6 +43,11 @@ import {
 import { PermissionClient } from '../permissions/permission.client';
 import { AuditClient } from '../audit/audit.client';
 import { SecurityClient } from '../security/security.client';
+import { TaskDocumentsService } from '../tasks/task-documents.service';
+import type {
+  TaskDocumentGrantInput,
+  TaskDocumentGrantResult,
+} from '../tasks/task-documents.service';
 
 const createDocumentSchema = z.object({
   title: z.string().min(1),
@@ -102,13 +107,53 @@ const rawBooleanSchema = z
     return value.toLowerCase() === 'true';
   });
 
-const multipartUploadSchema = z.object({
-  title: z.string().min(1),
-  document_type: z.string().min(1),
-  security_level: z.enum(['PUBLIC', 'INTERNAL', 'CONFIDENTIAL', 'RESTRICTED']).default('INTERNAL'),
-  retention_policy: z.string().optional(),
-  declared_state_secret: rawBooleanSchema.default(false),
-});
+const taskDocumentGrantSchema = z
+  .object({
+    actor_id: z.string().uuid(),
+    permissions: z.array(z.string()).min(1),
+    expires_at: z.string().datetime(),
+    parent_grant_id: z.string().uuid().optional(),
+  })
+  .strict();
+
+const taskDocumentGrantListSchema = z.preprocess((value) => {
+  if (typeof value !== 'string') return value;
+  try {
+    return JSON.parse(value);
+  } catch {
+    return value;
+  }
+}, z.array(taskDocumentGrantSchema).min(1));
+
+const multipartUploadSchema = z
+  .object({
+    title: z.string().min(1),
+    document_type: z.string().min(1),
+    security_level: z
+      .enum(['PUBLIC', 'INTERNAL', 'CONFIDENTIAL', 'RESTRICTED'])
+      .default('INTERNAL'),
+    retention_policy: z.string().optional(),
+    declared_state_secret: rawBooleanSchema.default(false),
+    task_id: z.string().uuid().optional(),
+    grants: taskDocumentGrantListSchema.optional(),
+  })
+  .superRefine((value, context) => {
+    if (value.task_id && !value.grants) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['grants'],
+        message: 'grants are required when task_id is supplied',
+      });
+    }
+
+    if (value.grants && !value.task_id) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['task_id'],
+        message: 'task_id is required when grants are supplied',
+      });
+    }
+  });
 
 const rawUploadHeaderSchema = z.object({
   title: z.string().min(1),
@@ -122,6 +167,8 @@ const rawUploadHeaderSchema = z.object({
 interface UploadedDocumentResult {
   document: DocumentDto;
   version: DocumentVersionDto;
+  association?: TaskDocumentGrantResult['association'];
+  grants?: TaskDocumentGrantResult['grants'];
 }
 
 interface UploadMetadata {
@@ -131,6 +178,8 @@ interface UploadMetadata {
   security_level: 'PUBLIC' | 'INTERNAL' | 'CONFIDENTIAL' | 'RESTRICTED';
   retention_policy?: string;
   declared_state_secret: boolean;
+  task_id?: string;
+  grants?: TaskDocumentGrantInput[];
 }
 
 interface UploadedFileReference {
@@ -159,6 +208,7 @@ export class DocumentsController {
     private readonly permissionClient: PermissionClient,
     private readonly auditClient: AuditClient,
     private readonly securityClient: SecurityClient,
+    private readonly taskDocumentsService: TaskDocumentsService,
   ) {}
 
   @Get()
@@ -170,6 +220,22 @@ export class DocumentsController {
     @CurrentUser() user?: AuthContext,
   ): Promise<DocumentDto[]> {
     if (!user) throw new ForbiddenException('Authentication required');
+
+    if (!isAdmin(user)) {
+      if (owner_id && owner_id !== user.userId) {
+        throw new ForbiddenException('Employees may only list their own documents');
+      }
+      if (creator_id && creator_id !== user.userId) {
+        throw new ForbiddenException('Employees may only list documents they created');
+      }
+
+      return this.documentsService.listDocuments({
+        owner_id: user.userId,
+        creator_id,
+        status,
+      });
+    }
+
     const documents = await this.documentsService.listDocuments({ owner_id, creator_id, status });
     const visible = await Promise.all(
       documents.map(async (document) => {
@@ -726,7 +792,21 @@ export class DocumentsController {
           version: created.version.version,
         },
       });
-      return created;
+
+      if (!metadata.task_id || !metadata.grants) return created;
+
+      const attached = await this.taskDocumentsService.attach(
+        metadata.task_id,
+        created.document.id,
+        metadata.grants,
+        user,
+      );
+
+      return {
+        ...created,
+        association: attached.association,
+        grants: attached.grants,
+      };
     } finally {
       await safeDelete(file.filePath);
     }

@@ -64,6 +64,7 @@ describe('document metadata authorization scope', () => {
       {} as never,
       { record: jest.fn() } as never,
       {} as never,
+      {} as never,
     );
 
     await expect(
@@ -93,6 +94,7 @@ describe('document metadata authorization scope', () => {
       permissionClient as never,
       {} as never,
       { processDocument: jest.fn() } as never,
+      {} as never,
     );
 
     await expect(
@@ -110,6 +112,33 @@ describe('document metadata authorization scope', () => {
     ).rejects.toBeInstanceOf(ForbiddenException);
     expect(permissionClient.check).not.toHaveBeenCalled();
     expect(service.createDocumentVersion).not.toHaveBeenCalled();
+  });
+
+  it('scopes employee document inventory to the authenticated owner', async () => {
+    const service = { listDocuments: jest.fn() };
+    const employee = {
+      userId: '10000000-0000-4000-8000-000000000001',
+      role: 'EMPLOYEE',
+      capabilities: [],
+      sessionId: '',
+    } as never;
+    const controller = new DocumentsController(
+      service as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+    );
+
+    await expect(
+      controller.listDocuments(
+        '20000000-0000-4000-8000-000000000002',
+        undefined,
+        undefined,
+        employee,
+      ),
+    ).rejects.toBeInstanceOf(ForbiddenException);
+    expect(service.listDocuments).not.toHaveBeenCalled();
   });
 
   it('denies document metadata and version reads when PREVIEW is not granted', async () => {
@@ -133,6 +162,7 @@ describe('document metadata authorization scope', () => {
     const controller = new DocumentsController(
       service as never,
       permissionClient as never,
+      {} as never,
       {} as never,
       {} as never,
     );
@@ -174,6 +204,7 @@ describe('document metadata authorization scope', () => {
       permissionClient as never,
       {} as never,
       {} as never,
+      {} as never,
     );
 
     await expect(controller.getDocument(documentId, employee)).resolves.toMatchObject({
@@ -187,6 +218,7 @@ describe('document metadata authorization scope', () => {
         action: 'PREVIEW',
       }),
     );
+    expect(permissionClient.check.mock.calls).toHaveLength(2);
     expect(service.getDocument).toHaveBeenCalledWith(documentId);
     expect(service.getDocumentVersions).toHaveBeenCalledWith(documentId);
   });
