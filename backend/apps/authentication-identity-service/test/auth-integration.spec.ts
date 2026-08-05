@@ -8,6 +8,7 @@ import { AuthController } from '../src/auth/auth.controller';
 import { AuthService } from '../src/auth/auth.service';
 import { AuthPrismaService } from '../src/prisma/auth-prisma.service';
 import { RedisService } from '../src/redis/redis.service';
+import { UserRoleClient } from '../src/users/user-role.client';
 
 /**
  * Integration tests for Authentication-Identity service against real
@@ -31,7 +32,18 @@ describe('Auth Service Integration (PostgreSQL + Redis)', () => {
         }),
       ],
       controllers: [AuthController],
-      providers: [AuthService, AuthPrismaService, RedisService],
+      providers: [
+        AuthService,
+        AuthPrismaService,
+        RedisService,
+        {
+          provide: UserRoleClient,
+          useValue: {
+            provisionUser: jest.fn().mockResolvedValue(undefined),
+            getCapabilities: jest.fn().mockResolvedValue([]),
+          },
+        },
+      ],
     }).compile();
 
     app = moduleRef.createNestApplication();
