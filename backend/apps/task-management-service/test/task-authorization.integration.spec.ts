@@ -4,6 +4,7 @@ import request from 'supertest';
 import { randomUUID } from 'crypto';
 
 import { attachAuthContextFromHeaders } from '@c17/auth-context';
+import { TaskOutboxRelayService } from '../src/messaging/task-outbox-relay.service';
 import { TaskPrismaService } from '../src/prisma/task-prisma.service';
 
 type FetchResponseInit = {
@@ -140,7 +141,11 @@ describe('Task authorization integration (PostgreSQL)', () => {
     const { AppModule } = await import('../src/app.module');
     const moduleRef = await Test.createTestingModule({
       imports: [AppModule],
-    }).compile();
+    })
+      // This suite exercises authorization only; the outbox relay belongs to its dedicated suite.
+      .overrideProvider(TaskOutboxRelayService)
+      .useValue({})
+      .compile();
 
     app = moduleRef.createNestApplication();
     app.use(attachAuthContextFromHeaders);
