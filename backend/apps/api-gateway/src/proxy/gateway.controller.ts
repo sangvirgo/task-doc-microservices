@@ -180,6 +180,12 @@ export class GatewayController {
   }
 
   private async proxy(req: Request, res: Response): Promise<void> {
+    // CORS preflight must terminate at the gateway; it must never be proxied to a service.
+    if (req.method === 'OPTIONS') {
+      res.sendStatus(204);
+      return;
+    }
+
     this.enforcePublicAuthorizationPolicy(req);
 
     const requestPath = req.originalUrl.split('?')[0];
