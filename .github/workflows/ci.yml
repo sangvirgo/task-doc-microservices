@@ -2,7 +2,7 @@ name: ci
 
 on:
   push:
-    branches: ['**']
+    branches: ["**"]
   pull_request:
 
 permissions:
@@ -25,6 +25,9 @@ jobs:
           cache: pnpm
 
       - run: pnpm install --frozen-lockfile
+
+      - name: Generate Prisma clients
+        run: pnpm backend:db:generate
 
       - name: Lint
         run: pnpm backend:lint
