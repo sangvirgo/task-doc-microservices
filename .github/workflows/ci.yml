@@ -51,6 +51,9 @@ jobs:
           postgres redis rabbitmq minio clamav
           --wait --wait-timeout 180
 
+      - name: Prepare test databases
+        run: pnpm --filter backend db:reset:test
+
       - name: Lint
         run: pnpm backend:lint
 
