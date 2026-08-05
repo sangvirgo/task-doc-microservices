@@ -161,6 +161,7 @@ describe('Task authorization integration (PostgreSQL)', () => {
     await prisma.taskComment.deleteMany();
     await prisma.taskParticipant.deleteMany();
     await prisma.taskStatusHistory.deleteMany();
+    await prisma.outboxEvent.deleteMany();
     await prisma.task.deleteMany();
   });
 
