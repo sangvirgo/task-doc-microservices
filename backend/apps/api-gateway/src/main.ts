@@ -16,6 +16,15 @@ async function bootstrap(): Promise<void> {
   app.useLogger(logger);
   app.enableShutdownHooks();
 
+  const corsOrigins = (
+    process.env.CORS_ORIGINS ??
+    'http://13.229.104.126:3100,http://localhost:3001,http://localhost:3100'
+  )
+    .split(',')
+    .map((origin) => origin.trim())
+    .filter(Boolean);
+  app.enableCors({ origin: corsOrigins });
+
   SwaggerModule.setup(
     'docs',
     app,
