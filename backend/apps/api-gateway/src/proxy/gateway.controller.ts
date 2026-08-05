@@ -201,10 +201,11 @@ export class GatewayController {
       const accept = req.headers['accept'];
       const authorization = req.headers['authorization'];
       const contentLength = req.headers['content-length'];
+      const isStreamingUpload = this.isStreamingUploadRequest(req);
       if (typeof requestContentType === 'string') headers['content-type'] = requestContentType;
       if (typeof accept === 'string') headers['accept'] = accept;
       if (typeof authorization === 'string') headers['authorization'] = authorization;
-      if (typeof contentLength === 'string' && /^\d+$/.test(contentLength)) {
+      if (isStreamingUpload && typeof contentLength === 'string' && /^\d+$/.test(contentLength)) {
         headers['content-length'] = contentLength;
       }
 
@@ -223,7 +224,6 @@ export class GatewayController {
 
       // Build body for mutating methods
       let body: RequestInit['body'] | undefined;
-      const isStreamingUpload = this.isStreamingUploadRequest(req);
       if (isStreamingUpload) {
         body = Readable.toWeb(req);
       } else if (['POST', 'PUT', 'PATCH', 'DELETE'].includes(req.method) && req.body) {

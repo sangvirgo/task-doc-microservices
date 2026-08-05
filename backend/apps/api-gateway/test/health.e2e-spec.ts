@@ -76,6 +76,7 @@ describe('api-gateway health', () => {
       JSON.stringify({ email: 'employee@c17.local', password: 'Employee123!' }),
     );
     expect(init?.headers).toMatchObject({ 'content-type': 'application/json' });
+    expect(new Headers(init?.headers).has('content-length')).toBe(false);
   });
 
   it('streams raw document uploads without JSON-serializing the body', async () => {
