@@ -1,0 +1,522 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Secure Task and Document Management Platform architecture overview">
+  <title>Secure Task and Document Management Platform · Architecture</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --ink: #e8eef5;
+      --muted: #94a6b8;
+      --faint: #94a6b8;
+      --canvas: #07111f;
+      --panel: #0d1b2d;
+      --panel-2: #12243a;
+      --line: #24415d;
+      --cyan: #65d7ef;
+      --lime: #b8e986;
+      --amber: #f4c56b;
+      --coral: #fa927f;
+      --violet: #b6a1ff;
+      --shadow: 0 18px 48px rgba(0, 0, 0, .24);
+    }
+
+    * { box-sizing: border-box; }
+    html { scroll-behavior: smooth; }
+    body {
+      margin: 0;
+      background:
+        radial-gradient(circle at 10% 0%, rgba(101, 215, 239, .1), transparent 30rem),
+        radial-gradient(circle at 90% 14%, rgba(182, 161, 255, .08), transparent 28rem),
+        var(--canvas);
+      color: var(--ink);
+      font: 16px/1.65 Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+
+    a { color: var(--cyan); }
+    a:hover { color: #b2eff8; }
+    code, .mono { font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace; }
+    code {
+      color: var(--amber);
+      background: rgba(244, 197, 107, .1);
+      border: 1px solid rgba(244, 197, 107, .18);
+      border-radius: .35rem;
+      padding: .1rem .35rem;
+      font-size: .88em;
+    }
+    .shell { width: min(1240px, calc(100% - 2rem)); margin: 0 auto; }
+    .skip-link {
+      position: absolute; left: -999px; top: 1rem; z-index: 10;
+      padding: .6rem .8rem; border-radius: .5rem; background: var(--cyan); color: var(--canvas);
+    }
+    .skip-link:focus { left: 1rem; }
+
+    header { padding: 4.5rem 0 2.5rem; }
+    .eyebrow {
+      display: flex; align-items: center; gap: .65rem; flex-wrap: wrap;
+      color: var(--cyan); font: 700 .77rem/1.2 "SFMono-Regular", Consolas, monospace;
+      letter-spacing: .14em; text-transform: uppercase;
+    }
+    .eyebrow::before { content: ""; width: 2.8rem; height: 1px; background: var(--cyan); }
+    h1, h2, h3, h4 { line-height: 1.15; letter-spacing: -.025em; }
+    h1 { max-width: 840px; margin: 1.15rem 0 1rem; font-size: clamp(2.4rem, 7vw, 5.6rem); }
+    h1 span { color: var(--cyan); }
+    h2 { margin: 0 0 .7rem; font-size: clamp(1.7rem, 3vw, 2.55rem); }
+    h3 { margin: 0 0 .65rem; font-size: 1.25rem; }
+    h4 { margin: 0 0 .45rem; color: var(--cyan); font-size: .98rem; }
+    p { margin: .5rem 0 1rem; }
+    .lede { max-width: 780px; color: var(--muted); font-size: clamp(1.05rem, 2vw, 1.28rem); }
+    .pill-row { display: flex; flex-wrap: wrap; gap: .5rem; }
+    .pill {
+      display: inline-flex; align-items: center; gap: .35rem;
+      border: 1px solid var(--line); border-radius: 999px; padding: .28rem .62rem;
+      background: rgba(18, 36, 58, .78); color: var(--muted); font-size: .79rem;
+    }
+    .pill strong { color: var(--ink); }
+    .hero-grid { display: grid; grid-template-columns: 1fr 360px; gap: 1.5rem; align-items: end; }
+    .hero-note { border-left: 2px solid var(--lime); padding: .35rem 0 .35rem 1rem; color: var(--muted); }
+    .hero-note strong { display: block; color: var(--lime); font-size: 1.05rem; }
+
+    .toolbar {
+      position: sticky; top: 0; z-index: 5; margin: 1rem 0 3rem; padding: .75rem;
+      border: 1px solid var(--line); border-radius: .8rem; background: rgba(7, 17, 31, .9);
+      backdrop-filter: blur(16px); box-shadow: var(--shadow);
+    }
+    .toolbar-inner { display: flex; align-items: center; justify-content: space-between; gap: 1rem; flex-wrap: wrap; }
+    .toolbar-label { color: var(--faint); font: 700 .72rem/1.2 "SFMono-Regular", Consolas, monospace; letter-spacing: .1em; text-transform: uppercase; }
+    .filter-list { display: flex; flex-wrap: wrap; gap: .4rem; }
+    .filter {
+      cursor: pointer; border: 1px solid var(--line); border-radius: .45rem; padding: .42rem .7rem;
+      background: var(--panel); color: var(--muted); font: inherit; font-size: .86rem;
+    }
+    .filter:hover, .filter[aria-pressed="true"] { border-color: var(--cyan); background: rgba(101, 215, 239, .12); color: var(--ink); }
+    .contents { display: flex; flex-wrap: wrap; gap: .7rem 1.2rem; }
+    .contents a { color: var(--muted); font-size: .88rem; text-decoration: none; }
+    .contents a:hover { color: var(--cyan); }
+
+    main { padding-bottom: 4rem; }
+    section { scroll-margin-top: 5rem; margin: 4.8rem 0; }
+    .section-kicker { margin-bottom: .4rem; color: var(--lime); font: 700 .72rem/1.2 "SFMono-Regular", Consolas, monospace; letter-spacing: .12em; text-transform: uppercase; }
+    .section-intro { max-width: 760px; color: var(--muted); }
+    .section-head { display: flex; align-items: end; justify-content: space-between; gap: 1rem; margin-bottom: 1.35rem; }
+    .section-number { color: var(--faint); font: 700 1rem/1 "SFMono-Regular", Consolas, monospace; }
+    .panel {
+      border: 1px solid var(--line); border-radius: .9rem; background: linear-gradient(145deg, rgba(18, 36, 58, .96), rgba(13, 27, 45, .96));
+      box-shadow: var(--shadow);
+    }
+    .panel-pad { padding: clamp(1rem, 2.8vw, 1.6rem); }
+    .grid-2 { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1rem; }
+    .grid-3 { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 1rem; }
+    .muted { color: var(--muted); }
+    .accent-cyan { color: var(--cyan); }
+    .accent-lime { color: var(--lime); }
+    .accent-coral { color: var(--coral); }
+
+    .architecture-map { overflow: hidden; }
+    .map-frame { overflow-x: auto; padding: .5rem; background: #091625; }
+    .map-frame svg { display: block; width: 100%; min-width: 760px; height: auto; }
+    .map-frame text { font-family: Inter, ui-sans-serif, system-ui, sans-serif; }
+    .map-frame .label { fill: #e8eef5; font-weight: 700; font-size: 13px; }
+    .map-frame .label.trust-boundary { fill: #fa927f; }
+    .map-frame .small { fill: #94a6b8; font-size: 11px; }
+    .map-frame .layer { fill: var(--faint); font: 700 10px "SFMono-Regular", Consolas, monospace; letter-spacing: 1.4px; }
+    .legend { display: flex; flex-wrap: wrap; gap: .6rem 1.2rem; padding: 1rem 1.2rem; border-top: 1px solid var(--line); color: var(--muted); font-size: .84rem; }
+    .legend-item { display: inline-flex; align-items: center; gap: .45rem; }
+    .legend-line { width: 2.1rem; height: 0; border-top: 2px solid var(--cyan); }
+    .legend-line.dashed { border-top-style: dashed; border-color: var(--amber); }
+    .legend-dot { width: .65rem; height: .65rem; border: 2px solid var(--lime); border-radius: 50%; }
+    .legend-lock { color: var(--coral); font-size: 1rem; }
+    .boundary-note { border-left: 3px solid var(--coral); background: rgba(250, 146, 127, .07); }
+
+    table { width: 100%; border-collapse: collapse; }
+    th, td { padding: .85rem .8rem; border-bottom: 1px solid var(--line); text-align: left; vertical-align: top; }
+    th { color: var(--cyan); font: 700 .74rem/1.3 "SFMono-Regular", Consolas, monospace; letter-spacing: .08em; text-transform: uppercase; }
+    td { color: var(--muted); font-size: .92rem; }
+    td:first-child { color: var(--ink); }
+    tr:last-child td { border-bottom: 0; }
+    .service-name { display: block; color: var(--ink); font-weight: 700; }
+    .port { color: var(--amber); font-family: "SFMono-Regular", Consolas, monospace; white-space: nowrap; }
+    .db { color: var(--violet); font-family: "SFMono-Regular", Consolas, monospace; white-space: nowrap; }
+    .table-wrap { overflow-x: auto; }
+
+    .flow-card { position: relative; overflow: hidden; }
+    .flow-card::before { content: ""; position: absolute; inset: 0 auto 0 0; width: 3px; background: var(--cyan); }
+    .flow-card[data-domain~="authorization"]::before { background: var(--lime); }
+    .flow-card[data-domain~="evidence"]::before { background: var(--violet); }
+    .flow-card[data-domain~="archive"]::before { background: var(--amber); }
+    .flow-card[data-domain~="content-security"]::before { background: var(--coral); }
+    .flow-card .panel-pad { padding-left: 1.45rem; }
+    .flow-index { color: var(--faint); font: 700 .72rem/1 "SFMono-Regular", Consolas, monospace; letter-spacing: .1em; }
+    .workflow-summary-title { display: block; margin-top: .25rem; font-size: 1.25rem; }
+    .steps { display: grid; gap: .6rem; margin: 1rem 0 0; padding: 0; list-style: none; counter-reset: flow; }
+    .steps li { display: grid; grid-template-columns: 2rem 1fr; gap: .7rem; align-items: start; color: var(--muted); }
+    .steps li::before { counter-increment: flow; content: counter(flow, decimal-leading-zero); color: var(--canvas); background: var(--cyan); border-radius: .35rem; padding: .18rem .2rem; text-align: center; font: 700 .72rem/1.35 "SFMono-Regular", Consolas, monospace; }
+    .steps li strong { color: var(--ink); }
+    details { border-top: 1px solid var(--line); }
+    details:first-of-type { border-top: 0; }
+    summary { cursor: pointer; padding: .9rem 0; color: var(--ink); font-weight: 700; }
+    summary::marker { color: var(--cyan); }
+    details[open] summary { color: var(--cyan); }
+    details p, details ul { color: var(--muted); }
+    details ul { margin-top: 0; padding-left: 1.2rem; }
+
+    .invariant { min-height: 100%; }
+    .invariant .marker { display: flex; align-items: center; justify-content: center; width: 2.2rem; height: 2.2rem; margin-bottom: 1rem; border: 1px solid currentColor; border-radius: .55rem; color: var(--cyan); font: 700 1rem/1 "SFMono-Regular", Consolas, monospace; }
+    .invariant p { color: var(--muted); font-size: .93rem; }
+    .callout { border: 1px solid rgba(184, 233, 134, .25); background: rgba(184, 233, 134, .08); }
+    .callout strong { color: var(--lime); }
+
+    .sequence { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem; margin: 1rem 0 0; }
+    .sequence span { padding: .42rem .6rem; border: 1px solid var(--line); border-radius: .45rem; background: var(--panel-2); color: var(--ink); font: 700 .8rem/1.25 "SFMono-Regular", Consolas, monospace; }
+    .sequence b { color: var(--cyan); font-weight: 400; }
+    .is-hidden { display: none !important; }
+    .no-results { display: none; margin-top: 1rem; color: var(--muted); }
+    .no-results.visible { display: block; }
+    footer { padding: 2rem 0 4rem; border-top: 1px solid var(--line); color: var(--faint); font-size: .88rem; }
+
+    @media (max-width: 900px) {
+      .hero-grid, .grid-3 { grid-template-columns: 1fr; }
+      .grid-2 { grid-template-columns: 1fr; }
+      .section-head { display: block; }
+      .section-number { display: block; margin-bottom: .6rem; }
+    }
+    @media (max-width: 600px) {
+      .shell { width: min(100% - 1.1rem, 1240px); }
+      header { padding-top: 2.6rem; }
+      .toolbar { margin-bottom: 2rem; }
+      th, td { padding: .65rem .55rem; }
+    }
+  </style>
+</head>
+<body>
+  <a class="skip-link" href="#main">Skip to architecture</a>
+  <header class="shell">
+    <div class="eyebrow">System map · architecture reference</div>
+    <div class="hero-grid">
+      <div>
+        <h1>Secure Task and <span>Document</span> Management Platform</h1>
+        <p class="lede">A task-justified access system: work is assigned as Tasks, confidential Documents are protected by time-bounded Grants, and every allow or deny becomes evidence.</p>
+        <div class="pill-row" aria-label="Architecture summary">
+          <span class="pill"><strong>10</strong> NestJS services</span>
+          <span class="pill"><strong>9</strong> isolated PostgreSQL DBs</span>
+          <span class="pill"><strong>1</strong> API entry point</span>
+          <span class="pill"><strong>0</strong> client infrastructure paths</span>
+        </div>
+      </div>
+      <div class="hero-note">
+        <strong>Design thesis</strong>
+        Authority over the platform is separated from access to content. A Grant can never outlive the Task that justifies it.
+      </div>
+    </div>
+  </header>
+
+  <div class="shell toolbar" aria-label="Overview controls">
+    <div class="toolbar-inner">
+      <div>
+        <div class="toolbar-label">Focus the map</div>
+        <div class="filter-list" role="group" aria-label="Filter architecture topics">
+          <button class="filter" type="button" data-filter="all" aria-pressed="true">All</button>
+          <button class="filter" type="button" data-filter="authorization" aria-pressed="false">Authorization</button>
+          <button class="filter" type="button" data-filter="content-security" aria-pressed="false">Content Security</button>
+          <button class="filter" type="button" data-filter="evidence" aria-pressed="false">Evidence</button>
+          <button class="filter" type="button" data-filter="archive" aria-pressed="false">Archive</button>
+        </div>
+      </div>
+      <nav class="contents" aria-label="Page sections">
+        <a href="#map">Map</a><a href="#services">Services</a><a href="#workflows">Workflows</a><a href="#invariants">Invariants</a><a href="#infrastructure">Infrastructure</a>
+      </nav>
+    </div>
+  </div>
+
+  <main id="main" class="shell">
+    <section id="map" aria-labelledby="map-title">
+      <div class="section-head">
+        <div>
+          <div class="section-kicker">01 / topology</div>
+          <h2 id="map-title">One public edge, layered security, isolated ownership</h2>
+          <p class="section-intro">Web and Mobile clients use the API Gateway only. Internal service calls are explicit and protected; persistence stays behind each service boundary. RabbitMQ carries domain events without carrying raw Document or Comment content.</p>
+        </div>
+        <span class="section-number">WEB → GATEWAY → SERVICES → DATA</span>
+      </div>
+      <div class="panel architecture-map">
+        <div class="map-frame">
+          <svg viewBox="0 0 1120 760" role="img" aria-labelledby="map-svg-title map-svg-desc">
+            <title id="map-svg-title">Layered platform architecture</title>
+            <desc id="map-svg-desc">Web and Mobile connect to the API Gateway, which crosses a security boundary to ten NestJS services. Services own nine PostgreSQL databases and use Redis, RabbitMQ, MinIO, and ClamAV.</desc>
+            <defs>
+              <marker id="arrow-sync" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#65d7ef"/></marker>
+              <marker id="arrow-async" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#f4c56b"/></marker>
+            </defs>
+            <rect x="20" y="18" width="1080" height="724" rx="18" fill="#07111f" stroke="#24415d"/>
+            <text class="layer" x="48" y="50">CLIENTS</text>
+            <rect x="48" y="68" width="225" height="64" rx="10" fill="#12243a" stroke="#65d7ef"/>
+            <text class="label" x="72" y="96">Web / Mobile</text><text class="small" x="72" y="117">Next.js web · Flutter mobile</text>
+            <line x1="273" y1="100" x2="408" y2="100" stroke="#65d7ef" stroke-width="2.5" marker-end="url(#arrow-sync)"/>
+            <text class="small" x="294" y="88">public HTTPS</text>
+            <text class="layer" x="430" y="50">PUBLIC EDGE</text>
+            <rect x="408" y="68" width="270" height="64" rx="10" fill="#172d46" stroke="#65d7ef"/>
+            <text class="label" x="432" y="96">API Gateway · :3000</text><text class="small" x="432" y="117">JWT validation · rate limit · proxy</text>
+            <line x1="678" y1="100" x2="810" y2="100" stroke="#65d7ef" stroke-width="2.5" marker-end="url(#arrow-sync)"/>
+            <text class="small" x="700" y="88">sync HTTP</text>
+            <text class="layer" x="826" y="50">SECURITY BOUNDARY</text>
+            <rect x="810" y="68" width="242" height="64" rx="10" fill="rgba(250,146,127,.12)" stroke="#fa927f"/>
+            <text class="label" x="834" y="96">Protected paths</text><text class="small" x="834" y="117">internal calls · default deny</text>
+
+            <text class="layer" x="48" y="170">TEN DEPLOYABLE NESTJS SERVICES</text>
+            <rect x="48" y="185" width="318" height="66" rx="9" fill="#12243a" stroke="#24415d"/><text class="label" x="68" y="211">Identity &amp; authority</text><text class="small" x="68" y="232">Auth :3001 · User/Role :3002 · Permission :3006</text>
+            <rect x="401" y="185" width="318" height="66" rx="9" fill="#12243a" stroke="#24415d"/><text class="label" x="421" y="211">Work &amp; content</text><text class="small" x="421" y="232">Task :3003 · Document :3004 · Security :3005</text>
+            <rect x="754" y="185" width="298" height="66" rx="9" fill="#12243a" stroke="#24415d"/><text class="label" x="774" y="211">Evidence &amp; response</text><text class="small" x="774" y="232">Audit :3007 · Notification :3008 · Monitoring :3009</text>
+            <line x1="545" y1="132" x2="545" y2="185" stroke="#65d7ef" stroke-width="2.5" marker-end="url(#arrow-sync)"/>
+            <line x1="878" y1="132" x2="878" y2="185" stroke="#fa927f" stroke-width="2" stroke-dasharray="5 5" marker-end="url(#arrow-sync)"/>
+            <text class="small" x="889" y="161">boundary enforced</text>
+
+            <text class="layer" x="48" y="286">DATABASE OWNERSHIP · NO CROSS-SERVICE QUERIES</text>
+            <rect x="48" y="302" width="1004" height="88" rx="10" fill="#0d1b2d" stroke="#b6a1ff"/>
+            <g fill="#172d46" stroke="#b6a1ff">
+              <rect x="68" y="322" width="96" height="46" rx="6"/><rect x="174" y="322" width="96" height="46" rx="6"/><rect x="280" y="322" width="96" height="46" rx="6"/><rect x="386" y="322" width="96" height="46" rx="6"/><rect x="492" y="322" width="96" height="46" rx="6"/><rect x="598" y="322" width="96" height="46" rx="6"/><rect x="704" y="322" width="96" height="46" rx="6"/><rect x="810" y="322" width="96" height="46" rx="6"/><rect x="916" y="322" width="116" height="46" rx="6"/>
+            </g>
+            <g class="small" text-anchor="middle"><text x="116" y="350">auth_db</text><text x="222" y="350">user_role_db</text><text x="328" y="350">task_db</text><text x="434" y="350">document_db</text><text x="540" y="350">document_security_db</text><text x="646" y="350">permission_db</text><text x="752" y="350">audit_db</text><text x="858" y="350">notification_db</text><text x="974" y="350">security_monitoring_db</text></g>
+            <line x1="207" y1="251" x2="207" y2="302" stroke="#b6a1ff" stroke-width="1.5"/><line x1="560" y1="251" x2="560" y2="302" stroke="#b6a1ff" stroke-width="1.5"/><line x1="903" y1="251" x2="903" y2="302" stroke="#b6a1ff" stroke-width="1.5"/>
+
+            <text class="layer" x="48" y="426">DATA &amp; MESSAGING · INTERNAL ONLY</text>
+            <rect x="48" y="443" width="205" height="76" rx="9" fill="#12243a" stroke="#b8e986"/><text class="label" x="70" y="470">Redis · :6379</text><text class="small" x="70" y="492">sessions / refresh state</text>
+            <rect x="274" y="443" width="250" height="76" rx="9" fill="#12243a" stroke="#f4c56b"/><text class="label" x="296" y="470">RabbitMQ · :5672</text><text class="small" x="296" y="492">domain events · DLQ · :15672 UI</text>
+            <line x1="158" y1="390" x2="158" y2="443" stroke="#b8e986" stroke-width="1.5"/><line x1="399" y1="390" x2="399" y2="443" stroke="#f4c56b" stroke-width="1.5"/>
+            <text class="layer" x="48" y="548">INFRASTRUCTURE / SECURITY · INTERNAL ONLY</text>
+            <rect x="48" y="565" width="450" height="56" rx="9" fill="#12243a" stroke="#fa927f"/><text class="label" x="70" y="589">MinIO · :9000 / :9001</text><text class="small" x="70" y="608">ciphertext object store</text>
+            <rect x="545" y="565" width="507" height="56" rx="9" fill="#12243a" stroke="#fa927f"/><text class="label" x="567" y="589">ClamAV · :3310</text><text class="small" x="567" y="608">malware scan before encryption</text>
+            <line x1="662" y1="519" x2="662" y2="565" stroke="#fa927f" stroke-width="1.5"/><line x1="926" y1="519" x2="926" y2="565" stroke="#fa927f" stroke-width="1.5"/>
+            <path d="M 366 218 C 430 270, 630 270, 754 218" fill="none" stroke="#f4c56b" stroke-width="2" stroke-dasharray="7 6" marker-end="url(#arrow-async)"/>
+            <text class="small" x="505" y="278">async RabbitMQ events</text>
+            <text class="small" x="48" y="645">Clients never call :3001–:3009, /internal/*, PostgreSQL, Redis, RabbitMQ, MinIO, or ClamAV.</text>
+            <rect x="48" y="662" width="1004" height="60" rx="9" fill="rgba(250,146,127,.07)" stroke="#fa927f" stroke-dasharray="5 5"/>
+            <text class="label trust-boundary" x="72" y="687">Trust boundary</text><text class="small" x="72" y="706">Gateway authenticates the caller; services enforce resource authorization; Security Pipeline owns plaintext handling.</text>
+          </svg>
+        </div>
+        <div class="legend" aria-label="Architecture legend">
+          <span class="legend-item"><span class="legend-line"></span> sync HTTP</span>
+          <span class="legend-item"><span class="legend-line dashed"></span> async RabbitMQ</span>
+          <span class="legend-item"><span class="legend-dot"></span> database ownership</span>
+          <span class="legend-item"><span class="legend-lock">▣</span> protected / internal-only path</span>
+        </div>
+      </div>
+      <div class="panel panel-pad boundary-note" style="margin-top: 1rem;">
+        <strong class="accent-coral">Boundary contract:</strong> Clients receive API DTOs and one-time download responses. They never receive <code>object_key</code>, storage credentials, KEKs, internal endpoint access, or raw infrastructure connections.
+      </div>
+    </section>
+
+    <section id="services" aria-labelledby="services-title">
+      <div class="section-head">
+        <div><div class="section-kicker">02 / ownership</div><h2 id="services-title">The ten services and their private data</h2><p class="section-intro">Each deployable NestJS application owns one bounded responsibility. The Gateway owns no database; the other nine services own one isolated PostgreSQL database and exchange external IDs through HTTP or events.</p></div>
+        <span class="section-number">3000 — 3009</span>
+      </div>
+      <div class="panel table-wrap">
+        <table>
+          <thead><tr><th># / service</th><th>Port</th><th>Database</th><th>Responsibility</th></tr></thead>
+          <tbody>
+            <tr><td><span class="service-name">01 · API Gateway <code>api-gateway</code></span></td><td class="port">:3000</td><td>—</td><td>Single public entry point; JWT validation, rate limiting, route proxying, and streaming handoff.</td></tr>
+            <tr><td><span class="service-name">02 · Authentication &amp; Identity <code>authentication-identity-service</code></span></td><td class="port">:3001</td><td class="db">auth_db</td><td>Registration, password credentials, access tokens, refresh rotation, logout, and session revocation; uses Redis.</td></tr>
+            <tr><td><span class="service-name">03 · User-Role Management <code>user-role-management-service</code></span></td><td class="port">:3002</td><td class="db">user_role_db</td><td>User records, <code>ADMIN</code>/<code>EMPLOYEE</code> roles, capabilities, lock/unlock, and capability administration.</td></tr>
+            <tr><td><span class="service-name">04 · Task Management <code>task-management-service</code></span></td><td class="port">:3003</td><td class="db">task_db</td><td>Task lifecycle, hierarchy, participants, Comments, submissions, reviews, Blocked state, Task Activity, and outbox events.</td></tr>
+            <tr><td><span class="service-name">05 · Document Management <code>document-management-service</code></span></td><td class="port">:3004</td><td class="db">document_db</td><td>Document metadata and versions, permission-gated content routes, download tickets, Records, Transfer Packages, retention, and Disposal.</td></tr>
+            <tr><td><span class="service-name">06 · Document Security <code>document-security-service</code></span></td><td class="port">:3005</td><td class="db">document_security_db</td><td>Security Pipeline, versioned KEKs, signatures, encrypted object interaction, and verified plaintext redemption.</td></tr>
+            <tr><td><span class="service-name">07 · Permission Service <code>permission-service</code></span></td><td class="port">:3006</td><td class="db">permission_db</td><td>Sole authority for Grants and permission decisions: default deny, effective expiry, delegation, and cascade Revocation.</td></tr>
+            <tr><td><span class="service-name">08 · Audit Log <code>audit-log-service</code></span></td><td class="port">:3007</td><td class="db">audit_db</td><td>Single-writer append-only, hash-chained Audit Trail and chain verification; evidence, not a progress read model.</td></tr>
+            <tr><td><span class="service-name">09 · Notification <code>notification-service</code></span></td><td class="port">:3008</td><td class="db">notification_db</td><td>Event-driven in-app delivery, read tracking, preferences, and email adapters; delivery never grants access.</td></tr>
+            <tr><td><span class="service-name">10 · Security Monitoring <code>security-monitoring-service</code></span></td><td class="port">:3009</td><td class="db">security_monitoring_db</td><td>Security events, configurable threshold rules, alerts, resolution, and automatic refresh-session revocation on lock policy.</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="grid-3" style="margin-top: 1rem;">
+        <div class="panel panel-pad"><h4>Database ownership</h4><p class="muted">No cross-service foreign keys, shared Prisma repositories, or database reads. Synchronize through internal APIs and domain events.</p></div>
+        <div class="panel panel-pad"><h4>Event discipline</h4><p class="muted">RabbitMQ envelopes carry IDs, decisions, and metadata—not raw Document bytes or Comment content. Consumers are retryable and idempotent.</p></div>
+        <div class="panel panel-pad"><h4>Audit topology</h4><p class="muted">The Audit Log runs as exactly one replica and has one writer; chain-head locking and <code>event_id</code> deduplication prevent the chain from forking.</p></div>
+      </div>
+    </section>
+
+    <section id="workflows" aria-labelledby="workflows-title">
+      <div class="section-head">
+        <div><div class="section-kicker">03 / behavior</div><h2 id="workflows-title">Core workflows, end to end</h2><p class="section-intro">These paths show where authorization is decided, where content is allowed to exist, and how evidence and notifications follow the business action.</p></div>
+        <span class="section-number">REQUEST → DECISION → EVIDENCE</span>
+      </div>
+      <div class="grid-2">
+        <article class="panel flow-card filterable" data-domain="authorization">
+          <div class="panel-pad"><details open><summary><span class="flow-index">03.01 · AUTHORIZATION</span><span class="workflow-summary-title">Authentication and account control</span></summary><div class="workflow-details"><p class="muted">Public auth routes enter through the Gateway; identity state is owned by Authentication &amp; Identity, with session metadata in Redis.</p>
+            <ol class="steps">
+              <li><div><strong>Register</strong> — public registration creates an <code>EMPLOYEE</code>; <code>ADMIN</code> cannot be self-created through this route.</div></li>
+              <li><div><strong>Login</strong> — credentials are checked; a locked account is denied; success issues a short-lived access token and refresh token.</div></li>
+              <li><div><strong>Refresh</strong> — the refresh token is validated, rotated, and the old token is revoked; a locked account cannot refresh.</div></li>
+              <li><div><strong>Logout</strong> — the refresh token is revoked and the Redis session is removed.</div></li>
+              <li><div><strong>Lock / unlock</strong> — User-Role Management changes account state; security lock policy revokes all active refresh sessions through a protected internal path.</div></li>
+            </ol>
+            </div></details>
+          </div>
+        </article>
+
+        <article class="panel flow-card filterable" data-domain="authorization">
+          <div class="panel-pad"><details open><summary><span class="flow-index">03.02 · AUTHORIZATION</span><span class="workflow-summary-title">Task participation and confidentiality</span></summary><div class="workflow-details"><p class="muted">Task access is per-task and deny-by-default. A Participant is the Creator, current Assignee, or explicitly assigned EMPLOYEE.</p>
+            <ol class="steps">
+              <li><div><strong>Assign</strong> — Task Management checks the caller and records the participant on this specific Task.</div></li>
+              <li><div><strong>Read</strong> — direct Participants may read the task, Comments, submissions, review decisions, and Task Activity.</div></li>
+              <li><div><strong>Contain</strong> — mentions, subscriptions, and notification recipients never create access; an ADMIN can never become a Participant.</div></li>
+              <li><div><strong>Oversight</strong> — an ancestor Creator or current Assignee can see only descendant summary fields: title, status, assignee, deadline, overdue, and result.</div></li>
+            </ol>
+            </div></details>
+          </div>
+        </article>
+
+        <article class="panel flow-card filterable" data-domain="authorization">
+          <div class="panel-pad"><details open><summary><span class="flow-index">03.03 · AUTHORIZATION</span><span class="workflow-summary-title">Task-to-Grant authorization</span></summary><div class="workflow-details"><p class="muted">Every ordinary Document Grant has a mandatory <code>source_task_id</code>. Permission Service decides against its own <code>permission_db</code> only.</p>
+            <ol class="steps">
+              <li><div><strong>Create</strong> — an ADMIN administers the primary Grant for an EMPLOYEE; the Grant names the Document, actions, Task, and explicit expiry.</div></li>
+              <li><div><strong>Compute</strong> — <code>effective_expires_at = min(grant expiry, task deadline, parent effective expiry)</code>, then store it on the Grant.</div></li>
+              <li><div><strong>Check</strong> — every content, Comment, and archive action calls <code>POST /internal/permissions/check</code>; a missing Grant, expiry, Revocation, or missing action denies.</div></li>
+              <li><div><strong>Delegate</strong> — a child Grant is a permission subset, cannot outlive its parent, and requires the right to share.</div></li>
+              <li><div><strong>Revoke</strong> — deliberate Revocation, parent Revocation, or Effective Expiry cascades to descendants; extending a Task never widens an existing Grant.</div></li>
+            </ol>
+            </div></details>
+          </div>
+        </article>
+
+        <article class="panel flow-card filterable" data-domain="content-security">
+          <div class="panel-pad"><details open><summary><span class="flow-index">03.04 · CONTENT SECURITY</span><span class="workflow-summary-title">Upload through the Security Pipeline</span></summary><div class="workflow-details"><p class="muted">A file becomes a Document only after the one-way pipeline succeeds. State-secret material is rejected before a Document row or object is created.</p>
+            <div class="sequence" aria-label="Security Pipeline stages"><span>scan</span><b>→</b><span>checksum</span><b>→</b><span>encrypt</span><b>→</b><span>sign</span><b>→</b><span>store</span></div>
+            <ol class="steps">
+              <li><div><strong>Stream</strong> — Gateway forwards the multipart stream to Document Management, which validates size, MIME type, and state-secret declaration.</div></li>
+              <li><div><strong>Scan</strong> — Document Security writes transient plaintext and scans it with ClamAV; failures clean up and stop.</div></li>
+              <li><div><strong>Checksum</strong> — SHA-256 is calculated over plaintext. A random per-version DEK encrypts with AES-256-GCM.</div></li>
+              <li><div><strong>Protect</strong> — the DEK is wrapped by the active versioned KEK; metadata is signed; only ciphertext is sent to MinIO.</div></li>
+              <li><div><strong>Record</strong> — the encrypted record stores checksum, signature, wrapped DEK, IV, auth tag, KEK version, and object metadata; transient plaintext is removed in <code>finally</code>.</div></li>
+            </ol>
+            </div></details>
+          </div>
+        </article>
+
+        <article class="panel flow-card filterable" data-domain="content-security authorization">
+          <div class="panel-pad"><details open><summary><span class="flow-index">03.05 · CONTENT SECURITY</span><span class="workflow-summary-title">Ticketed download and redemption</span></summary><div class="workflow-details"><p class="muted">Download is a two-step, single-use capability. A ticket never bypasses authorization and cannot outlive the Grant’s Effective Expiry.</p>
+            <ol class="steps">
+              <li><div><strong>Request ticket</strong> — Document Management calls Permission Service for <code>DOWNLOAD</code>; denial is audited. On allow, create a ticket capped by ticket expiry and <code>effective_expires_at</code>.</div></li>
+              <li><div><strong>Redeem</strong> — Gateway routes the ticket to Document Management, which checks actor, Document, version, unused state, and ticket expiry.</div></li>
+              <li><div><strong>Verify</strong> — Document Security verifies the metadata signature, reads ciphertext from MinIO, unwraps the versioned DEK, decrypts, and rechecks SHA-256.</div></li>
+              <li><div><strong>Deliver</strong> — plaintext streams back through the Gateway; the ticket is marked used and the redemption is audited. Clients never see storage paths.</div></li>
+            </ol>
+            </div></details>
+          </div>
+        </article>
+
+        <article class="panel flow-card filterable" data-domain="evidence">
+          <div class="panel-pad"><details open><summary><span class="flow-index">03.06 · EVIDENCE</span><span class="workflow-summary-title">Audit, notifications, and monitoring</span></summary><div class="workflow-details"><p class="muted">The same domain event can feed user-facing Task Activity, the evidence ledger, notifications, and security rules—each with a distinct owner and purpose.</p>
+            <ol class="steps">
+              <li><div><strong>Audit append</strong> — allow and deny decisions append to the single-writer, hash-chained Audit Trail. Raw Document and Comment content never enters the event.</div></li>
+              <li><div><strong>Chain verification</strong> — Audit Log checks each event hash in sequence against the prior hash and returns the first broken position as <code>broken_at</code> when integrity fails.</div></li>
+              <li><div><strong>Notify</strong> — Notification consumes RabbitMQ events for assignment, sharing, review, expiry, and security notices. Delivery does not grant access.</div></li>
+              <li><div><strong>Monitor</strong> — Security Monitoring records events and evaluates configurable thresholds for failed login, denied access, abnormal download/share, expiry access, invalid integrity, and archive rejection.</div></li>
+              <li><div><strong>Respond</strong> — an alert can trigger policy-driven account lock and refresh-session revocation; ADMIN manages rules and alerts, not content.</div></li>
+            </ol>
+            </div></details>
+          </div>
+        </article>
+
+        <article class="panel flow-card filterable" data-domain="archive authorization evidence">
+          <div class="panel-pad"><details open><summary><span class="flow-index">03.07 · ARCHIVE</span><span class="workflow-summary-title">Records and Transfer Packages</span></summary><div class="workflow-details"><p class="muted">Archive actions are content-adjacent capabilities held by EMPLOYEEs. The submitter and Archivist are separated by policy.</p>
+            <ol class="steps">
+              <li><div><strong>Assemble</strong> — Document Management groups Document versions into a closed <strong>Record</strong>; the Record is sealed when complete.</div></li>
+              <li><div><strong>Package</strong> — create a signed Transfer Package with manifest, metadata, per-file checksums, signature data, Audit references, and handover receipt.</div></li>
+              <li><div><strong>Submit</strong> — <code>ARCHIVE_SUBMIT</code> plus <code>TRANSFER</code> authorization moves the package through <code>DRAFT → SEALED → SUBMITTED</code>.</div></li>
+              <li><div><strong>Receive and verify</strong> — an EMPLOYEE Archivist holding <code>ARCHIVE_RECEIVE</code> checks files, malware state, checksums, signatures, metadata, and separation of duties.</div></li>
+              <li><div><strong>Accept or reject</strong> — valid packages become <code>ACCEPTED → ARCHIVED</code>; invalid packages record a rejection reason and remain evidenced.</div></li>
+            </ol>
+            </div></details>
+          </div>
+        </article>
+
+        <article class="panel flow-card filterable" data-domain="archive authorization evidence">
+          <div class="panel-pad"><details open><summary><span class="flow-index">03.08 · ARCHIVE</span><span class="workflow-summary-title">Retention and controlled Disposal</span></summary><div class="workflow-details"><p class="muted">Retention eligibility is not an immediate delete. Disposal destroys stored content only after policy, holds, permission, and approval are satisfied.</p>
+            <ol class="steps">
+              <li><div><strong>Check eligibility</strong> — the idempotent retention worker identifies an archived Document whose retention period has ended.</div></li>
+              <li><div><strong>Respect holds</strong> — an active retention hold prevents eligibility from progressing; releasing it is itself controlled and audited.</div></li>
+              <li><div><strong>Approve</strong> — a qualified EMPLOYEE with <code>DISPOSAL_APPROVE</code> authorizes the controlled action; an ADMIN cannot approve Disposal.</div></li>
+              <li><div><strong>Execute</strong> — the approved path removes stored Document content according to policy, without deleting the Audit Trail.</div></li>
+              <li><div><strong>Evidence</strong> — Disposal and its approval remain in the hash-chained evidence record, and notifications carry no sensitive content.</div></li>
+            </ol>
+            </div></details>
+          </div>
+        </article>
+      </div>
+      <p id="no-results" class="no-results" role="status">No workflow cards match this filter.</p>
+    </section>
+
+    <section id="invariants" aria-labelledby="invariants-title">
+      <div class="section-head">
+        <div><div class="section-kicker">04 / non-negotiables</div><h2 id="invariants-title">Security invariants</h2><p class="section-intro">These rules are architectural constraints, not UI conventions. A failure to prove an allow is a denial.</p></div>
+        <span class="section-number">DENY BY DEFAULT</span>
+      </div>
+      <div class="grid-3">
+        <article class="panel panel-pad invariant filterable" data-domain="authorization"><div class="marker">01</div><h3>ADMIN governs, never reads</h3><p><strong class="accent-lime">ADMIN</strong> manages users, roles, capabilities, policies, and alerts. ADMIN never accesses Document or Task content, cannot hold content-adjacent capability, and can never become a Participant.</p></article>
+        <article class="panel panel-pad invariant filterable" data-domain="authorization"><div class="marker">02</div><h3>EMPLOYEE participates in content</h3><p><strong class="accent-cyan">EMPLOYEE</strong> is the only role that can participate in Tasks or hold Document Grants. Participation, Grants, and capabilities are separate decisions with explicit scope.</p></article>
+        <article class="panel panel-pad invariant filterable" data-domain="authorization"><div class="marker">03</div><h3>Fail closed</h3><p>Permission Service is the hard dependency for content. Timeout, connection refusal, malformed input, or 5xx returns <code>PERMISSION_SERVICE_UNAVAILABLE</code> and never an allow-cache.</p></article>
+        <article class="panel panel-pad invariant filterable" data-domain="authorization"><div class="marker">04</div><h3>Effective expiry wins</h3><p>A Grant dies at the earliest of its own expiry, Task deadline, or parent Effective Expiry. Request-time checks remain authoritative; deadline extension cannot restore access.</p></article>
+        <article class="panel panel-pad invariant filterable" data-domain="evidence"><div class="marker">05</div><h3>One writer for evidence</h3><p>Audit appends are serialized under the chain-head lock. The unique <code>event_id</code> check stays inside that transaction so RabbitMQ redelivery cannot fork the Audit Trail.</p></article>
+        <article class="panel panel-pad invariant filterable" data-domain="content-security"><div class="marker">06</div><h3>Ciphertext only at rest</h3><p>Plaintext exists only transiently inside the Security Pipeline. MinIO stores ciphertext; PostgreSQL stores metadata. Signatures and checksums are verified before plaintext delivery.</p></article>
+        <article class="panel panel-pad invariant filterable" data-domain="authorization"><div class="marker">07</div><h3>Gateway-only clients</h3><p>Web and Mobile call the Gateway only. They never call internal service ports, <code>/internal/*</code> endpoints, databases, Redis, RabbitMQ, MinIO, or ClamAV.</p></article>
+        <article class="panel panel-pad invariant filterable" data-domain="evidence"><div class="marker">08</div><h3>Evidence is not content</h3><p>Audit events and notification payloads may identify an action and its decision, but never contain raw Document bytes, Comment content, storage secrets, or KEKs.</p></article>
+        <article class="panel panel-pad invariant filterable" data-domain="archive"><div class="marker">09</div><h3>Disposal preserves proof</h3><p>Retention and controlled Disposal can remove stored content after approval, but the Audit Trail survives. The evidence of what happened is not disposable content.</p></article>
+      </div>
+      <div class="panel panel-pad callout" style="margin-top: 1rem;"><strong>Operational shorthand:</strong> if an authorization decision cannot be proven from the owning service’s current state and protected contracts, the platform denies it, records the decision, and lets monitoring evaluate the signal.</div>
+    </section>
+
+    <section id="infrastructure" aria-labelledby="infrastructure-title">
+      <div class="section-head">
+        <div><div class="section-kicker">05 / runtime</div><h2 id="infrastructure-title">Docker Compose infrastructure</h2><p class="section-intro">The local runtime has one PostgreSQL container with nine databases, plus the stateful and security infrastructure that remains behind the boundary.</p></div>
+        <span class="section-number">INTERNAL SERVICES</span>
+      </div>
+      <div class="panel table-wrap">
+        <table>
+          <thead><tr><th>Component</th><th>Default port(s)</th><th>Role</th><th>Boundary note</th></tr></thead>
+          <tbody>
+            <tr><td><span class="service-name">PostgreSQL 16.10</span></td><td class="port">:5432</td><td>Nine database-per-service stores: <code>auth_db</code>, <code>user_role_db</code>, <code>task_db</code>, <code>document_db</code>, <code>document_security_db</code>, <code>permission_db</code>, <code>audit_db</code>, <code>notification_db</code>, <code>security_monitoring_db</code>.</td><td>Internal persistence; never a client connection.</td></tr>
+            <tr><td><span class="service-name">Redis 7.4.7</span></td><td class="port">:6379</td><td>Authentication session metadata and refresh-session state.</td><td>Auth service only; no client cache contract.</td></tr>
+            <tr><td><span class="service-name">RabbitMQ 3.13.7</span></td><td class="port">:5672 / :15672</td><td>Exchange <code>c17.domain</code>, asynchronous domain events, retries, and DLQ.</td><td>Event payloads exclude raw sensitive content.</td></tr>
+            <tr><td><span class="service-name">MinIO</span></td><td class="port">:9000 / :9001</td><td>S3-compatible object storage for encrypted Document versions.</td><td>Ciphertext only; object keys and credentials stay internal.</td></tr>
+            <tr><td><span class="service-name">ClamAV 1.4.5</span></td><td class="port">:3310</td><td>Malware scan stage in the Security Pipeline.</td><td>Only Document Security sends scan material.</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+  </main>
+
+  <footer class="shell">
+    <p>This overview reflects the repository’s current domain vocabulary, ADRs, service contracts, Docker Compose topology, and backend implementation plan. It intentionally contains no branch, commit, or historical status claims.</p>
+    <p class="mono">Architecture reference · clients → Gateway → protected services → owned data / internal infrastructure</p>
+  </footer>
+
+  <script>
+    (() => {
+      const filters = Array.from(document.querySelectorAll('[data-filter]'));
+      const items = Array.from(document.querySelectorAll('.filterable'));
+      const empty = document.getElementById('no-results');
+
+      function applyFilter(name) {
+        let visible = 0;
+        items.forEach((item) => {
+          const domains = (item.dataset.domain || '').split(' ');
+          const show = name === 'all' || domains.includes(name);
+          item.classList.toggle('is-hidden', !show);
+          if (show) visible += 1;
+        });
+        filters.forEach((filter) => {
+          const active = filter.dataset.filter === name;
+          filter.setAttribute('aria-pressed', String(active));
+        });
+        empty.classList.toggle('visible', visible === 0);
+      }
+
+      filters.forEach((filter) => {
+        filter.addEventListener('click', () => applyFilter(filter.dataset.filter));
+      });
+    })();
+  </script>
+</body>
+</html>

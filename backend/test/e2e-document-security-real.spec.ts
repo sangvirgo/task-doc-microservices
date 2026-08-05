@@ -26,8 +26,7 @@ const EMP_PASS = 'Employee123!';
 const EMP_ID = '00000000-0000-4000-a000-000000000002';
 const ADMIN_ID = '00000000-0000-4000-a000-000000000001';
 
-const EICAR =
-  'X5O!P%@AP[4\\PZX54(P^)7CC)7}$EICAR-STANDARD-ANTIVIRUS-TEST-FILE!$H+H*';
+const EICAR = 'X5O!P%@AP[4\\PZX54(P^)7CC)7}$EICAR-STANDARD-ANTIVIRUS-TEST-FILE!$H+H*';
 
 const MINIO_BUCKET = 'documents';
 const MINIO_ACCESS_KEY = process.env.MINIO_ACCESS_KEY || 'c17pass-local-test-000';
@@ -48,9 +47,11 @@ async function apiPost<T>(
   url: string,
   body: unknown,
   token?: string,
+  additionalHeaders: Record<string, string> = {},
 ): Promise<{ status: number; body: T; headers: Record<string, string> }> {
   const headers: Record<string, string> = { 'Content-Type': 'application/json' };
   if (token) headers['Authorization'] = `Bearer ${token}`;
+  Object.assign(headers, additionalHeaders);
   const res = await fetch(url, {
     method: 'POST',
     headers,
@@ -65,6 +66,46 @@ async function apiPost<T>(
     body: (await res.json().catch(() => null)) as T,
     headers: respHeaders,
   };
+}
+
+function permissionPost<T>(
+  url: string,
+  body: unknown,
+  token?: string,
+): Promise<{ status: number; body: T; headers: Record<string, string> }> {
+  return apiPost(url, body, token, {
+    'x-user-id': ADMIN_ID,
+    'x-user-role': 'ADMIN',
+  });
+}
+
+function trustedAdminHeaders(): Record<string, string> {
+  return {
+    'x-user-id': ADMIN_ID,
+    'x-user-role': 'ADMIN',
+  };
+}
+
+async function attachDocumentToTask(
+  taskId: string,
+  documentId: string,
+  token: string,
+): Promise<void> {
+  const res = await apiPost(
+    `${GW}/api/tasks/${taskId}/documents`,
+    {
+      document_id: documentId,
+      grants: [
+        {
+          actor_id: EMP_ID,
+          permissions: ['PREVIEW'],
+          expires_at: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
+        },
+      ],
+    },
+    token,
+  );
+  expect(res.status).toBe(201);
 }
 
 async function apiGet<T>(
@@ -203,10 +244,10 @@ describe('Real document security E2E (full Docker stack)', () => {
 
   describe('Authentication', () => {
     it('logs in as employee via the real auth service', async () => {
-      const res = await apiPost<{ access_token: string }>(
-        `${AUTH_URL}/auth/login`,
-        { email: EMP_EMAIL, password: EMP_PASS },
-      );
+      const res = await apiPost<{ access_token: string }>(`${AUTH_URL}/auth/login`, {
+        email: EMP_EMAIL,
+        password: EMP_PASS,
+      });
       expect(res.status).toBe(200);
       expect(res.body).toHaveProperty('access_token');
       accessToken = res.body.access_token;
@@ -321,11 +362,14 @@ describe('Real document security E2E (full Docker stack)', () => {
       expect(res.status).toBe(201);
       expect(res.body).toHaveProperty('id');
       taskId = res.body.id;
+
+      const docId = (globalThis as Record<string, unknown>).__CASE1_DOCUMENT_ID__ as string;
+      await attachDocumentToTask(taskId, docId, accessToken);
     });
 
     it('creates a Grant through the real Permission Service', async () => {
       const docId = (globalThis as Record<string, unknown>).__CASE1_DOCUMENT_ID__ as string;
-      const res = await apiPost<{ id: string; status: string }>(
+      const res = await permissionPost<{ id: string; status: string }>(
         `${PERM_URL}/grants`,
         {
           grantor_id: ADMIN_ID,
@@ -347,7 +391,7 @@ describe('Real document security E2E (full Docker stack)', () => {
       const docId = (globalThis as Record<string, unknown>).__CASE1_DOCUMENT_ID__ as string;
       const res = await apiPost<{ id: string; expires_at: string }>(
         `${GW}/api/documents/${docId}/download-ticket`,
-        { version: 1, expires_in_seconds: 3600 },
+        { task_id: taskId, version: 1, expires_in_seconds: 3600 },
         accessToken,
       );
       expect(res.status).toBe(201);
@@ -357,18 +401,15 @@ describe('Real document security E2E (full Docker stack)', () => {
 
     it('redeems the ticket through the real Gateway and receives plaintext', async () => {
       const docId = (globalThis as Record<string, unknown>).__CASE1_DOCUMENT_ID__ as string;
-      const redeemRes = await fetch(
-        `${GW}/api/documents/${docId}/versions/1/redeem`,
-        {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${accessToken}`,
-            'x-correlation-id': newCorrelationId(),
-          },
-          body: JSON.stringify({ ticket_id: ticketId }),
+      const redeemRes = await fetch(`${GW}/api/documents/${docId}/versions/1/redeem`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${accessToken}`,
+          'x-correlation-id': newCorrelationId(),
         },
-      );
+        body: JSON.stringify({ ticket_id: ticketId }),
+      });
 
       expect(redeemRes.status).toBe(200);
       const contentType = redeemRes.headers.get('content-type') || '';
@@ -379,7 +420,8 @@ describe('Real document security E2E (full Docker stack)', () => {
     }, 30_000);
 
     it('decrypted bytes exactly match the original', () => {
-      const originalBytes = (globalThis as Record<string, unknown>).__CASE1_ORIGINAL_BYTES__ as Buffer;
+      const originalBytes = (globalThis as Record<string, unknown>)
+        .__CASE1_ORIGINAL_BYTES__ as Buffer;
       expect(downloadedBytes.equals(originalBytes)).toBe(true);
     });
 
@@ -400,9 +442,7 @@ describe('Real document security E2E (full Docker stack)', () => {
         `${AUDIT_URL}/audit/events?actor_id=${EMP_ID}&limit=50`,
       );
       expect(res.status).toBe(200);
-      const redeemedEvent = res.body.find(
-        (e) => e.event_type === 'DOCUMENT_DOWNLOAD_REDEEMED',
-      );
+      const redeemedEvent = res.body.find((e) => e.event_type === 'DOCUMENT_DOWNLOAD_REDEEMED');
       expect(redeemedEvent).toBeDefined();
     });
 
@@ -463,7 +503,9 @@ describe('Real document security E2E (full Docker stack)', () => {
       );
       expect(taskRes.status).toBe(201);
 
-      const grantRes = await apiPost<{ id: string }>(
+      await attachDocumentToTask(taskRes.body.id, documentId, accessToken);
+
+      const grantRes = await permissionPost<{ id: string }>(
         `${PERM_URL}/grants`,
         {
           grantor_id: ADMIN_ID,
@@ -480,23 +522,20 @@ describe('Real document security E2E (full Docker stack)', () => {
 
       const ticketRes = await apiPost<{ id: string }>(
         `${GW}/api/documents/${documentId}/download-ticket`,
-        { version: 1, expires_in_seconds: 3600 },
+        { task_id: taskRes.body.id, version: 1, expires_in_seconds: 3600 },
         accessToken,
       );
       expect(ticketRes.status).toBe(201);
 
-      const redeemRes = await fetch(
-        `${GW}/api/documents/${documentId}/versions/1/redeem`,
-        {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${accessToken}`,
-            'x-correlation-id': newCorrelationId(),
-          },
-          body: JSON.stringify({ ticket_id: ticketRes.body.id }),
+      const redeemRes = await fetch(`${GW}/api/documents/${documentId}/versions/1/redeem`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${accessToken}`,
+          'x-correlation-id': newCorrelationId(),
         },
-      );
+        body: JSON.stringify({ ticket_id: ticketRes.body.id }),
+      });
 
       expect(redeemRes.status).toBe(200);
       const downloadedBytes = Buffer.from(await redeemRes.arrayBuffer());
@@ -611,7 +650,7 @@ describe('Real document security E2E (full Docker stack)', () => {
           });
 
           expect(res.status).toBe(400);
-          const respBody = await res.json().catch(() => null) as { message?: string } | null;
+          const respBody = (await res.json().catch(() => null)) as { message?: string } | null;
           expect(respBody?.message).toContain('state-secret');
         });
 
@@ -681,16 +720,17 @@ describe('Real document security E2E (full Docker stack)', () => {
       employeeAToken = accessToken;
 
       const emailB = `empb-${Date.now()}@test.local`;
-      const regRes = await apiPost<{ id: string }>(
-        `${AUTH_URL}/auth/register`,
-        { email: emailB, password: 'Employee123!', role: 'EMPLOYEE' },
-      );
+      const regRes = await apiPost<{ id: string }>(`${AUTH_URL}/auth/register`, {
+        email: emailB,
+        password: 'Employee123!',
+        role: 'EMPLOYEE',
+      });
       expect(regRes.status).toBe(201);
 
-      const loginRes = await apiPost<{ access_token: string }>(
-        `${AUTH_URL}/auth/login`,
-        { email: emailB, password: 'Employee123!' },
-      );
+      const loginRes = await apiPost<{ access_token: string }>(`${AUTH_URL}/auth/login`, {
+        email: emailB,
+        password: 'Employee123!',
+      });
       employeeBToken = loginRes.body.access_token;
 
       const taskRes = await apiPost<{ id: string }>(
@@ -715,7 +755,9 @@ describe('Real document security E2E (full Docker stack)', () => {
       expect(uploadRes.status).toBe(201);
       documentId = (uploadRes.body as { document: { id: string } }).document.id;
 
-      const grantRes = await apiPost<{ id: string }>(
+      await attachDocumentToTask(taskId, documentId, employeeAToken);
+
+      const grantRes = await permissionPost<{ id: string }>(
         `${PERM_URL}/grants`,
         {
           grantor_id: ADMIN_ID,
@@ -732,7 +774,7 @@ describe('Real document security E2E (full Docker stack)', () => {
 
       const ticketRes = await apiPost<{ id: string }>(
         `${GW}/api/documents/${documentId}/download-ticket`,
-        { version: 1, expires_in_seconds: 3600 },
+        { task_id: taskId, version: 1, expires_in_seconds: 3600 },
         employeeAToken,
       );
       expect(ticketRes.status).toBe(201);
@@ -740,35 +782,29 @@ describe('Real document security E2E (full Docker stack)', () => {
     });
 
     it('employee B is denied document detail access', async () => {
-      const res = await apiGet<unknown>(
-        `${GW}/api/documents/${documentId}`,
-        employeeBToken,
-      );
+      const res = await apiGet<unknown>(`${GW}/api/documents/${documentId}`, employeeBToken);
       expect(res.status).toBe(403);
     });
 
     it('employee B is denied download-ticket creation', async () => {
       const res = await apiPost<unknown>(
         `${GW}/api/documents/${documentId}/download-ticket`,
-        { version: 1, expires_in_seconds: 3600 },
+        { task_id: taskId, version: 1, expires_in_seconds: 3600 },
         employeeBToken,
       );
       expect(res.status).toBe(403);
     });
 
     it('employee B is denied ticket redemption using employee A ticket', async () => {
-      const res = await fetch(
-        `${GW}/api/documents/${documentId}/versions/1/redeem`,
-        {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${employeeBToken}`,
-            'x-correlation-id': newCorrelationId(),
-          },
-          body: JSON.stringify({ ticket_id: ticketIdByA }),
+      const res = await fetch(`${GW}/api/documents/${documentId}/versions/1/redeem`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${employeeBToken}`,
+          'x-correlation-id': newCorrelationId(),
         },
-      );
+        body: JSON.stringify({ ticket_id: ticketIdByA }),
+      });
       expect(res.status).toBe(403);
     });
 
@@ -812,10 +848,12 @@ describe('Real document security E2E (full Docker stack)', () => {
       );
       expect(uploadRes.status).toBe(201);
       documentId = (uploadRes.body as { document: { id: string } }).document.id;
+
+      await attachDocumentToTask(taskId, documentId, accessToken);
     });
 
     it('denies ticket creation after effective expiry', async () => {
-      await apiPost(
+      await permissionPost(
         `${PERM_URL}/grants`,
         {
           grantor_id: ADMIN_ID,
@@ -831,14 +869,14 @@ describe('Real document security E2E (full Docker stack)', () => {
 
       const ticketRes = await apiPost<unknown>(
         `${GW}/api/documents/${documentId}/download-ticket`,
-        { version: 1, expires_in_seconds: 3600 },
+        { task_id: taskId, version: 1, expires_in_seconds: 3600 },
         accessToken,
       );
       expect(ticketRes.status).toBe(403);
     });
 
     it('denies redemption after grant revocation', async () => {
-      const grantRes = await apiPost<{ id: string }>(
+      const grantRes = await permissionPost<{ id: string }>(
         `${PERM_URL}/grants`,
         {
           grantor_id: ADMIN_ID,
@@ -855,7 +893,7 @@ describe('Real document security E2E (full Docker stack)', () => {
 
       const ticketRes = await apiPost<{ id: string }>(
         `${GW}/api/documents/${documentId}/download-ticket`,
-        { version: 1, expires_in_seconds: 3600 },
+        { task_id: taskId, version: 1, expires_in_seconds: 3600 },
         accessToken,
       );
       expect(ticketRes.status).toBe(201);
@@ -864,6 +902,7 @@ describe('Real document security E2E (full Docker stack)', () => {
       const revokeRes = await fetch(`${PERM_URL}/grants/${grantId}`, {
         method: 'DELETE',
         headers: {
+          ...trustedAdminHeaders(),
           'Content-Type': 'application/json',
           Authorization: `Bearer ${accessToken}`,
         },
@@ -871,23 +910,20 @@ describe('Real document security E2E (full Docker stack)', () => {
       });
       expect(revokeRes.status).toBe(200);
 
-      const redeemRes = await fetch(
-        `${GW}/api/documents/${documentId}/versions/1/redeem`,
-        {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${accessToken}`,
-            'x-correlation-id': newCorrelationId(),
-          },
-          body: JSON.stringify({ ticket_id: ticketId }),
+      const redeemRes = await fetch(`${GW}/api/documents/${documentId}/versions/1/redeem`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${accessToken}`,
+          'x-correlation-id': newCorrelationId(),
         },
-      );
+        body: JSON.stringify({ ticket_id: ticketId }),
+      });
       expect(redeemRes.status).toBe(403);
     });
 
     it('delegated child access is invalidated when parent is revoked', async () => {
-      const parentGrantRes = await apiPost<{ id: string }>(
+      const parentGrantRes = await permissionPost<{ id: string }>(
         `${PERM_URL}/grants`,
         {
           grantor_id: ADMIN_ID,
@@ -902,8 +938,23 @@ describe('Real document security E2E (full Docker stack)', () => {
       );
       const parentGrantId = parentGrantRes.body.id;
 
-      const childActorId = randomUUID();
-      const delegateRes = await apiPost<{ id: string }>(
+      const childEmail = `delegate-${Date.now()}@test.local`;
+      const childUserRes = await apiPost<{ id: string }>(`${AUTH_URL}/auth/register`, {
+        email: childEmail,
+        password: 'Employee123!',
+        role: 'EMPLOYEE',
+      });
+      expect(childUserRes.status).toBe(201);
+      const childActorId = childUserRes.body.id;
+
+      const participantRes = await apiPost(
+        `${GW}/api/tasks/${taskId}/participants`,
+        { user_id: childActorId },
+        accessToken,
+      );
+      expect(participantRes.status).toBe(201);
+
+      const delegateRes = await permissionPost<{ id: string }>(
         `${PERM_URL}/grants/${parentGrantId}/delegate`,
         { actor_id: childActorId, permissions: ['PREVIEW'] },
         accessToken,
@@ -913,6 +964,7 @@ describe('Real document security E2E (full Docker stack)', () => {
       await fetch(`${PERM_URL}/grants/${parentGrantId}`, {
         method: 'DELETE',
         headers: {
+          ...trustedAdminHeaders(),
           'Content-Type': 'application/json',
           Authorization: `Bearer ${accessToken}`,
         },
@@ -967,7 +1019,9 @@ describe('Real document security E2E (full Docker stack)', () => {
       expect(uploadRes.status).toBe(201);
       documentId = (uploadRes.body as { document: { id: string } }).document.id;
 
-      await apiPost(
+      await attachDocumentToTask(taskRes.body.id, documentId, accessToken);
+
+      await permissionPost(
         `${PERM_URL}/grants`,
         {
           grantor_id: ADMIN_ID,
@@ -983,59 +1037,50 @@ describe('Real document security E2E (full Docker stack)', () => {
 
       const ticketRes = await apiPost<{ id: string }>(
         `${GW}/api/documents/${documentId}/download-ticket`,
-        { version: 1, expires_in_seconds: 3600 },
+        { task_id: taskRes.body.id, version: 1, expires_in_seconds: 3600 },
         accessToken,
       );
       ticketId = ticketRes.body.id;
     });
 
     it('first redemption succeeds', async () => {
-      const res = await fetch(
-        `${GW}/api/documents/${documentId}/versions/1/redeem`,
-        {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${accessToken}`,
-            'x-correlation-id': newCorrelationId(),
-          },
-          body: JSON.stringify({ ticket_id: ticketId }),
+      const res = await fetch(`${GW}/api/documents/${documentId}/versions/1/redeem`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${accessToken}`,
+          'x-correlation-id': newCorrelationId(),
         },
-      );
+        body: JSON.stringify({ ticket_id: ticketId }),
+      });
       expect(res.status).toBe(200);
       const body = await res.arrayBuffer();
       expect(body.byteLength).toBeGreaterThan(0);
     });
 
     it('second redemption is denied', async () => {
-      const res = await fetch(
-        `${GW}/api/documents/${documentId}/versions/1/redeem`,
-        {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${accessToken}`,
-            'x-correlation-id': newCorrelationId(),
-          },
-          body: JSON.stringify({ ticket_id: ticketId }),
+      const res = await fetch(`${GW}/api/documents/${documentId}/versions/1/redeem`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${accessToken}`,
+          'x-correlation-id': newCorrelationId(),
         },
-      );
+        body: JSON.stringify({ ticket_id: ticketId }),
+      });
       expect(res.status).toBe(403);
     });
 
     it('no second plaintext response is produced', async () => {
-      const res = await fetch(
-        `${GW}/api/documents/${documentId}/versions/1/redeem`,
-        {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${accessToken}`,
-            'x-correlation-id': newCorrelationId(),
-          },
-          body: JSON.stringify({ ticket_id: ticketId }),
+      const res = await fetch(`${GW}/api/documents/${documentId}/versions/1/redeem`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${accessToken}`,
+          'x-correlation-id': newCorrelationId(),
         },
-      );
+        body: JSON.stringify({ ticket_id: ticketId }),
+      });
       const body = await res.arrayBuffer();
       const str = Buffer.from(body).toString('utf-8');
       expect(str).not.toContain('Replay test document');
@@ -1062,6 +1107,7 @@ describe('Real document security E2E (full Docker stack)', () => {
 
   describe('CASE 9 — Ciphertext tampering', () => {
     let documentId: string;
+    let taskId: string;
     let originalObjectKeys: string[];
     let originalCiphertext: Buffer;
     let ticketId: string;
@@ -1072,6 +1118,7 @@ describe('Real document security E2E (full Docker stack)', () => {
         { title: `Tamper test task ${Date.now()}`, description: 'test' },
         accessToken,
       );
+      taskId = taskRes.body.id;
 
       const docContent = Buffer.from(`Tamper test document ${Date.now()}`);
       const uploadRes = await uploadMultipartToGateway(
@@ -1087,12 +1134,14 @@ describe('Real document security E2E (full Docker stack)', () => {
       );
       documentId = (uploadRes.body as { document: { id: string } }).document.id;
 
+      await attachDocumentToTask(taskId, documentId, accessToken);
+
       originalObjectKeys = await findMinioObjectsByDocId(documentId);
       expect(originalObjectKeys.length).toBeGreaterThanOrEqual(1);
 
       originalCiphertext = await readMinioObject(originalObjectKeys[0]);
 
-      await apiPost(
+      await permissionPost(
         `${PERM_URL}/grants`,
         {
           grantor_id: ADMIN_ID,
@@ -1100,7 +1149,7 @@ describe('Real document security E2E (full Docker stack)', () => {
           resource_type: 'DOCUMENT',
           resource_id: documentId,
           permissions: ['PREVIEW', 'DOWNLOAD'],
-          task_id: taskRes.body.id,
+          task_id: taskId,
           expires_at: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
         },
         accessToken,
@@ -1108,7 +1157,7 @@ describe('Real document security E2E (full Docker stack)', () => {
 
       const ticketRes = await apiPost<{ id: string }>(
         `${GW}/api/documents/${documentId}/download-ticket`,
-        { version: 1, expires_in_seconds: 3600 },
+        { task_id: taskId, version: 1, expires_in_seconds: 3600 },
         accessToken,
       );
       ticketId = ticketRes.body.id;
@@ -1128,18 +1177,15 @@ describe('Real document security E2E (full Docker stack)', () => {
       }
       await minioClient.putObject(MINIO_BUCKET, originalObjectKeys[0], tampered);
 
-      const res = await fetch(
-        `${GW}/api/documents/${documentId}/versions/1/redeem`,
-        {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${accessToken}`,
-            'x-correlation-id': newCorrelationId(),
-          },
-          body: JSON.stringify({ ticket_id: ticketId }),
+      const res = await fetch(`${GW}/api/documents/${documentId}/versions/1/redeem`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${accessToken}`,
+          'x-correlation-id': newCorrelationId(),
         },
-      );
+        body: JSON.stringify({ ticket_id: ticketId }),
+      });
 
       expect(res.status).toBeGreaterThanOrEqual(400);
       await minioClient.putObject(MINIO_BUCKET, originalObjectKeys[0], originalCiphertext);
@@ -1154,23 +1200,20 @@ describe('Real document security E2E (full Docker stack)', () => {
 
       const newTicketRes = await apiPost<{ id: string }>(
         `${GW}/api/documents/${documentId}/download-ticket`,
-        { version: 1, expires_in_seconds: 3600 },
+        { task_id: taskId, version: 1, expires_in_seconds: 3600 },
         accessToken,
       );
 
       if (newTicketRes.status === 201) {
-        const res = await fetch(
-          `${GW}/api/documents/${documentId}/versions/1/redeem`,
-          {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              Authorization: `Bearer ${accessToken}`,
-              'x-correlation-id': newCorrelationId(),
-            },
-            body: JSON.stringify({ ticket_id: newTicketRes.body.id }),
+        const res = await fetch(`${GW}/api/documents/${documentId}/versions/1/redeem`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${accessToken}`,
+            'x-correlation-id': newCorrelationId(),
           },
-        );
+          body: JSON.stringify({ ticket_id: newTicketRes.body.id }),
+        });
         const body = await res.arrayBuffer();
         const str = Buffer.from(body).toString('utf-8');
         expect(str).not.toContain('Tamper test document');
@@ -1188,23 +1231,20 @@ describe('Real document security E2E (full Docker stack)', () => {
 
       const newTicketRes = await apiPost<{ id: string }>(
         `${GW}/api/documents/${documentId}/download-ticket`,
-        { version: 1, expires_in_seconds: 3600 },
+        { task_id: taskId, version: 1, expires_in_seconds: 3600 },
         accessToken,
       );
 
       if (newTicketRes.status === 201) {
-        const res = await fetch(
-          `${GW}/api/documents/${documentId}/versions/1/redeem`,
-          {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              Authorization: `Bearer ${accessToken}`,
-              'x-correlation-id': newCorrelationId(),
-            },
-            body: JSON.stringify({ ticket_id: newTicketRes.body.id }),
+        const res = await fetch(`${GW}/api/documents/${documentId}/versions/1/redeem`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${accessToken}`,
+            'x-correlation-id': newCorrelationId(),
           },
-        );
+          body: JSON.stringify({ ticket_id: newTicketRes.body.id }),
+        });
         const body = await res.arrayBuffer();
         const str = Buffer.from(body).toString('utf-8');
         expect(str).not.toContain('AES');

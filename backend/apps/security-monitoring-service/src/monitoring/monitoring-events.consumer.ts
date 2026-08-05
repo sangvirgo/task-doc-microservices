@@ -10,6 +10,8 @@ import { MonitoringService } from './monitoring.service';
 @Injectable()
 export class MonitoringEventsConsumer implements OnModuleInit, OnApplicationShutdown {
   private readonly consumers: AmqpEventConsumer[];
+  private readonly consumerName =
+    process.env.SECURITY_MONITORING_CONSUMER_NAME || 'security-monitoring-service';
 
   constructor(
     private readonly prisma: SecurityMonitoringPrismaService,
@@ -31,9 +33,9 @@ export class MonitoringEventsConsumer implements OnModuleInit, OnApplicationShut
   onModuleInit(): void {
     this.consumers[0].subscribe(
       {
-        consumer: 'security-monitoring-service',
+        consumer: this.consumerName,
         concern: 'permission-denied',
-        queue: queueName('security-monitoring-service', 'permission-denied'),
+        queue: queueName(this.consumerName, 'permission-denied'),
         routingKey: EventType.PERMISSION_DECISION_MADE,
         retryDelayMs: 1_000,
         maxAttempts: 3,
@@ -58,9 +60,9 @@ export class MonitoringEventsConsumer implements OnModuleInit, OnApplicationShut
 
     this.consumers[1].subscribe(
       {
-        consumer: 'security-monitoring-service',
+        consumer: this.consumerName,
         concern: 'failed-login',
-        queue: queueName('security-monitoring-service', 'failed-login'),
+        queue: queueName(this.consumerName, 'failed-login'),
         routingKey: EventType.AUTH_LOGIN_FAILED,
         retryDelayMs: 1_000,
         maxAttempts: 3,

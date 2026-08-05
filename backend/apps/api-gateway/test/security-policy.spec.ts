@@ -70,6 +70,61 @@ describe('API Gateway security policy', () => {
       .expect(403);
   });
 
+  it('routes Task–Document endpoints to Document Management Service', async () => {
+    fetchMock.mockReset();
+    fetchMock.mockResolvedValueOnce(
+      new Response(JSON.stringify({ association: { id: 'association-1' }, grants: [] }), {
+        status: 201,
+        headers: { 'Content-Type': 'application/json' },
+      }),
+    );
+
+    const taskId = '10000000-0000-4000-a000-000000000001';
+    const documentId = '20000000-0000-4000-a000-000000000002';
+    const token = jwtService.sign({
+      sub: '10000000-0000-4000-a000-000000000001',
+      role: 'EMPLOYEE',
+      capabilities: [],
+    });
+
+    await request(app.getHttpServer())
+      .post(`/api/tasks/${taskId}/documents`)
+      .set('authorization', `Bearer ${token}`)
+      .send({
+        document_id: documentId,
+        grants: [
+          {
+            actor_id: '30000000-0000-4000-a000-000000000003',
+            permissions: ['PREVIEW'],
+            expires_at: '2026-08-10T17:00:00.000Z',
+          },
+        ],
+      })
+      .expect(201);
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      `http://localhost:3004/tasks/${taskId}/documents`,
+      expect.objectContaining({
+        method: 'POST',
+        headers: expect.objectContaining({
+          'content-type': 'application/json',
+          'x-user-id': '10000000-0000-4000-a000-000000000001',
+          'x-user-role': 'EMPLOYEE',
+        }),
+        body: JSON.stringify({
+          document_id: documentId,
+          grants: [
+            {
+              actor_id: '30000000-0000-4000-a000-000000000003',
+              permissions: ['PREVIEW'],
+              expires_at: '2026-08-10T17:00:00.000Z',
+            },
+          ],
+        }),
+      }),
+    );
+  });
+
   it('blocks audit append even when the public path has a trailing slash', async () => {
     const token = jwtService.sign({
       sub: '20000000-0000-4000-8000-000000000002',

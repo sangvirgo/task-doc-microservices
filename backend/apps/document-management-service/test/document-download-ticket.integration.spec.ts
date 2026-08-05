@@ -15,6 +15,7 @@ type MockFetch = typeof fetch & jest.MockedFunction<typeof fetch>;
 
 const EMPLOYEE_ID = '10000000-0000-4000-8000-000000000001';
 const OTHER_EMPLOYEE_ID = '10000000-0000-4000-8000-000000000002';
+const TASK_ID = '20000000-0000-4000-8000-000000000001';
 const PLAINTEXT_BYTES = Buffer.from('decrypted document payload');
 
 function authHeaders(userId: string): Record<string, string> {
@@ -125,6 +126,7 @@ describe('Document download ticket integration (PostgreSQL)', () => {
       .post(`/documents/${document.id}/download-ticket`)
       .set(authHeaders(EMPLOYEE_ID))
       .send({
+        task_id: TASK_ID,
         version: 1,
         expires_in_seconds: 60 * 60 * 24,
       });
@@ -135,7 +137,7 @@ describe('Document download ticket integration (PostgreSQL)', () => {
 
   it('redeems an authorized ticket and streams plaintext bytes', async () => {
     const { document } = await createDocumentVersion(prisma);
-    const ticket = await createDownloadTicket(prisma, document.id, EMPLOYEE_ID);
+    const ticket = await createDownloadTicket(prisma, document.id, EMPLOYEE_ID, TASK_ID);
 
     const res = await request(app.getHttpServer())
       .post(`/documents/${document.id}/versions/1/redeem`)
@@ -161,6 +163,7 @@ describe('Document download ticket integration (PostgreSQL)', () => {
       prisma,
       document.id,
       EMPLOYEE_ID,
+      TASK_ID,
       new Date('2026-07-29T08:59:59.000Z'),
     );
 
@@ -175,7 +178,7 @@ describe('Document download ticket integration (PostgreSQL)', () => {
 
   it('denies redemption by the wrong actor', async () => {
     const { document } = await createDocumentVersion(prisma);
-    const ticket = await createDownloadTicket(prisma, document.id, EMPLOYEE_ID);
+    const ticket = await createDownloadTicket(prisma, document.id, EMPLOYEE_ID, TASK_ID);
 
     const res = await request(app.getHttpServer())
       .post(`/documents/${document.id}/versions/1/redeem`)
@@ -188,7 +191,7 @@ describe('Document download ticket integration (PostgreSQL)', () => {
 
   it('denies redemption after grant revocation at request time', async () => {
     const { document } = await createDocumentVersion(prisma);
-    const ticket = await createDownloadTicket(prisma, document.id, EMPLOYEE_ID);
+    const ticket = await createDownloadTicket(prisma, document.id, EMPLOYEE_ID, TASK_ID);
     permissionAllowed = false;
     permissionReasonCode = 'GRANT_REVOKED';
 
@@ -203,7 +206,7 @@ describe('Document download ticket integration (PostgreSQL)', () => {
 
   it('denies reuse of a single-use ticket', async () => {
     const { document } = await createDocumentVersion(prisma);
-    const ticket = await createDownloadTicket(prisma, document.id, EMPLOYEE_ID);
+    const ticket = await createDownloadTicket(prisma, document.id, EMPLOYEE_ID, TASK_ID);
 
     const first = await request(app.getHttpServer())
       .post(`/documents/${document.id}/versions/1/redeem`)
@@ -253,11 +256,13 @@ async function createDownloadTicket(
   prisma: DocumentPrismaService,
   documentId: string,
   actorId: string,
+  taskId: string,
   expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000),
 ) {
   return prisma.downloadTicket.create({
     data: {
       document_id: documentId,
+      task_id: taskId,
       version: 1,
       actor_id: actorId,
       object_key: 'minio/object/1',

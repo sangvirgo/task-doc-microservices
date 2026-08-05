@@ -204,6 +204,15 @@ async function seedDocument() {
       },
       update: {},
     });
+    await prisma.taskDocument.upsert({
+      where: { task_id_document_id: { task_id: TASK_ID, document_id: DOC_ID } },
+      create: {
+        task_id: TASK_ID,
+        document_id: DOC_ID,
+        attached_by: ADMIN_ID,
+      },
+      update: {},
+    });
     // Record
     await prisma.record.upsert({
       where: { id: RECORD_ID },
@@ -216,7 +225,7 @@ async function seedDocument() {
       },
       update: {},
     });
-    console.log('  document_db: 1 document + version + record seeded');
+    console.log('  document_db: 1 document + version + task association + record seeded');
     return prisma;
   } catch (e) {
     console.error('  document_db ERROR:', e.message);

@@ -10,6 +10,7 @@ import { AuthController } from './auth/auth.controller';
 import { AuthService } from './auth/auth.service';
 import { AuthPrismaService } from './prisma/auth-prisma.service';
 import { RedisService } from './redis/redis.service';
+import { UserRoleClient } from './users/user-role.client';
 
 export const SERVICE = 'authentication-identity-service';
 
@@ -18,6 +19,8 @@ export const envSchema = baseEnvSchema.extend({
   JWT_TTL_SECONDS: z.coerce.number().int().positive().default(1800),
   AUTH_DATABASE_URL: z.string().url(),
   REDIS_URL: z.string().default('redis://localhost:6379'),
+  USER_ROLE_SERVICE_URL: z.string().url().default('http://localhost:3002'),
+  USER_ROLE_LOOKUP_TIMEOUT_MS: z.coerce.number().int().positive().default(2000),
   RABBITMQ_URL: z.string().url().default('amqp://guest:guest@localhost:5672'),
 });
 
@@ -35,6 +38,6 @@ export const envSchema = baseEnvSchema.extend({
     }),
   ],
   controllers: [AuthController],
-  providers: [AuthService, AuthPrismaService, RedisService],
+  providers: [AuthService, AuthPrismaService, RedisService, UserRoleClient],
 })
 export class AppModule {}

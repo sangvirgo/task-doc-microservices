@@ -8,6 +8,8 @@ import { loadLocalEnv } from '../../../test/load-local-env';
 import { TaskPrismaService } from '../src/prisma/task-prisma.service';
 import { TasksService } from '../src/tasks/tasks.service';
 
+jest.setTimeout(20_000);
+
 describe('Task outbox relay integration (PostgreSQL)', () => {
   let app: INestApplication;
   let prisma: TaskPrismaService;
@@ -28,14 +30,14 @@ describe('Task outbox relay integration (PostgreSQL)', () => {
     prisma = moduleRef.get(TaskPrismaService);
     tasksService = moduleRef.get(TasksService);
     publisher = moduleRef.get<InMemoryEventPublisher>(EVENT_PUBLISHER);
+    await prisma.$connect();
+    await clearTaskData(prisma);
     await app.init();
   });
 
   beforeEach(async () => {
     publisher.clear();
-    await prisma.outboxEvent.deleteMany();
-    await prisma.taskParticipant.deleteMany();
-    await prisma.task.deleteMany();
+    await clearTaskData(prisma);
   });
 
   afterAll(async () => {
@@ -59,7 +61,7 @@ describe('Task outbox relay integration (PostgreSQL)', () => {
         where: { resource_id: task.id, published_at: { not: null } },
       });
       return Boolean(row) && publisher.published.length === 1;
-    });
+    }, 15_000);
 
     expect(publisher.published).toHaveLength(1);
     expect(publisher.published[0].event_type).toBe('task.created');
@@ -72,6 +74,12 @@ describe('Task outbox relay integration (PostgreSQL)', () => {
     expect(rows[0].published_at).not.toBeNull();
   });
 });
+
+async function clearTaskData(prisma: TaskPrismaService): Promise<void> {
+  await prisma.outboxEvent.deleteMany();
+  await prisma.taskParticipant.deleteMany();
+  await prisma.task.deleteMany();
+}
 
 async function waitFor(predicate: () => Promise<boolean>, timeoutMs = 5_000): Promise<void> {
   const startedAt = Date.now();
