@@ -4,6 +4,8 @@ import { GatewayError, toGatewayError } from '@/lib/errors';
 import type { TokenPair } from '@/types/auth';
 
 let refreshPromise: Promise<TokenPair> | null = null;
+const publicApiBase = process.env.NEXT_PUBLIC_API_BASE_URL?.replace(/\/$/, '');
+const apiUrl = (path: string) => publicApiBase ? `${publicApiBase}/api${path}` : `/gateway${path}`;
 
 async function request<T>(path: string, init: RequestInit = {}, retryAfterRefresh = true): Promise<T> {
   const session = readSession();
@@ -12,7 +14,7 @@ async function request<T>(path: string, init: RequestInit = {}, retryAfterRefres
   headers.set('accept', 'application/json');
   if (session && !path.startsWith('/auth/')) headers.set('authorization', `Bearer ${session.access_token}`);
   if (init.body && !(init.body instanceof FormData) && !headers.has('content-type')) headers.set('content-type', 'application/json');
-  const response = await fetch(`/gateway${path}`, { ...init, headers, signal: init.signal });
+  const response = await fetch(apiUrl(path), { ...init, headers, signal: init.signal });
   if (response.status === 401 && retryAfterRefresh && session && !path.startsWith('/auth/')) {
     try { await refreshSession(session.refresh_token); return request<T>(path, init, false); } catch { clearSession(); window.location.assign('/login?reason=session-expired'); throw new GatewayError(401, 'Your session is no longer valid.'); }
   }
@@ -40,7 +42,7 @@ async function requestFormWithProgress<T>(path: string, body: FormData, onProgre
   const session = readSession();
   const response = await new Promise<Response>((resolve, reject) => {
     const xhr = new XMLHttpRequest();
-    xhr.open('POST', `/gateway${path}`);
+    xhr.open('POST', apiUrl(path));
     xhr.setRequestHeader('accept', 'application/json');
     xhr.setRequestHeader('x-correlation-id', createCorrelationId());
     if (session) xhr.setRequestHeader('authorization', `Bearer ${session.access_token}`);
@@ -60,7 +62,7 @@ async function requestBlob(path: string, body: unknown): Promise<Blob> {
   const session = readSession();
   const headers = new Headers({ 'x-correlation-id': createCorrelationId(), accept: 'application/octet-stream' });
   if (session) headers.set('authorization', `Bearer ${session.access_token}`);
-  const response = await fetch(`/gateway${path}`, { method: 'POST', headers, body: JSON.stringify(body) });
+  const response = await fetch(apiUrl(path), { method: 'POST', headers, body: JSON.stringify(body) });
   if (response.status === 401 && session) {
     try {
       await refreshSession(session.refresh_token);

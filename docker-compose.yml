@@ -142,6 +142,7 @@ services:
       AUDIT_SERVICE_URL: http://audit-log-service:3007
       NOTIFICATION_SERVICE_URL: http://notification-service:3008
       SECURITY_MONITORING_SERVICE_URL: http://security-monitoring-service:3009
+      CORS_ORIGINS: "${CORS_ORIGINS:-http://13.229.104.126:3100,http://localhost:3001,http://localhost:3100}"
     depends_on:
       authentication-identity-service:
         condition: service_healthy
