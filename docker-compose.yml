@@ -400,9 +400,9 @@ services:
       additional_contexts:
         root: .
       args:
-        NEXT_PUBLIC_API_BASE_URL: http://api-gateway:3000
+        NEXT_PUBLIC_API_BASE_URL: http://13.229.104.126:3000
     environment:
-      NEXT_PUBLIC_API_BASE_URL: http://api-gateway:3000
+      NEXT_PUBLIC_API_BASE_URL: http://13.229.104.126:3000
       NEXT_PUBLIC_APP_ENV: development
     depends_on:
       api-gateway:
