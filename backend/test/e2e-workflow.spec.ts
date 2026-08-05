@@ -19,11 +19,50 @@ const EMP_EMAIL = 'employee@c17.local';
 const EMP_PASS = 'Employee123!';
 const EMP_ID = '00000000-0000-4000-a000-000000000002';
 
-async function post<T>(url: string, body: unknown, token?: string): Promise<{ status: number; body: T }> {
+async function post<T>(
+  url: string,
+  body: unknown,
+  token?: string,
+  additionalHeaders: Record<string, string> = {},
+): Promise<{ status: number; body: T }> {
   const headers: Record<string, string> = { 'Content-Type': 'application/json' };
   if (token) headers['Authorization'] = `Bearer ${token}`;
+  Object.assign(headers, additionalHeaders);
   const res = await fetch(url, { method: 'POST', headers, body: JSON.stringify(body) });
   return { status: res.status, body: (await res.json().catch(() => null)) as T };
+}
+
+function permissionPost<T>(
+  url: string,
+  body: unknown,
+  token?: string,
+): Promise<{ status: number; body: T }> {
+  return post(url, body, token, {
+    'x-user-id': ADMIN_ID,
+    'x-user-role': 'ADMIN',
+  });
+}
+
+async function attachDocumentToTask(
+  taskId: string,
+  documentId: string,
+  token: string,
+): Promise<void> {
+  const res = await post(
+    `${GW}/api/tasks/${taskId}/documents`,
+    {
+      document_id: documentId,
+      grants: [
+        {
+          actor_id: EMP_ID,
+          permissions: ['PREVIEW'],
+          expires_at: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
+        },
+      ],
+    },
+    token,
+  );
+  expect(res.status).toBe(201);
 }
 
 async function get<T>(url: string, token?: string): Promise<{ status: number; body: T }> {
@@ -71,7 +110,10 @@ describe('E2E core workflow', () => {
     });
 
     it('lists tasks and finds the created task', async () => {
-      const res = await get<Array<{ id: string }>>(`${GW}/api/tasks?creator_id=${EMP_ID}`, accessToken);
+      const res = await get<Array<{ id: string }>>(
+        `${GW}/api/tasks?creator_id=${EMP_ID}`,
+        accessToken,
+      );
 
       expect(res.status).toBe(200);
       expect(Array.isArray(res.body)).toBe(true);
@@ -100,6 +142,10 @@ describe('E2E core workflow', () => {
       expect(res.body.title).toBe('E2E test document');
       documentId = res.body.id as string;
     });
+
+    it('attaches the document to the task before granting access', async () => {
+      await attachDocumentToTask(taskId, documentId, accessToken);
+    });
   });
 
   // ── 4. Permission check ──────────────────────────────────────────────────
@@ -122,7 +168,7 @@ describe('E2E core workflow', () => {
     });
 
     it('grants PREVIEW permission on the new document', async () => {
-      const res = await post<{ id: string }>(`${PERM_URL}/grants`, {
+      const res = await permissionPost<{ id: string }>(`${PERM_URL}/grants`, {
         grantor_id: ADMIN_ID,
         actor_id: EMP_ID,
         resource_type: 'DOCUMENT',
