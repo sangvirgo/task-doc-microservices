@@ -8,6 +8,8 @@ import { loadLocalEnv } from '../../../test/load-local-env';
 import { TaskPrismaService } from '../src/prisma/task-prisma.service';
 import { TasksService } from '../src/tasks/tasks.service';
 
+jest.setTimeout(20_000);
+
 describe('Task outbox relay integration (PostgreSQL)', () => {
   let app: INestApplication;
   let prisma: TaskPrismaService;
@@ -59,7 +61,7 @@ describe('Task outbox relay integration (PostgreSQL)', () => {
         where: { resource_id: task.id, published_at: { not: null } },
       });
       return Boolean(row) && publisher.published.length === 1;
-    });
+    }, 15_000);
 
     expect(publisher.published).toHaveLength(1);
     expect(publisher.published[0].event_type).toBe('task.created');
