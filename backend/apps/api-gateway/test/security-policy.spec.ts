@@ -16,12 +16,23 @@ describe('API Gateway security policy', () => {
     global.fetch = fetchMock;
     const moduleRef = await Test.createTestingModule({ imports: [AppModule] }).compile();
     app = moduleRef.createNestApplication();
+    app.enableCors({ origin: ['http://13.229.104.126:3100'] });
     jwtService = moduleRef.get(JwtService);
     await app.init();
   });
 
   afterAll(async () => app.close());
 
+  it('allows the deployed web origin for browser API calls', async () => {
+    const response = await request(app.getHttpServer())
+      .options('/api/auth/login')
+      .set('origin', 'http://13.229.104.126:3100')
+      .set('access-control-request-method', 'POST')
+      .set('access-control-request-headers', 'content-type')
+      .expect(204);
+
+    expect(response.headers['access-control-allow-origin']).toBe('http://13.229.104.126:3100');
+  });
   it('blocks employee access to admin and internal-only control-plane routes', async () => {
     const token = jwtService.sign({
       sub: '10000000-0000-4000-8000-000000000001',
