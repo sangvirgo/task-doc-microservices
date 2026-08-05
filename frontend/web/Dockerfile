@@ -15,6 +15,8 @@ COPY --from=dependencies /workspace/frontend/web/node_modules ./frontend/web/nod
 COPY --from=root package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 COPY . ./frontend/web
 ENV NEXT_TELEMETRY_DISABLED=1
+ARG NEXT_PUBLIC_API_BASE_URL
+ENV NEXT_PUBLIC_API_BASE_URL=$NEXT_PUBLIC_API_BASE_URL
 RUN pnpm --filter @c17/web build
 
 FROM node:24.13.0-alpine AS runtime
