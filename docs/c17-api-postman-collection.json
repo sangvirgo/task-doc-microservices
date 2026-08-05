@@ -1,7 +1,7 @@
 {
   "info": {
     "name": "C17 Task & Document Platform — Full API Collection",
-    "description": "Complete Postman collection for the C17 Task & Document Platform.\n\nBASE URL: http://localhost:3000 (API Gateway)\nAll external requests go through the Gateway with /api/ prefix.\n\nAuthentication:\n- Login as employee: employee@c17.local / Employee123!\n- Login as admin: admin@c17.local / Admin123!\n- All authenticated endpoints require Bearer token from login response.\n\nDynamic Data:\n- Timestamps use {{currentTimestamp}} variable (auto-generated).\n- UUIDs use pre-request scripts to generate unique IDs.\n- Save tokens/IDs via Tests scripts for chaining requests.\n\nWorkflow Steps:\n1. Authentication — login, get tokens\n2. User Management — create users, assign capabilities\n3. Task Management — create tasks, lifecycle transitions\n4. Document Upload — multipart upload, security pipeline\n5. Permission Management — create grants, delegate, revoke\n6. Secure Download — ticket creation, redeem, decrypt\n7. Audit Log — query events, verify chain\n8. Records & Transfer — create records, transfer packages\n9. Retention & Disposal — eligibility, holds, disposal\n10. Notification — preferences, read notifications\n11. Security Monitoring — rules, alerts, session revocation\n12. Health & Verification — service health, audit chain verify",
+    "description": "Complete Postman collection for the C17 Task & Document Platform.\n\nBASE URL: http://localhost:3000 (API Gateway)\nAll external requests go through the Gateway with /api/ prefix.\n\nAuthentication:\n- Login as employee: employee@c17.local / Employee123!\n- Login as admin: admin@c17.local / Admin123!\n- All authenticated endpoints require Bearer token from login response.\n\nDynamic Data:\n- Timestamps use {{currentTimestamp}} variable (auto-generated).\n- UUIDs use pre-request scripts to generate unique IDs.\n- Save tokens/IDs via Tests scripts for chaining requests.\n\nRecommended document test flow:\n1. Authentication — run 1.1, 1.3, and 1.3.1.\n2. Task Management — run 3.1 and 3.4.\n3. Document Management — run the 4.x folders in order.\n4. Audit Log, Records & Transfer, Retention & Disposal, Notifications, Security Monitoring, and Health are sections 5–10.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "variable": [
@@ -213,6 +213,86 @@
       "key": "alertId",
       "value": "",
       "description": "Security alert ID (set after listing alerts)"
+    },
+    {
+      "key": "grantId",
+      "value": "",
+      "description": "Primary permission grant ID"
+    },
+    {
+      "key": "delegatedGrantId",
+      "value": "",
+      "description": "Delegated child grant ID"
+    },
+    {
+      "key": "ticketId",
+      "value": "",
+      "description": "Legacy secure-download ticket ID"
+    },
+    {
+      "key": "downloadTicketId2",
+      "value": "",
+      "description": "Second secure-download ticket ID"
+    },
+    {
+      "key": "recordId",
+      "value": "",
+      "description": "Record ID"
+    },
+    {
+      "key": "transferPackageId",
+      "value": "",
+      "description": "Transfer package ID"
+    },
+    {
+      "key": "holdId",
+      "value": "",
+      "description": "Retention hold ID"
+    },
+    {
+      "key": "ruleId",
+      "value": "",
+      "description": "Monitoring rule ID"
+    },
+    {
+      "key": "hierarchyParentTaskId",
+      "value": "",
+      "description": "Parent task used by the hierarchy flow"
+    },
+    {
+      "key": "hierarchyChildOneTaskId",
+      "value": "",
+      "description": "First child task used by the hierarchy flow"
+    },
+    {
+      "key": "hierarchyChildTwoTaskId",
+      "value": "",
+      "description": "Second child task used by the hierarchy flow"
+    },
+    {
+      "key": "hierarchyParentSubmissionId",
+      "value": "",
+      "description": "Parent submission used by the hierarchy flow"
+    },
+    {
+      "key": "hierarchyChildOneSubmissionId",
+      "value": "",
+      "description": "First child submission used by the hierarchy flow"
+    },
+    {
+      "key": "hierarchyChildTwoSubmissionId",
+      "value": "",
+      "description": "Second child submission used by the hierarchy flow"
+    },
+    {
+      "key": "registeredToken",
+      "value": "",
+      "description": "Backward-compatible registration token variable"
+    },
+    {
+      "key": "registeredRefreshToken",
+      "value": "",
+      "description": "Backward-compatible registration token variable"
     }
   ],
   "event": [
@@ -235,10 +315,10 @@
         "exec": [
           "const requestName = pm.info.requestName || '';",
           "const expectedNegative = /\\(Should (REJECT|DENY)\\)/.test(requestName);",
-          "pm.test('No server error', function () { pm.expect(pm.response.code).to.be.below(500); });",
-          "if (expectedNegative) {",
-          "  pm.test('Expected denial is returned', function () { pm.expect(pm.response.code).to.be.within(400, 499); });",
-          "}"
+          "pm.test('Expected HTTP class', function () {",
+          "  if (expectedNegative) pm.expect(pm.response.code).to.be.within(400, 499);",
+          "  else pm.expect(pm.response.code).to.be.within(200, 299);",
+          "});"
         ]
       }
     }
@@ -905,7 +985,20 @@
               ]
             },
             "description": "Security check: an EMPLOYEE token must not be able to grant capabilities. Expected response: 403 Forbidden."
-          }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Expected negative response is a 4xx', function () {",
+                  "  pm.expect(pm.response.code).to.be.within(400, 499);",
+                  "});"
+                ]
+              }
+            }
+          ]
         }
       ]
     },
@@ -941,22 +1034,26 @@
                 "tasks"
               ]
             },
-            "description": "The seeded task creator creates a task. The response ID is saved to {{taskId}}. Status starts as CREATED; it must be assigned before work can start.",
-            "event": [
-              {
-                "listen": "test",
-                "script": {
-                  "exec": [
-                    "var res = pm.response.json();",
-                    "if (res.id) {",
-                    "  pm.collectionVariables.set('taskId', res.id);",
-                    "  console.log('Task ID saved: ' + res.id);",
-                    "}"
-                  ]
-                }
+            "description": "The seeded task creator creates a task. The response ID is saved to {{taskId}}. Status starts as CREATED; it must be assigned before work can start."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Task is created in CREATED state', function () {",
+                  "  pm.expect(pm.response.code).to.eql(201);",
+                  "  var res = pm.response.json();",
+                  "  pm.expect(res.id).to.be.a('string');",
+                  "  pm.expect(res.status).to.eql('CREATED');",
+                  "  pm.expect(res.creator_id).to.eql(pm.collectionVariables.get('empId'));",
+                  "  pm.collectionVariables.set('taskId', res.id);",
+                  "});"
+                ]
               }
-            ]
-          }
+            }
+          ]
         },
         {
           "name": "3.2 List Tasks",
@@ -1041,26 +1138,26 @@
                 "assign"
               ]
             },
-    "description": "The creator assigns the task to the dynamic EMPLOYEE from 1.3. Task moves CREATED → ASSIGNED and the assignee becomes a direct participant."
-  },
-  "event": [
-    {
-      "listen": "test",
-      "script": {
-        "exec": [
-          "var res = pm.response.json();",
-          "if (res.assignee_id) {",
-          "  pm.collectionVariables.set('assignedAssigneeId', res.assignee_id);",
-          "  console.log('Assigned employee ID saved: ' + res.assignee_id);",
-          "}",
-          "pm.test('Task is assigned to the selected employee', function () {",
-          "  pm.expect(res.assignee_id).to.eql(pm.collectionVariables.get('assigneeId'));",
-          "  pm.expect(res.status).to.eql('ASSIGNED');",
-          "});"
-        ]
-      }
-    }
-  ]
+            "description": "The creator assigns the task to the dynamic EMPLOYEE from 1.3. Task moves CREATED → ASSIGNED and the assignee becomes a direct participant."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "var res = pm.response.json();",
+                  "if (res.assignee_id) {",
+                  "  pm.collectionVariables.set('assignedAssigneeId', res.assignee_id);",
+                  "  console.log('Assigned employee ID saved: ' + res.assignee_id);",
+                  "}",
+                  "pm.test('Task is assigned to the selected employee', function () {",
+                  "  pm.expect(res.assignee_id).to.eql(pm.collectionVariables.get('assigneeId'));",
+                  "  pm.expect(res.status).to.eql('ASSIGNED');",
+                  "});"
+                ]
+              }
+            }
+          ]
         },
         {
           "name": "3.5 Assignee Starts Work (IN_PROGRESS)",
@@ -1093,7 +1190,21 @@
               ]
             },
             "description": "The dynamic assignee starts work. This succeeds only after 3.4 because CREATED → IN_PROGRESS is invalid."
-          }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Task starts work', function () {",
+                  "  pm.expect(pm.response.code).to.eql(200);",
+                  "  pm.expect(pm.response.json().status).to.eql('IN_PROGRESS');",
+                  "});"
+                ]
+              }
+            }
+          ]
         },
         {
           "name": "3.6 Submit for Review (WAITING_REVIEW)",
@@ -1125,22 +1236,24 @@
                 "submit"
               ]
             },
-            "description": "The dynamic assignee submits the task. Task moves to WAITING_REVIEW and the submission ID is saved to {{submissionId}}.",
-            "event": [
-              {
-                "listen": "test",
-                "script": {
-                  "exec": [
-                    "var res = pm.response.json();",
-                    "if (res.id) {",
-                    "  pm.collectionVariables.set('submissionId', res.id);",
-                    "  console.log('Submission ID saved: ' + res.id);",
-                    "}"
-                  ]
-                }
+            "description": "The dynamic assignee submits the task. Task moves to WAITING_REVIEW and the submission ID is saved to {{submissionId}}."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Submission is accepted', function () {",
+                  "  pm.expect(pm.response.code).to.be.oneOf([200, 201]);",
+                  "  var res = pm.response.json();",
+                  "  pm.expect(res.id).to.be.a('string');",
+                  "  pm.collectionVariables.set('submissionId', res.id);",
+                  "});"
+                ]
               }
-            ]
-          }
+            }
+          ]
         },
         {
           "name": "3.7 Approve Task",
@@ -1174,7 +1287,21 @@
               ]
             },
             "description": "The original creator reviews the assignee submission. Task moves WAITING_REVIEW → APPROVED."
-          }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Task review is accepted', function () {",
+                  "  pm.expect(pm.response.code).to.be.oneOf([200, 201]);",
+                  "  pm.expect(pm.response.json().status).to.eql('APPROVED');",
+                  "});"
+                ]
+              }
+            }
+          ]
         },
         {
           "name": "3.8 Block Task [ALTERNATIVE FLOW]",
@@ -1316,868 +1443,2234 @@
             },
             "description": "View task activity log.\n\nOnly participants can view activity."
           }
+        },
+        {
+          "name": "3.13 Parent–Child Hierarchy and Approval Gate",
+          "description": "Only the current parent assignee may create children; ancestor oversight is summary-only; every child must be APPROVED before the parent can be APPROVED.",
+          "item": [
+            {
+              "name": "3.13.1 Create Parent Task With Assignee",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{creatorToken}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/tasks",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "tasks"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"title\": \"Hierarchy Parent {{$timestamp}}\",\n  \"description\": \"Parent task for hierarchy coverage\",\n  \"assignee_id\": \"{{assigneeId}}\",\n  \"deadline\": \"{{taskDeadline}}\"\n}"
+                },
+                "description": "Creates a separate parent task assigned to the dynamic assignee."
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('Parent task is assigned', function () {",
+                      "  pm.expect(pm.response.code).to.eql(201);",
+                      "  var res = pm.response.json();",
+                      "  pm.expect(res.id).to.be.a('string');",
+                      "  pm.expect(res.status).to.eql('ASSIGNED');",
+                      "  pm.expect(res.creator_id).to.eql(pm.collectionVariables.get('empId'));",
+                      "  pm.expect(res.assignee_id).to.eql(pm.collectionVariables.get('assigneeId'));",
+                      "  pm.expect(res.parent_task_id).to.eql(null);",
+                      "  pm.collectionVariables.set('hierarchyParentTaskId', res.id);",
+                      "});"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "3.13.2 Creator Tries to Create Child (Should REJECT)",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{creatorToken}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/tasks",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "tasks"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"title\": \"Unauthorized Child {{$timestamp}}\",\n  \"description\": \"The parent creator is not the current parent assignee\",\n  \"assignee_id\": \"{{archivistId}}\",\n  \"parent_task_id\": \"{{hierarchyParentTaskId}}\",\n  \"deadline\": \"{{taskDeadline}}\"\n}"
+                },
+                "description": "The parent creator must not be able to create a child while another employee is the current parent assignee."
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('Only parent assignee may create a child', function () {",
+                      "  pm.expect(pm.response.code).to.eql(403);",
+                      "});"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "3.13.3 Parent Assignee Creates Child One",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{assigneeToken}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/tasks",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "tasks"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"title\": \"Hierarchy Child One {{$timestamp}}\",\n  \"description\": \"First required child task\",\n  \"assignee_id\": \"{{archivistId}}\",\n  \"parent_task_id\": \"{{hierarchyParentTaskId}}\",\n  \"deadline\": \"{{taskDeadline}}\"\n}"
+                },
+                "description": "The current parent assignee creates the first child and assigns it to another employee."
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('Child one is created by the parent assignee', function () {",
+                      "  pm.expect(pm.response.code).to.eql(201);",
+                      "  var res = pm.response.json();",
+                      "  pm.expect(res.id).to.be.a('string');",
+                      "  pm.expect(res.creator_id).to.eql(pm.collectionVariables.get('assigneeId'));",
+                      "  pm.expect(res.assignee_id).to.eql(pm.collectionVariables.get('archivistId'));",
+                      "  pm.expect(res.parent_task_id).to.eql(pm.collectionVariables.get('hierarchyParentTaskId'));",
+                      "  pm.expect(res.status).to.eql('ASSIGNED');",
+                      "  pm.collectionVariables.set('hierarchyChildOneTaskId', res.id);",
+                      "});"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "3.13.4 Parent Assignee Creates Child Two",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{assigneeToken}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/tasks",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "tasks"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"title\": \"Hierarchy Child Two {{$timestamp}}\",\n  \"description\": \"Second required child task\",\n  \"assignee_id\": \"{{archivistId}}\",\n  \"parent_task_id\": \"{{hierarchyParentTaskId}}\",\n  \"deadline\": \"{{taskDeadline}}\"\n}"
+                },
+                "description": "A parent may have multiple required child tasks."
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('Child two is created under the same parent', function () {",
+                      "  pm.expect(pm.response.code).to.eql(201);",
+                      "  var res = pm.response.json();",
+                      "  pm.expect(res.id).to.be.a('string');",
+                      "  pm.expect(res.creator_id).to.eql(pm.collectionVariables.get('assigneeId'));",
+                      "  pm.expect(res.assignee_id).to.eql(pm.collectionVariables.get('archivistId'));",
+                      "  pm.expect(res.parent_task_id).to.eql(pm.collectionVariables.get('hierarchyParentTaskId'));",
+                      "  pm.expect(res.status).to.eql('ASSIGNED');",
+                      "  pm.collectionVariables.set('hierarchyChildTwoTaskId', res.id);",
+                      "});"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "3.13.5 Ancestor Sees Summary-Only Child View",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{creatorToken}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/tasks/{{hierarchyChildOneTaskId}}",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "tasks",
+                    "{{hierarchyChildOneTaskId}}"
+                  ]
+                },
+                "description": "The parent creator receives exactly the six ancestor-oversight summary fields."
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('Ancestor view is exactly the six-field summary', function () {",
+                      "  pm.expect(pm.response.code).to.eql(200);",
+                      "  var res = pm.response.json();",
+                      "  pm.expect(Object.keys(res).sort()).to.eql(['assignee', 'completion_result', 'deadline', 'is_overdue', 'status', 'title']);",
+                      "  pm.expect(res.assignee).to.eql(pm.collectionVariables.get('archivistId'));",
+                      "  pm.expect(res).not.to.have.property('creator_id');",
+                      "  pm.expect(res).not.to.have.property('parent_task_id');",
+                      "  pm.expect(res).not.to.have.property('description');",
+                      "});"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "3.13.6 Child Participant Reads Parent (Should REJECT)",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{archivistToken}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/tasks/{{hierarchyParentTaskId}}",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "tasks",
+                    "{{hierarchyParentTaskId}}"
+                  ]
+                },
+                "description": "Being a participant in a child does not grant direct access to the parent task."
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('Descendant participant cannot read the parent', function () {",
+                      "  pm.expect(pm.response.code).to.eql(403);",
+                      "});"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "3.13.7 Parent Assignee Starts Parent",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{assigneeToken}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/tasks/{{hierarchyParentTaskId}}/status",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "tasks",
+                    "{{hierarchyParentTaskId}}",
+                    "status"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"status\": \"IN_PROGRESS\"\n}"
+                }
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('Parent enters IN_PROGRESS', function () {",
+                      "  pm.expect(pm.response.code).to.eql(200);",
+                      "  pm.expect(pm.response.json().status).to.eql('IN_PROGRESS');",
+                      "});"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "3.13.8 Submit Parent For Review",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{assigneeToken}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/tasks/{{hierarchyParentTaskId}}/submit",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "tasks",
+                    "{{hierarchyParentTaskId}}",
+                    "submit"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"content\": \"Parent work submitted before children are complete\"\n}"
+                }
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('Parent submission is pending review', function () {",
+                      "  pm.expect(pm.response.code).to.be.oneOf([200, 201]);",
+                      "  var res = pm.response.json();",
+                      "  pm.expect(res.id).to.be.a('string');",
+                      "  pm.collectionVariables.set('hierarchyParentSubmissionId', res.id);",
+                      "});"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "3.13.9 Approve Parent Before Children (Should REJECT)",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{creatorToken}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/tasks/submissions/{{hierarchyParentSubmissionId}}/review",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "tasks",
+                    "submissions",
+                    "{{hierarchyParentSubmissionId}}",
+                    "review"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"decision\": \"APPROVED\",\n  \"comment\": \"Approval must wait for all children\"\n}"
+                },
+                "description": "The parent approval gate rejects while either child is not APPROVED."
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('Parent approval is blocked by incomplete children', function () {",
+                      "  pm.expect(pm.response.code).to.eql(400);",
+                      "});"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "3.13.10 Start Child One",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{archivistToken}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/tasks/{{hierarchyChildOneTaskId}}/status",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "tasks",
+                    "{{hierarchyChildOneTaskId}}",
+                    "status"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"status\": \"IN_PROGRESS\"\n}"
+                }
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('Child one starts work', function () {",
+                      "  pm.expect(pm.response.code).to.eql(200);",
+                      "  pm.expect(pm.response.json().status).to.eql('IN_PROGRESS');",
+                      "});"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "3.13.11 Submit Child One",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{archivistToken}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/tasks/{{hierarchyChildOneTaskId}}/submit",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "tasks",
+                    "{{hierarchyChildOneTaskId}}",
+                    "submit"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"content\": \"Child one completed\"\n}"
+                }
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('Child one submission is pending', function () {",
+                      "  pm.expect(pm.response.code).to.be.oneOf([200, 201]);",
+                      "  var res = pm.response.json();",
+                      "  pm.expect(res.id).to.be.a('string');",
+                      "  pm.collectionVariables.set('hierarchyChildOneSubmissionId', res.id);",
+                      "});"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "3.13.12 Approve Child One",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{assigneeToken}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/tasks/submissions/{{hierarchyChildOneSubmissionId}}/review",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "tasks",
+                    "submissions",
+                    "{{hierarchyChildOneSubmissionId}}",
+                    "review"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"decision\": \"APPROVED\",\n  \"comment\": \"Child one is complete\"\n}"
+                }
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('Child one is approved', function () {",
+                      "  pm.expect(pm.response.code).to.be.oneOf([200, 201]);",
+                      "  pm.expect(pm.response.json().status).to.eql('APPROVED');",
+                      "});"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "3.13.13 Start Child Two",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{archivistToken}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/tasks/{{hierarchyChildTwoTaskId}}/status",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "tasks",
+                    "{{hierarchyChildTwoTaskId}}",
+                    "status"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"status\": \"IN_PROGRESS\"\n}"
+                }
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('Child two starts work', function () {",
+                      "  pm.expect(pm.response.code).to.eql(200);",
+                      "  pm.expect(pm.response.json().status).to.eql('IN_PROGRESS');",
+                      "});"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "3.13.14 Submit Child Two",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{archivistToken}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/tasks/{{hierarchyChildTwoTaskId}}/submit",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "tasks",
+                    "{{hierarchyChildTwoTaskId}}",
+                    "submit"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"content\": \"Child two completed\"\n}"
+                }
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('Child two submission is pending', function () {",
+                      "  pm.expect(pm.response.code).to.be.oneOf([200, 201]);",
+                      "  var res = pm.response.json();",
+                      "  pm.expect(res.id).to.be.a('string');",
+                      "  pm.collectionVariables.set('hierarchyChildTwoSubmissionId', res.id);",
+                      "});"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "3.13.15 Approve Child Two",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{assigneeToken}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/tasks/submissions/{{hierarchyChildTwoSubmissionId}}/review",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "tasks",
+                    "submissions",
+                    "{{hierarchyChildTwoSubmissionId}}",
+                    "review"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"decision\": \"APPROVED\",\n  \"comment\": \"Child two is complete\"\n}"
+                }
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('Child two is approved', function () {",
+                      "  pm.expect(pm.response.code).to.be.oneOf([200, 201]);",
+                      "  pm.expect(pm.response.json().status).to.eql('APPROVED');",
+                      "});"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "3.13.16 Approve Parent After All Children",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{creatorToken}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/tasks/submissions/{{hierarchyParentSubmissionId}}/review",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "tasks",
+                    "submissions",
+                    "{{hierarchyParentSubmissionId}}",
+                    "review"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"decision\": \"APPROVED\",\n  \"comment\": \"All required children are approved\"\n}"
+                }
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('Parent approval succeeds after all children', function () {",
+                      "  pm.expect(pm.response.code).to.be.oneOf([200, 201]);",
+                      "  pm.expect(pm.response.json().status).to.eql('APPROVED');",
+                      "});"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "3.13.17 Verify Approved Parent",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{creatorToken}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/tasks/{{hierarchyParentTaskId}}",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "tasks",
+                    "{{hierarchyParentTaskId}}"
+                  ]
+                }
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('Parent task is APPROVED', function () {",
+                      "  pm.expect(pm.response.code).to.eql(200);",
+                      "  var res = pm.response.json();",
+                      "  pm.expect(res.status).to.eql('APPROVED');",
+                      "  pm.expect(res.parent_task_id).to.eql(null);",
+                      "});"
+                    ]
+                  }
+                }
+              ]
+            }
+          ]
         }
       ]
     },
     {
-      "name": "4. Document Upload",
-      "description": "Upload documents through the secure pipeline. The file goes through Gateway → Document Management → Document Security → ClamAV scan → AES-256-GCM encryption → MinIO storage.",
+      "name": "4. Document Management",
+      "description": "Complete document flow: upload → owner inventory → attach to task → grant PREVIEW/DOWNLOAD → read metadata → download via ticket → detach and revoke.",
       "item": [
         {
-          "name": "4.1 Upload Clean Document (Multipart)",
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Authorization",
-                "value": "Bearer {{empToken}}"
-              }
-            ],
-            "body": {
-              "mode": "formdata",
-              "formdata": [
-                {
-                  "key": "file",
-                  "type": "file",
-                  "src": ""
+          "name": "4.1 Upload & Inventory",
+          "description": "Upload clean documents, verify the owner inventory, and confirm that metadata/version access is denied before a PREVIEW grant.",
+          "item": [
+            {
+              "name": "4.1.1 Upload Clean Document (Multipart)",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{empToken}}"
+                  }
+                ],
+                "body": {
+                  "mode": "formdata",
+                  "formdata": [
+                    {
+                      "key": "file",
+                      "type": "file",
+                      "src": ""
+                    },
+                    {
+                      "key": "title",
+                      "value": "Test Document {{$timestamp}}",
+                      "type": "text"
+                    },
+                    {
+                      "key": "document_type",
+                      "value": "MEMO",
+                      "type": "text"
+                    },
+                    {
+                      "key": "owner_id",
+                      "value": "{{empId}}",
+                      "type": "text"
+                    },
+                    {
+                      "key": "security_level",
+                      "value": "INTERNAL",
+                      "type": "text"
+                    }
+                  ]
                 },
-                {
-                  "key": "title",
-                  "value": "Test Document {{$timestamp}}",
-                  "type": "text"
+                "url": {
+                  "raw": "{{baseUrl}}/api/documents/upload",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "documents",
+                    "upload"
+                  ]
                 },
+                "description": "Upload a document via multipart form.\n\nThe file is:\n1. Scanned by ClamAV (real antivirus)\n2. Checksummed with SHA-256\n3. Encrypted with AES-256-GCM (random DEK, wrapped by KEK)\n4. HMAC-signed for tamper detection\n5. Stored in MinIO as ciphertext\n\nSelect a file in the 'file' field above.\n\nResponse: { document: { id, title, ... }, version: { version, file_size, mime_type, signature } }\n\nNote: object_key is EXCLUDED from the public DTO by design."
+              },
+              "event": [
                 {
-                  "key": "document_type",
-                  "value": "MEMO",
-                  "type": "text"
-                },
-                {
-                  "key": "owner_id",
-                  "value": "{{empId}}",
-                  "type": "text"
-                },
-                {
-                  "key": "security_level",
-                  "value": "INTERNAL",
-                  "type": "text"
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('Clean upload returns safe public DTOs', function () {",
+                      "  pm.expect(pm.response.code).to.eql(201);",
+                      "  var res = pm.response.json();",
+                      "  pm.expect(res.document.id).to.be.a('string');",
+                      "  pm.expect(res.version.id).to.be.a('string');",
+                      "  pm.expect(res.version.version).to.eql(1);",
+                      "  pm.expect(res.document).not.to.have.property('object_key');",
+                      "  pm.expect(res.version).not.to.have.property('object_key');",
+                      "  pm.collectionVariables.set('documentId', res.document.id);",
+                      "  pm.collectionVariables.set('docVersion', res.version.version);",
+                      "  pm.collectionVariables.set('documentVersionId', res.version.id);",
+                      "});"
+                    ]
+                  }
                 }
               ]
             },
-            "url": {
-              "raw": "{{baseUrl}}/api/documents/upload",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "documents",
-                "upload"
+            {
+              "name": "4.1.2 Upload and Attach Document from Task (Multipart)",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{creatorToken}}"
+                  }
+                ],
+                "body": {
+                  "mode": "formdata",
+                  "formdata": [
+                    {
+                      "key": "file",
+                      "type": "file",
+                      "src": ""
+                    },
+                    {
+                      "key": "title",
+                      "value": "Task-bound Document {{$timestamp}}",
+                      "type": "text"
+                    },
+                    {
+                      "key": "document_type",
+                      "value": "MEMO",
+                      "type": "text"
+                    },
+                    {
+                      "key": "security_level",
+                      "value": "INTERNAL",
+                      "type": "text"
+                    },
+                    {
+                      "key": "task_id",
+                      "value": "{{taskId}}",
+                      "type": "text"
+                    },
+                    {
+                      "key": "grants",
+                      "value": "[{\"actor_id\":\"{{assigneeId}}\",\"permissions\":[\"PREVIEW\",\"DOWNLOAD\"],\"expires_at\":\"{{grantExpiresAt}}\"}]",
+                      "type": "text"
+                    }
+                  ]
+                },
+                "url": {
+                  "raw": "{{baseUrl}}/api/documents/upload",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "documents",
+                    "upload"
+                  ]
+                },
+                "description": "Upload from a Task context. The backend creates the Document, TaskDocument association, and explicit task-scoped grants in one workflow. Task membership alone is not enough; grants must list the recipient, permissions, and expiry."
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('Task-context upload creates association and grants', function () {",
+                      "  pm.expect(pm.response.code).to.eql(201);",
+                      "  var res = pm.response.json();",
+                      "  pm.expect(res.document.id).to.be.a('string');",
+                      "  pm.expect(res.association.task_id).to.eql(pm.collectionVariables.get('taskId'));",
+                      "  pm.expect(res.association.document_id).to.eql(res.document.id);",
+                      "  pm.expect(res.grants).to.be.an('array').and.not.empty;",
+                      "  pm.expect(res.grants[0].actor_id).to.eql(pm.collectionVariables.get('assigneeId'));",
+                      "  pm.expect(res.grants[0].task_id).to.eql(pm.collectionVariables.get('taskId'));",
+                      "  pm.expect(res.grants[0].permissions).to.include.members(['PREVIEW', 'DOWNLOAD']);",
+                      "  pm.collectionVariables.set('taskUploadDocumentId', res.document.id);",
+                      "  pm.collectionVariables.set('taskUploadAssociationId', res.association.id);",
+                      "});"
+                    ]
+                  }
+                }
               ]
             },
-            "description": "Upload a document via multipart form.\n\nThe file is:\n1. Scanned by ClamAV (real antivirus)\n2. Checksummed with SHA-256\n3. Encrypted with AES-256-GCM (random DEK, wrapped by KEK)\n4. HMAC-signed for tamper detection\n5. Stored in MinIO as ciphertext\n\nSelect a file in the 'file' field above.\n\nResponse: { document: { id, title, ... }, version: { version, file_size, mime_type, signature } }\n\nNote: object_key is EXCLUDED from the public DTO by design.",
-            "event": [
-              {
-                "listen": "test",
-                "script": {
-                  "exec": [
-                    "if (pm.response.code === 201) {",
-                    "  var res = pm.response.json();",
-                    "  if (res.document && res.document.id) {",
-                    "    pm.collectionVariables.set('documentId', res.document.id);",
-                    "    console.log('Document ID saved: ' + res.document.id);",
-                    "  }",
-                    "  if (res.version) {",
-                    "    pm.collectionVariables.set('docVersion', res.version.version || 1);",
-                    "    if (res.version.id) {",
-                    "      pm.collectionVariables.set('documentVersionId', res.version.id);",
-                    "    }",
-                    "  }",
-                    "}"
+            {
+              "name": "4.1.3 Upload State-Secret Document (Should REJECT)",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{empToken}}"
+                  }
+                ],
+                "body": {
+                  "mode": "formdata",
+                  "formdata": [
+                    {
+                      "key": "file",
+                      "type": "file",
+                      "src": ""
+                    },
+                    {
+                      "key": "title",
+                      "value": "State Secret {{$timestamp}}",
+                      "type": "text"
+                    },
+                    {
+                      "key": "document_type",
+                      "value": "MEMO",
+                      "type": "text"
+                    },
+                    {
+                      "key": "owner_id",
+                      "value": "{{empId}}",
+                      "type": "text"
+                    },
+                    {
+                      "key": "declared_state_secret",
+                      "value": "true",
+                      "type": "text"
+                    }
+                  ]
+                },
+                "url": {
+                  "raw": "{{baseUrl}}/api/documents/upload",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "documents",
+                    "upload"
+                  ]
+                },
+                "description": "Upload with declared_state_secret=true.\n\nThis should be REJECTED (400) before Document creation.\nNo Document row, no MinIO objects, no Grants are created.\nA safe denial Audit event is recorded.\n\nSelect any file in the 'file' field."
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('Upload is rejected before a public document is created', function () {",
+                      "  pm.expect(pm.response.code).to.be.within(400, 499);",
+                      "});"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "4.1.4 Upload Infected File (ClamAV REJECT)",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{empToken}}"
+                  }
+                ],
+                "body": {
+                  "mode": "formdata",
+                  "formdata": [
+                    {
+                      "key": "file",
+                      "type": "text",
+                      "value": "X5O!P%@AP[4\\PZX54(P^)7CC)7}$EICAR-STANDARD-ANTIVIRUS-TEST-FILE!$H+H*"
+                    },
+                    {
+                      "key": "title",
+                      "value": "EICAR Test {{$timestamp}}",
+                      "type": "text"
+                    },
+                    {
+                      "key": "document_type",
+                      "value": "MEMO",
+                      "type": "text"
+                    },
+                    {
+                      "key": "owner_id",
+                      "value": "{{empId}}",
+                      "type": "text"
+                    }
+                  ]
+                },
+                "url": {
+                  "raw": "{{baseUrl}}/api/documents/upload",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "documents",
+                    "upload"
+                  ]
+                },
+                "description": "Upload the EICAR antivirus test file.\n\nClamAV will detect it and reject the upload (HTTP 400+).\nNo Document row or MinIO object remains after rejection.\n\nThe EICAR string is the standard antivirus test file."
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('Upload is rejected before a public document is created', function () {",
+                      "  pm.expect(pm.response.code).to.be.within(400, 499);",
+                      "});"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "4.1.5 List Documents",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{empToken}}"
+                  }
+                ],
+                "url": {
+          "raw": "{{baseUrl}}/api/documents",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "documents"
+                  ],
+          "query": []
+                },
+        "description": "List documents in the authenticated owner's inventory. The owner is derived from the Bearer token; no owner_id query parameter is required."
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('Document list contains the uploaded document', function () {",
+                      "  pm.expect(pm.response.code).to.eql(200);",
+                      "  var docs = pm.response.json();",
+                      "  pm.expect(docs).to.be.an('array');",
+                      "  pm.expect(docs.some(function (doc) { return doc.id === pm.collectionVariables.get('documentId'); })).to.eql(true);",
+                      "});"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "4.1.6 Get Document Metadata (Should DENY)",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{empToken}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/documents/{{documentId}}",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "documents",
+                    "{{documentId}}"
+                  ]
+                },
+                "description": "Get document metadata before Task–Document attach.\n\nThe owner inventory can find the uploaded Document, but metadata requires an explicit PREVIEW Grant."
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('Document metadata is denied before PREVIEW grant', function () {",
+                      "  pm.expect(pm.response.code).to.eql(403);",
+                      "  pm.expect(pm.response.json().message).to.contain('NO_GRANT');",
+                      "});"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "4.1.7 List Document Versions (Should DENY)",
+              "request": {
+                "method": "GET",
+                "url": {
+                  "raw": "{{baseUrl}}/api/documents/{{documentId}}/versions",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "documents",
+                    "{{documentId}}",
+                    "versions"
+                  ]
+                },
+                "description": "List all versions of the document.\n\nThis standalone upload has no PREVIEW Grant yet, so the request is denied until 5.1 attaches and grants it.",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{empToken}}"
+                  }
+                ]
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('Document versions are denied before PREVIEW grant', function () {",
+                      "  pm.expect(pm.response.code).to.eql(403);",
+                      "});"
+                    ]
+                  }
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "4.2 Task–Document Sharing",
+          "description": "Attach a document to a task and grant the assignee PREVIEW and DOWNLOAD. Use the assignee token for the positive access checks.",
+          "item": [
+            {
+              "name": "4.2.1 Attach Document and Grant Assignee (PREVIEW + DOWNLOAD)",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{creatorToken}}"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"document_id\": \"{{documentId}}\",\n  \"grants\": [\n    {\n      \"actor_id\": \"{{assigneeId}}\",\n      \"permissions\": [\"PREVIEW\", \"DOWNLOAD\"],\n      \"expires_at\": \"{{grantExpiresAt}}\"\n    }\n  ]\n}"
+                },
+                "url": {
+                  "raw": "{{baseUrl}}/api/tasks/{{taskId}}/documents",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "tasks",
+                    "{{taskId}}",
+                    "documents"
+                  ]
+                },
+                "description": "Creator attaches the uploaded Document to the assigned Task and creates one explicit task-scoped Grant for the Assignee. The backend validates the Task, direct recipient, Document ownership/share authority, Task–Document association, and expiry. It saves both association and Grant IDs automatically."
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('Association and explicit task grant are created', function () {",
+                      "  pm.expect(pm.response.code).to.be.oneOf([200, 201]);",
+                      "  var res = pm.response.json();",
+                      "  pm.expect(res.association.id).to.be.a('string');",
+                      "  pm.expect(res.association.task_id).to.eql(pm.collectionVariables.get('taskId'));",
+                      "  pm.expect(res.association.document_id).to.eql(pm.collectionVariables.get('documentId'));",
+                      "  pm.expect(res.grants).to.be.an('array').and.not.empty;",
+                      "  pm.expect(res.grants[0].actor_id).to.eql(pm.collectionVariables.get('assigneeId'));",
+                      "  pm.expect(res.grants[0].task_id).to.eql(pm.collectionVariables.get('taskId'));",
+                      "  pm.expect(res.grants[0].resource_id).to.eql(pm.collectionVariables.get('documentId'));",
+                      "  pm.expect(res.grants[0].permissions).to.include.members(['PREVIEW', 'DOWNLOAD']);",
+                      "  pm.collectionVariables.set('taskDocumentAssociationId', res.association.id);",
+                      "  pm.collectionVariables.set('taskDocumentGrantId', res.grants[0].id);",
+                      "});"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "4.2.2 List Accessible Task Documents as Assignee",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{assigneeToken}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/tasks/{{taskId}}/documents",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "tasks",
+                    "{{taskId}}",
+                    "documents"
+                  ]
+                },
+                "description": "Returns only attached Documents for which the Assignee has a valid PREVIEW Grant scoped to this Task. Direct Task membership alone is not enough."
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('Assignee sees only explicitly accessible task documents', function () {",
+                      "  pm.expect(pm.response.code).to.eql(200);",
+                      "  var rows = pm.response.json();",
+                      "  pm.expect(rows).to.be.an('array');",
+                      "  var row = rows.find(function (entry) { return entry.document_id === pm.collectionVariables.get('documentId'); });",
+                      "  pm.expect(row).to.exist;",
+                      "  pm.expect(row.permissions).to.include.members(['PREVIEW', 'DOWNLOAD']);",
+                      "});"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "4.2.3 Get Shared Document Metadata as Assignee",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{assigneeToken}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/documents/{{documentId}}",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "documents",
+                    "{{documentId}}"
+                  ]
+                },
+                "description": "Document detail succeeds because the Assignee has a valid task-scoped PREVIEW Grant and the association still exists."
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('Shared metadata is visible without object storage key', function () {",
+                      "  pm.expect(pm.response.code).to.eql(200);",
+                      "  var res = pm.response.json();",
+                      "  pm.expect(res.id).to.eql(pm.collectionVariables.get('documentId'));",
+                      "  pm.expect(res).not.to.have.property('object_key');",
+                      "});"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "4.2.4 Request Download Ticket as Assignee",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{assigneeToken}}"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"task_id\": \"{{taskId}}\",\n  \"version\": {{docVersion}},\n  \"expires_in_seconds\": 900\n}"
+                },
+                "url": {
+                  "raw": "{{baseUrl}}/api/documents/{{documentId}}/download-ticket",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "documents",
+                    "{{documentId}}",
+                    "download-ticket"
+                  ]
+                },
+                "description": "Requires DOWNLOAD on the Document. The ticket is bound to this Assignee and checked again at redemption."
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('Download ticket is bound to task, document, actor, and version', function () {",
+                      "  pm.expect(pm.response.code).to.be.oneOf([200, 201]);",
+                      "  var res = pm.response.json();",
+                      "  pm.expect(res.id).to.be.a('string');",
+                      "  pm.expect(res.document_id).to.eql(pm.collectionVariables.get('documentId'));",
+                      "  pm.expect(res.task_id).to.eql(pm.collectionVariables.get('taskId'));",
+                      "  pm.expect(res.version).to.eql(Number(pm.collectionVariables.get('docVersion')));",
+                      "  pm.expect(res.actor_id).to.eql(pm.collectionVariables.get('assigneeId'));",
+                      "  pm.collectionVariables.set('downloadTicketId', res.id);",
+                      "});"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "4.2.5 Redeem Download Ticket as Assignee",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{assigneeToken}}"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"ticket_id\": \"{{downloadTicketId}}\"\n}"
+                },
+                "url": {
+                  "raw": "{{baseUrl}}/api/documents/{{documentId}}/versions/{{docVersion}}/redeem",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "documents",
+                    "{{documentId}}",
+                    "versions",
+                    "{{docVersion}}",
+                    "redeem"
+                  ]
+                },
+                "description": "Streams plaintext only after ticket, grant, association, signature, and checksum checks pass."
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('Download ticket redeems to plaintext once', function () {",
+                      "  pm.expect(pm.response.code).to.eql(200);",
+                      "  var contentType = pm.response.headers.get('content-type') || '';",
+                      "  pm.expect(contentType).not.to.include('application/json');",
+                      "});"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "4.2.6 Unrelated Employee Lists Task Documents (Should REJECT)",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{archivistToken}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/tasks/{{taskId}}/documents",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "tasks",
+                    "{{taskId}}",
+                    "documents"
+                  ]
+                },
+                "description": "An Employee who is not the Creator, current Assignee, or explicit Task Participant must receive 403."
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('Unrelated employee is denied task-document listing', function () {",
+                      "  pm.expect(pm.response.code).to.eql(403);",
+                      "});"
+                    ]
+                  }
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "4.3 Permission Management",
+          "description": "Create, inspect, delegate, and revoke task-scoped document grants. PREVIEW controls reading; DOWNLOAD controls ticket creation.",
+          "item": [
+            {
+              "name": "4.3.1 Create Grant (PREVIEW + DOWNLOAD + DISPOSE)",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{adminToken}}"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"grantor_id\": \"{{adminId}}\",\n  \"actor_id\": \"{{assigneeId}}\",\n  \"resource_type\": \"DOCUMENT\",\n  \"resource_id\": \"{{documentId}}\",\n  \"permissions\": [\"PREVIEW\", \"DOWNLOAD\", \"DISPOSE\"],\n  \"task_id\": \"{{taskId}}\",\n  \"expires_at\": \"{{grantExpiresAt}}\"\n}"
+                },
+                "url": {
+                  "raw": "{{baseUrl}}/api/permissions/grants",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "permissions",
+                    "grants"
+                  ]
+                },
+                "description": "Create a primary grant as ADMIN for the employee. The request goes through the Gateway; the employee token is intentionally not used because primary-grant creation is an administrator operation.\n\ntask_id is required — grants must be justified by a task.\nexpires_at caps when the grant becomes inactive."
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('Admin primary grant is task-bound and capped', function () {",
+                      "  pm.expect(pm.response.code).to.eql(201);",
+                      "  var res = pm.response.json();",
+                      "  pm.expect(res.id).to.be.a('string');",
+                      "  pm.expect(res.grantor_id).to.eql(pm.collectionVariables.get('adminId'));",
+                      "  pm.expect(res.actor_id).to.eql(pm.collectionVariables.get('assigneeId'));",
+                      "  pm.expect(res.resource_type).to.eql('DOCUMENT');",
+                      "  pm.expect(res.resource_id).to.eql(pm.collectionVariables.get('documentId'));",
+                      "  pm.expect(res.task_id).to.eql(pm.collectionVariables.get('taskId'));",
+                      "  pm.expect(res.status).to.eql('ACTIVE');",
+                      "  pm.expect(res.permissions).to.include.members(['PREVIEW', 'DOWNLOAD', 'DISPOSE']);",
+                      "  pm.expect(new Date(res.effective_expires_at).getTime()).to.be.at.most(new Date(res.expires_at).getTime());",
+                      "  pm.collectionVariables.set('grantId', res.id);",
+                      "});"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "4.3.2 Check Permission (PREVIEW) [INTERNAL DIAGNOSTIC]",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"actor_id\": \"{{assigneeId}}\",\n  \"actor_role\": \"EMPLOYEE\",\n  \"resource_type\": \"DOCUMENT\",\n  \"resource_id\": \"{{documentId}}\",\n  \"action\": \"PREVIEW\",\n  \"task_id\": \"{{taskId}}\",\n  \"correlation_id\": \"{{$uuid}}\"\n}"
+                },
+                "url": {
+                  "raw": "{{permUrl}}/internal/permissions/check",
+                  "host": [
+                    "{{permUrl}}"
+                  ],
+                  "path": [
+                    "internal",
+                    "permissions",
+                    "check"
+                  ]
+                },
+                "description": "INTERNAL DIAGNOSTIC ONLY — call the Permission Service directly to evaluate a decision. The public Gateway intentionally rejects /api/permissions/internal/* requests.\n\nShould return { allowed: true } after grant creation.\n\nNote: ADMIN + any content action = DENIED (ADMIN_CONTENT_DENIED)."
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('Permission diagnostic allows PREVIEW only with task context', function () {",
+                      "  pm.expect(pm.response.code).to.eql(200);",
+                      "  var res = pm.response.json();",
+                      "  pm.expect(res.allowed).to.eql(true);",
+                      "  pm.expect(res.effective_expires_at).to.be.a('string');",
+                      "});"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "4.3.3 Check Permission (DOWNLOAD) [INTERNAL DIAGNOSTIC]",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"actor_id\": \"{{assigneeId}}\",\n  \"actor_role\": \"EMPLOYEE\",\n  \"resource_type\": \"DOCUMENT\",\n  \"resource_id\": \"{{documentId}}\",\n  \"action\": \"DOWNLOAD\",\n  \"task_id\": \"{{taskId}}\",\n  \"correlation_id\": \"{{$uuid}}\"\n}"
+                },
+                "url": {
+                  "raw": "{{permUrl}}/internal/permissions/check",
+                  "host": [
+                    "{{permUrl}}"
+                  ],
+                  "path": [
+                    "internal",
+                    "permissions",
+                    "check"
+                  ]
+                },
+                "description": "INTERNAL DIAGNOSTIC ONLY — call the Permission Service directly to evaluate a decision. The public Gateway intentionally rejects /api/permissions/internal/* requests.\n\nRequired before creating a download ticket."
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('Permission diagnostic allows DOWNLOAD only with task context', function () {",
+                      "  pm.expect(pm.response.code).to.eql(200);",
+                      "  var res = pm.response.json();",
+                      "  pm.expect(res.allowed).to.eql(true);",
+                      "  pm.expect(res.effective_expires_at).to.be.a('string');",
+                      "});"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "4.3.4 Delegate Permission Outside Parent (Should REJECT)",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{assigneeToken}}"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"actor_id\": \"{{empId}}\",\n  \"permissions\": [\"UPDATE\"]\n}"
+                },
+                "url": {
+                  "raw": "{{baseUrl}}/api/permissions/grants/{{grantId}}/delegate",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "permissions",
+                    "grants",
+                    "{{grantId}}",
+                    "delegate"
                   ]
                 }
-              }
-            ]
-          }
-        },
-        {
-          "name": "4.2 Upload State-Secret Document (Should REJECT)",
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Authorization",
-                "value": "Bearer {{empToken}}"
-              }
-            ],
-            "body": {
-              "mode": "formdata",
-              "formdata": [
+              },
+              "event": [
                 {
-                  "key": "file",
-                  "type": "file",
-                  "src": ""
-                },
-                {
-                  "key": "title",
-                  "value": "State Secret {{$timestamp}}",
-                  "type": "text"
-                },
-                {
-                  "key": "document_type",
-                  "value": "MEMO",
-                  "type": "text"
-                },
-                {
-                  "key": "owner_id",
-                  "value": "{{empId}}",
-                  "type": "text"
-                },
-                {
-                  "key": "declared_state_secret",
-                  "value": "true",
-                  "type": "text"
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('Delegation cannot exceed parent permissions', function () {",
+                      "  pm.expect(pm.response.code).to.be.within(400, 499);",
+                      "});"
+                    ]
+                  }
                 }
               ]
             },
-            "url": {
-              "raw": "{{baseUrl}}/api/documents/upload",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "documents",
-                "upload"
-              ]
-            },
-            "description": "Upload with declared_state_secret=true.\n\nThis should be REJECTED (400) before Document creation.\nNo Document row, no MinIO objects, no Grants are created.\nA safe denial Audit event is recorded.\n\nSelect any file in the 'file' field."
-          }
-        },
-        {
-          "name": "4.3 Upload Infected File (ClamAV REJECT)",
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Authorization",
-                "value": "Bearer {{empToken}}"
-              }
-            ],
-            "body": {
-              "mode": "formdata",
-              "formdata": [
-                {
-                  "key": "file",
-                  "type": "text",
-                  "value": "X5O!P%@AP[4\\PZX54(P^)7CC)7}$EICAR-STANDARD-ANTIVIRUS-TEST-FILE!$H+H*"
+            {
+              "name": "4.3.5 Admin Content Permission Decision (allowed=false)",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"actor_id\": \"{{adminId}}\",\n  \"actor_role\": \"ADMIN\",\n  \"resource_type\": \"DOCUMENT\",\n  \"resource_id\": \"{{documentId}}\",\n  \"action\": \"PREVIEW\",\n  \"task_id\": \"{{taskId}}\",\n  \"correlation_id\": \"{${uuid}}\"\n}"
                 },
+                "url": {
+                  "raw": "{{permUrl}}/internal/permissions/check",
+                  "host": [
+                    "{{permUrl}}"
+                  ],
+                  "path": [
+                    "internal",
+                    "permissions",
+                    "check"
+                  ]
+                }
+              },
+              "event": [
                 {
-                  "key": "title",
-                  "value": "EICAR Test {{$timestamp}}",
-                  "type": "text"
-                },
-                {
-                  "key": "document_type",
-                  "value": "MEMO",
-                  "type": "text"
-                },
-                {
-                  "key": "owner_id",
-                  "value": "{{empId}}",
-                  "type": "text"
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('ADMIN content access is hard-denied', function () {",
+                      "  pm.expect(pm.response.code).to.eql(200);",
+                      "  var res = pm.response.json();",
+                      "  pm.expect(res.allowed).to.eql(false);",
+                      "  pm.expect(res.reason_code).to.eql('ADMIN_CONTENT_DENIED');",
+                      "});"
+                    ]
+                  }
                 }
               ]
             },
-            "url": {
-              "raw": "{{baseUrl}}/api/documents/upload",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "documents",
-                "upload"
-              ]
-            },
-            "description": "Upload the EICAR antivirus test file.\n\nClamAV will detect it and reject the upload (HTTP 400+).\nNo Document row or MinIO object remains after rejection.\n\nThe EICAR string is the standard antivirus test file."
-          }
-        },
-        {
-          "name": "4.4 List Documents",
-          "request": {
-            "method": "GET",
-            "header": [
-              {
-                "key": "Authorization",
-                "value": "Bearer {{empToken}}"
-              }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/api/documents?owner_id={{empId}}",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "documents"
-              ],
-              "query": [
+            {
+              "name": "4.3.6 Delegate Grant",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{assigneeToken}}"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"actor_id\": \"{{empId}}\",\n  \"permissions\": [\"PREVIEW\"]\n}"
+                },
+                "url": {
+                  "raw": "{{baseUrl}}/api/permissions/grants/{{grantId}}/delegate",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "permissions",
+                    "grants",
+                    "{{grantId}}",
+                    "delegate"
+                  ]
+                },
+                "description": "Delegate a visible employee grant through the Gateway. The authenticated caller must be the grant actor or grantor; the target actor_id is only the delegation recipient.\n\nChild grant's permissions ⊆ parent permissions.\nChild's effective_expires_at ≤ parent's."
+              },
+              "event": [
                 {
-                  "key": "owner_id",
-                  "value": "{{empId}}"
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('Delegation is a bounded subset to a direct participant', function () {",
+                      "  pm.expect(pm.response.code).to.eql(200);",
+                      "  var res = pm.response.json();",
+                      "  pm.expect(res.actor_id).to.eql(pm.collectionVariables.get('empId'));",
+                      "  pm.expect(res.parent_grant_id).to.eql(pm.collectionVariables.get('grantId'));",
+                      "  pm.expect(res.permissions).to.eql(['PREVIEW']);",
+                      "  pm.expect(res.task_id).to.eql(pm.collectionVariables.get('taskId'));",
+                      "  pm.expect(new Date(res.effective_expires_at).getTime()).to.be.at.most(new Date(pm.collectionVariables.get('grantExpiresAt')).getTime());",
+                      "  pm.collectionVariables.set('delegatedGrantId', res.id);",
+                      "});"
+                    ]
+                  }
                 }
               ]
             },
-            "description": "List documents owned by the employee."
-          }
-        },
-        {
-          "name": "4.5 Get Document Metadata",
-          "request": {
-            "method": "GET",
-            "header": [
-              {
-                "key": "Authorization",
-                "value": "Bearer {{empToken}}"
-              }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/api/documents/{{documentId}}",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "documents",
-                "{{documentId}}"
+            {
+              "name": "4.3.7 Revoke Grant",
+              "request": {
+                "method": "DELETE",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{assigneeToken}}"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"reason\": \"Access no longer needed\"\n}"
+                },
+                "url": {
+                  "raw": "{{baseUrl}}/api/permissions/grants/{{grantId}}",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "permissions",
+                    "grants",
+                    "{{grantId}}"
+                  ]
+                },
+                "description": "Revoke the visible employee grant through the Gateway. The authenticated caller must be the grant actor or grantor.\n\nCascades to all descendant grants. No residual access survives."
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('Revoking parent grant cascades', function () {",
+                      "  pm.expect(pm.response.code).to.eql(200);",
+                      "  var res = pm.response.json();",
+                      "  pm.expect(res.id).to.eql(pm.collectionVariables.get('grantId'));",
+                      "  pm.expect(res.status).to.eql('REVOKED');",
+                      "  pm.expect(res.revoked_at).to.be.a('string');",
+                      "});"
+                    ]
+                  }
+                }
               ]
             },
-            "description": "Get document metadata.\n\nRequires PREVIEW permission on the document."
-          }
-        },
-        {
-          "name": "4.6 List Document Versions",
-          "request": {
-            "method": "GET",
-            "url": {
-              "raw": "{{baseUrl}}/api/documents/{{documentId}}/versions",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "documents",
-                "{{documentId}}",
-                "versions"
+            {
+              "name": "4.3.8 List Grants",
+              "request": {
+                "method": "GET",
+                "url": {
+                  "raw": "{{baseUrl}}/api/permissions/grants?task_id={{taskId}}&resource_id={{documentId}}",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "permissions",
+                    "grants"
+                  ],
+                  "query": [
+                    {
+                      "key": "task_id",
+                      "value": "{{taskId}}"
+                    },
+                    {
+                      "key": "resource_id",
+                      "value": "{{documentId}}"
+                    }
+                  ]
+                },
+                "description": "List the authenticated employee's grants. The Gateway/service scope actor_id to the caller; changing it to another user should return 403.\n\nThis is the public client route.",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{adminToken}}"
+                  }
+                ]
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('Grant listing shows parent and delegated grants revoked', function () {",
+                      "  pm.expect(pm.response.code).to.eql(200);",
+                      "  var grants = pm.response.json();",
+                      "  pm.expect(grants).to.be.an('array');",
+                      "  var parent = grants.find(function (grant) { return grant.id === pm.collectionVariables.get('grantId'); });",
+                      "  var child = grants.find(function (grant) { return grant.id === pm.collectionVariables.get('delegatedGrantId'); });",
+                      "  pm.expect(parent.status).to.eql('REVOKED');",
+                      "  pm.expect(child.status).to.eql('REVOKED');",
+                      "});"
+                    ]
+                  }
+                }
               ]
             },
-            "description": "List all versions of the document.",
-            "header": [
-              {
-                "key": "Authorization",
-                "value": "Bearer {{empToken}}"
-              }
-            ]
-          }
+            {
+              "name": "4.3.9 Get Delegated Grant After Parent Revoke",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{adminToken}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/permissions/grants/{{delegatedGrantId}}",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "permissions",
+                    "grants",
+                    "{{delegatedGrantId}}"
+                  ]
+                },
+                "description": "Inspect the delegated grant and verify its cascade status."
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('Delegated grant remains linked and revoked', function () {",
+                      "  pm.expect(pm.response.code).to.eql(200);",
+                      "  var res = pm.response.json();",
+                      "  pm.expect(res.status).to.eql('REVOKED');",
+                      "  pm.expect(res.parent_grant_id).to.eql(pm.collectionVariables.get('grantId'));",
+                      "});"
+                    ]
+                  }
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "4.4 Secure Download",
+          "description": "Request a download ticket with DOWNLOAD permission, redeem it once, and verify replay is denied.",
+          "item": [
+            {
+              "name": "4.4.1 Create Download Ticket",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{assigneeToken}}"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"task_id\": \"{{taskId}}\",\n  \"version\": {{docVersion}},\n  \"expires_in_seconds\": 3600\n}"
+                },
+                "url": {
+                  "raw": "{{baseUrl}}/api/documents/{{documentId}}/download-ticket",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "documents",
+                    "{{documentId}}",
+                    "download-ticket"
+                  ]
+                },
+                "description": "Create a time-limited download ticket.\n\nRequires DOWNLOAD permission.\nTicket is single-use, capped at grant.effective_expires_at."
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('Secure ticket creation requires and preserves task context', function () {",
+                      "  pm.expect(pm.response.code).to.be.oneOf([200, 201]);",
+                      "  var res = pm.response.json();",
+                      "  pm.expect(res.id).to.be.a('string');",
+                      "  pm.expect(res.document_id).to.eql(pm.collectionVariables.get('documentId'));",
+                      "  pm.expect(res.task_id).to.eql(pm.collectionVariables.get('taskId'));",
+                      "  pm.expect(res.actor_id).to.eql(pm.collectionVariables.get('assigneeId'));",
+                      "  pm.collectionVariables.set('downloadTicketId2', res.id);",
+                      "});"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "4.4.2 Redeem Ticket (Download Plaintext)",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{empToken}}"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"ticket_id\": \"{{downloadTicketId2}}\"\n}"
+                },
+                "url": {
+                  "raw": "{{baseUrl}}/api/documents/{{documentId}}/versions/{{docVersion}}/redeem",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "documents",
+                    "{{documentId}}",
+                    "versions",
+                    "{{docVersion}}",
+                    "redeem"
+                  ]
+                },
+                "description": "Redeem the download ticket.\n\nFlow:\n1. Validates ticket (matches doc, version, actor, not used, not expired)\n2. Calls Document Security to retrieve ciphertext from MinIO\n3. Unwraps DEK using KEK\n4. AES-256-GCM decrypt\n5. Verifies SHA-256 checksum\n6. Streams plaintext back\n\nResponse: application/octet-stream (raw file bytes)\n\nIMPORTANT: The ticket is now USED and cannot be redeemed again."
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('Secure ticket redeems to non-JSON plaintext', function () {",
+                      "  pm.expect(pm.response.code).to.eql(200);",
+                      "  pm.expect(pm.response.headers.get('content-type') || '').not.to.include('application/json');",
+                      "});"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "4.4.3 Replay Ticket (Should DENY)",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{empToken}}"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"ticket_id\": \"{{downloadTicketId2}}\"\n}"
+                },
+                "url": {
+                  "raw": "{{baseUrl}}/api/documents/{{documentId}}/versions/{{docVersion}}/redeem",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "documents",
+                    "{{documentId}}",
+                    "versions",
+                    "{{docVersion}}",
+                    "redeem"
+                  ]
+                },
+                "description": "Attempt to replay a used ticket.\n\nShould return 403 with reason_code: DOWNLOAD_TICKET_ALREADY_USED.\nTickets are single-use by design."
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('Used secure ticket cannot be replayed', function () {",
+                      "  pm.expect(pm.response.code).to.be.within(400, 499);",
+                      "});"
+                    ]
+                  }
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "4.5 Detach & Revoke Lifecycle",
+          "description": "Detach the document from the task, revoke task-scoped grants, and verify the assignee loses document access.",
+          "item": [
+            {
+              "name": "4.5.1 Detach Document and Revoke Task Grants",
+              "request": {
+                "method": "DELETE",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{creatorToken}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/tasks/{{taskId}}/documents/{{documentId}}",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "tasks",
+                    "{{taskId}}",
+                    "documents",
+                    "{{documentId}}"
+                  ]
+                },
+                "description": "Detaches only this Task–Document association and revokes Grants with this task_id. The Document, versions, MinIO object, and Grants belonging to another Task remain intact."
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('Detaching removes association and revokes task grants', function () {",
+                      "  pm.expect(pm.response.code).to.eql(204);",
+                      "});"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "4.5.2 Verify Task-Scoped Grant Revoked",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{adminToken}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/permissions/grants?task_id={{taskId}}&resource_id={{documentId}}",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "permissions",
+                    "grants"
+                  ],
+                  "query": [
+                    {
+                      "key": "task_id",
+                      "value": "{{taskId}}"
+                    },
+                    {
+                      "key": "resource_id",
+                      "value": "{{documentId}}"
+                    }
+                  ]
+                },
+                "description": "The task-document grant remains as a revoked audit record after association removal."
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('Detach cascades to task-scoped grant', function () {",
+                      "  pm.expect(pm.response.code).to.eql(200);",
+                      "  var grants = pm.response.json();",
+                      "  var grant = grants.find(function (entry) { return entry.id === pm.collectionVariables.get('taskDocumentGrantId'); });",
+                      "  pm.expect(grant).to.exist;",
+                      "  pm.expect(grant.status).to.eql('REVOKED');",
+                      "});"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "4.5.3 Assignee Access After Detach (Should REJECT)",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{assigneeToken}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/documents/{{documentId}}",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "documents",
+                    "{{documentId}}"
+                  ]
+                },
+                "description": "Should return 403 after detach because the task-scoped Grant's association is no longer valid."
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('Assignee loses document access after detach', function () {",
+                      "  pm.expect(pm.response.code).to.eql(403);",
+                      "});"
+                    ]
+                  }
+                }
+              ]
+            }
+          ]
         }
       ]
     },
     {
-      "name": "5. Task–Document Sharing",
-      "description": "A Task–Document association is required before any task-scoped Document Grant is valid. Task membership alone never grants Document access. Recommended order: 3.1 → 3.4 → 4.1 → 5.1 → 5.2 → 5.3 → 5.4 → 5.5 → 5.6 → 5.7 → 5.8.",
-      "item": [
-        {
-          "name": "5.1 Attach Document and Grant Assignee (PREVIEW + DOWNLOAD)",
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              },
-              {
-                "key": "Authorization",
-                "value": "Bearer {{creatorToken}}"
-              }
-            ],
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"document_id\": \"{{documentId}}\",\n  \"grants\": [\n    {\n      \"actor_id\": \"{{assigneeId}}\",\n      \"permissions\": [\"PREVIEW\", \"DOWNLOAD\"],\n      \"expires_at\": \"{{grantExpiresAt}}\"\n    }\n  ]\n}"
-            },
-            "url": {
-              "raw": "{{baseUrl}}/api/tasks/{{taskId}}/documents",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "tasks",
-                "{{taskId}}",
-                "documents"
-              ]
-            },
-            "description": "Creator attaches the uploaded Document to the assigned Task and creates one explicit task-scoped Grant for the Assignee. The backend validates the Task, direct recipient, Document ownership/share authority, Task–Document association, and expiry. It saves both association and Grant IDs automatically.",
-            "event": [
-              {
-                "listen": "test",
-                "script": {
-                  "exec": [
-                    "pm.test('Task document attach succeeded', function () { pm.expect(pm.response.code).to.be.oneOf([200, 201]); });",
-                    "var res = pm.response.json();",
-                    "if (res.association && res.association.id) pm.collectionVariables.set('taskDocumentAssociationId', res.association.id);",
-                    "if (res.grants && res.grants[0] && res.grants[0].id) pm.collectionVariables.set('taskDocumentGrantId', res.grants[0].id);",
-                    "console.log('TaskDocument association and Grant IDs saved.');"
-                  ]
-                }
-              }
-            ]
-          }
-        },
-        {
-          "name": "5.2 List Accessible Task Documents as Assignee",
-          "request": {
-            "method": "GET",
-            "header": [
-              {
-                "key": "Authorization",
-                "value": "Bearer {{assigneeToken}}"
-              }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/api/tasks/{{taskId}}/documents",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "tasks",
-                "{{taskId}}",
-                "documents"
-              ]
-            },
-            "description": "Returns only attached Documents for which the Assignee has a valid PREVIEW Grant scoped to this Task. Direct Task membership alone is not enough."
-          }
-        },
-        {
-          "name": "5.3 Get Shared Document Metadata as Assignee",
-          "request": {
-            "method": "GET",
-            "header": [
-              {
-                "key": "Authorization",
-                "value": "Bearer {{assigneeToken}}"
-              }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/api/documents/{{documentId}}",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "documents",
-                "{{documentId}}"
-              ]
-            },
-            "description": "Document detail succeeds because the Assignee has a valid task-scoped PREVIEW Grant and the association still exists."
-          }
-        },
-        {
-          "name": "5.4 Request Download Ticket as Assignee",
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              },
-              {
-                "key": "Authorization",
-                "value": "Bearer {{assigneeToken}}"
-              }
-            ],
-            "body": {
-              "mode": "raw",
-          "raw": "{\n  \"task_id\": \"{{taskId}}\",\n  \"version\": {{docVersion}},\n  \"expires_in_seconds\": 900\n}"
-            },
-            "url": {
-              "raw": "{{baseUrl}}/api/documents/{{documentId}}/download-ticket",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "documents",
-                "{{documentId}}",
-                "download-ticket"
-              ]
-            },
-            "description": "Requires DOWNLOAD on the Document. The ticket is bound to this Assignee and checked again at redemption.",
-            "event": [
-              {
-                "listen": "test",
-                "script": {
-                  "exec": [
-                    "if (pm.response.code === 201 || pm.response.code === 200) {",
-                    "  var res = pm.response.json();",
-                    "  if (res.id) pm.collectionVariables.set('downloadTicketId', res.id);",
-                    "}"
-                  ]
-                }
-              }
-            ]
-          }
-        },
-        {
-          "name": "5.5 Redeem Download Ticket as Assignee",
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              },
-              {
-                "key": "Authorization",
-                "value": "Bearer {{assigneeToken}}"
-              }
-            ],
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"ticket_id\": \"{{downloadTicketId}}\"\n}"
-            },
-            "url": {
-              "raw": "{{baseUrl}}/api/documents/{{documentId}}/versions/{{docVersion}}/redeem",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "documents",
-                "{{documentId}}",
-                "versions",
-                "{{docVersion}}",
-                "redeem"
-              ]
-            },
-            "description": "Streams plaintext only after ticket, grant, association, signature, and checksum checks pass."
-          }
-        },
-        {
-          "name": "5.6 Unrelated Employee Lists Task Documents (Should REJECT)",
-          "request": {
-            "method": "GET",
-            "header": [
-              {
-                "key": "Authorization",
-                "value": "Bearer {{archivistToken}}"
-              }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/api/tasks/{{taskId}}/documents",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "tasks",
-                "{{taskId}}",
-                "documents"
-              ]
-            },
-            "description": "An Employee who is not the Creator, current Assignee, or explicit Task Participant must receive 403."
-          }
-        },
-        {
-          "name": "5.7 Detach Document and Revoke Task Grants",
-          "request": {
-            "method": "DELETE",
-            "header": [
-              {
-                "key": "Authorization",
-                "value": "Bearer {{creatorToken}}"
-              }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/api/tasks/{{taskId}}/documents/{{documentId}}",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "tasks",
-                "{{taskId}}",
-                "documents",
-                "{{documentId}}"
-              ]
-            },
-            "description": "Detaches only this Task–Document association and revokes Grants with this task_id. The Document, versions, MinIO object, and Grants belonging to another Task remain intact."
-          }
-        },
-        {
-          "name": "5.8 Assignee Access After Detach (Should REJECT)",
-          "request": {
-            "method": "GET",
-            "header": [
-              {
-                "key": "Authorization",
-                "value": "Bearer {{assigneeToken}}"
-              }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/api/documents/{{documentId}}",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "documents",
-                "{{documentId}}"
-              ]
-            },
-            "description": "Should return 403 after detach because the task-scoped Grant's association is no longer valid."
-          }
-        }
-      ]
-    },
-    {
-      "name": "5. Permission Management",
-      "description": "Manage grants, delegation, and revocation. Permissions control who can access which documents.",
-      "item": [
-        {
-          "name": "5.1 Create Grant (PREVIEW + DOWNLOAD + DISPOSE)",
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              },
-              {
-                "key": "Authorization",
-                "value": "Bearer {{adminToken}}"
-              }
-            ],
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"grantor_id\": \"{{adminId}}\",\n  \"actor_id\": \"{{assigneeId}}\",\n  \"resource_type\": \"DOCUMENT\",\n  \"resource_id\": \"{{documentId}}\",\n  \"permissions\": [\"PREVIEW\", \"DOWNLOAD\", \"DISPOSE\"],\n  \"task_id\": \"{{taskId}}\",\n  \"expires_at\": \"{{grantExpiresAt}}\"\n}"
-            },
-            "url": {
-              "raw": "{{baseUrl}}/api/permissions/grants",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "permissions",
-                "grants"
-              ]
-            },
-            "description": "Create a primary grant as ADMIN for the employee. The request goes through the Gateway; the employee token is intentionally not used because primary-grant creation is an administrator operation.\n\ntask_id is required — grants must be justified by a task.\nexpires_at caps when the grant becomes inactive.",
-            "event": [
-              {
-                "listen": "test",
-                "script": {
-                  "exec": [
-                    "if (pm.response.code === 201) {",
-                    "  var res = pm.response.json();",
-                    "  if (res.id) {",
-                    "    pm.collectionVariables.set('grantId', res.id);",
-                    "    console.log('Grant ID saved: ' + res.id);",
-                    "  }",
-                    "}"
-                  ]
-                }
-              }
-            ]
-          }
-        },
-        {
-          "name": "5.2 Check Permission (PREVIEW) [INTERNAL DIAGNOSTIC]",
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"actor_id\": \"{{empId}}\",\n  \"actor_role\": \"EMPLOYEE\",\n  \"resource_type\": \"DOCUMENT\",\n  \"resource_id\": \"{{documentId}}\",\n  \"action\": \"PREVIEW\",\n  \"correlation_id\": \"{{$uuid}}\"\n}"
-            },
-            "url": {
-              "raw": "{{permUrl}}/internal/permissions/check",
-              "host": [
-                "{{permUrl}}"
-              ],
-              "path": [
-                "internal",
-                "permissions",
-                "check"
-              ]
-            },
-            "description": "INTERNAL DIAGNOSTIC ONLY — call the Permission Service directly to evaluate a decision. The public Gateway intentionally rejects /api/permissions/internal/* requests.\n\nShould return { allowed: true } after grant creation.\n\nNote: ADMIN + any content action = DENIED (ADMIN_CONTENT_DENIED)."
-          }
-        },
-        {
-          "name": "5.3 Check Permission (DOWNLOAD) [INTERNAL DIAGNOSTIC]",
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"actor_id\": \"{{empId}}\",\n  \"actor_role\": \"EMPLOYEE\",\n  \"resource_type\": \"DOCUMENT\",\n  \"resource_id\": \"{{documentId}}\",\n  \"action\": \"DOWNLOAD\",\n  \"correlation_id\": \"{{$uuid}}\"\n}"
-            },
-            "url": {
-              "raw": "{{permUrl}}/internal/permissions/check",
-              "host": [
-                "{{permUrl}}"
-              ],
-              "path": [
-                "internal",
-                "permissions",
-                "check"
-              ]
-            },
-            "description": "INTERNAL DIAGNOSTIC ONLY — call the Permission Service directly to evaluate a decision. The public Gateway intentionally rejects /api/permissions/internal/* requests.\n\nRequired before creating a download ticket."
-          }
-        },
-        {
-          "name": "5.4 Delegate Grant",
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              },
-              {
-                "key": "Authorization",
-                "value": "Bearer {{empToken}}"
-              }
-            ],
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"actor_id\": \"00000000-0000-4000-a000-000000000099\",\n  \"permissions\": [\"PREVIEW\"]\n}"
-            },
-            "url": {
-              "raw": "{{baseUrl}}/api/permissions/grants/{{grantId}}/delegate",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "permissions",
-                "grants",
-                "{{grantId}}",
-                "delegate"
-              ]
-            },
-            "description": "Delegate a visible employee grant through the Gateway. The authenticated caller must be the grant actor or grantor; the target actor_id is only the delegation recipient.\n\nChild grant's permissions ⊆ parent permissions.\nChild's effective_expires_at ≤ parent's."
-          }
-        },
-        {
-          "name": "5.5 Revoke Grant",
-          "request": {
-            "method": "DELETE",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              },
-              {
-                "key": "Authorization",
-                "value": "Bearer {{empToken}}"
-              }
-            ],
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"reason\": \"Access no longer needed\"\n}"
-            },
-            "url": {
-              "raw": "{{baseUrl}}/api/permissions/grants/{{grantId}}",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "permissions",
-                "grants",
-                "{{grantId}}"
-              ]
-            },
-            "description": "Revoke the visible employee grant through the Gateway. The authenticated caller must be the grant actor or grantor.\n\nCascades to all descendant grants. No residual access survives."
-          }
-        },
-        {
-          "name": "5.6 List Grants",
-          "request": {
-            "method": "GET",
-            "url": {
-              "raw": "{{baseUrl}}/api/permissions/grants?actor_id={{empId}}",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "permissions",
-                "grants"
-              ],
-              "query": [
-                {
-                  "key": "actor_id",
-                  "value": "{{empId}}"
-                }
-              ]
-            },
-            "description": "List the authenticated employee's grants. The Gateway/service scope actor_id to the caller; changing it to another user should return 403.\n\nThis is the public client route.",
-            "header": [
-              {
-                "key": "Authorization",
-                "value": "Bearer {{empToken}}"
-              }
-            ]
-          }
-        }
-      ]
-    },
-    {
-      "name": "6. Secure Download",
-      "description": "Download documents via the secure ticket flow: create ticket → redeem ticket → receive decrypted plaintext.",
-      "item": [
-        {
-          "name": "6.1 Create Download Ticket",
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              },
-              {
-                "key": "Authorization",
-                "value": "Bearer {{empToken}}"
-              }
-            ],
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"version\": {{docVersion}},\n  \"expires_in_seconds\": 3600\n}"
-            },
-            "url": {
-              "raw": "{{baseUrl}}/api/documents/{{documentId}}/download-ticket",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "documents",
-                "{{documentId}}",
-                "download-ticket"
-              ]
-            },
-            "description": "Create a time-limited download ticket.\n\nRequires DOWNLOAD permission.\nTicket is single-use, capped at grant.effective_expires_at.",
-            "event": [
-              {
-                "listen": "test",
-                "script": {
-                  "exec": [
-                    "if (pm.response.code === 201) {",
-                    "  var res = pm.response.json();",
-                    "  if (res.ticket_id) {",
-                    "    pm.collectionVariables.set('ticketId', res.ticket_id);",
-                    "    console.log('Ticket ID saved: ' + res.ticket_id);",
-                    "  }",
-                    "}"
-                  ]
-                }
-              }
-            ]
-          }
-        },
-        {
-          "name": "6.2 Redeem Ticket (Download Plaintext)",
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              },
-              {
-                "key": "Authorization",
-                "value": "Bearer {{empToken}}"
-              }
-            ],
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"ticket_id\": \"{{ticketId}}\"\n}"
-            },
-            "url": {
-              "raw": "{{baseUrl}}/api/documents/{{documentId}}/versions/{{docVersion}}/redeem",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "documents",
-                "{{documentId}}",
-                "versions",
-                "{{docVersion}}",
-                "redeem"
-              ]
-            },
-            "description": "Redeem the download ticket.\n\nFlow:\n1. Validates ticket (matches doc, version, actor, not used, not expired)\n2. Calls Document Security to retrieve ciphertext from MinIO\n3. Unwraps DEK using KEK\n4. AES-256-GCM decrypt\n5. Verifies SHA-256 checksum\n6. Streams plaintext back\n\nResponse: application/octet-stream (raw file bytes)\n\nIMPORTANT: The ticket is now USED and cannot be redeemed again."
-          }
-        },
-        {
-          "name": "6.3 Replay Ticket (Should DENY)",
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              },
-              {
-                "key": "Authorization",
-                "value": "Bearer {{empToken}}"
-              }
-            ],
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"ticket_id\": \"{{ticketId}}\"\n}"
-            },
-            "url": {
-              "raw": "{{baseUrl}}/api/documents/{{documentId}}/versions/{{docVersion}}/redeem",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "documents",
-                "{{documentId}}",
-                "versions",
-                "{{docVersion}}",
-                "redeem"
-              ]
-            },
-            "description": "Attempt to replay a used ticket.\n\nShould return 403 with reason_code: DOWNLOAD_TICKET_ALREADY_USED.\nTickets are single-use by design."
-          }
-        }
-      ]
-    },
-    {
-      "name": "7. Audit Log",
+      "name": "5. Audit Log",
       "description": "Query the append-only, hash-chained audit trail. Verify chain integrity.",
       "item": [
         {
-          "name": "7.1 Get Audit Chain Head",
+          "name": "5.1 Get Audit Chain Head",
           "request": {
             "method": "GET",
             "url": {
@@ -2202,7 +3695,7 @@
           }
         },
         {
-          "name": "7.2 Verify Audit Chain Integrity",
+          "name": "5.2 Verify Audit Chain Integrity",
           "request": {
             "method": "POST",
             "url": {
@@ -2227,7 +3720,7 @@
           }
         },
         {
-          "name": "7.3 List Audit Events",
+          "name": "5.3 List Audit Events",
           "request": {
             "method": "GET",
             "url": {
@@ -2247,31 +3740,31 @@
                 }
               ]
             },
-            "description": "List recent audit events through the ADMIN-only Gateway route.\n\nQuery params: event_type, actor_id, resource_type, resource_id, limit, offset. The first returned event ID is saved for 7.4.",
+            "description": "List recent audit events through the ADMIN-only Gateway route.\n\nQuery params: event_type, actor_id, resource_type, resource_id, limit, offset. The first returned event ID is saved for 5.4.",
             "header": [
               {
                 "key": "Authorization",
                 "value": "Bearer {{adminToken}}"
               }
-            ],
-            "event": [
-              {
-                "listen": "test",
-                "script": {
-                  "exec": [
-                    "var res = pm.response.json();",
-                    "if (Array.isArray(res) && res[0] && res[0].id) {",
-                    "  pm.collectionVariables.set('auditEventId', res[0].id);",
-                    "  console.log('Audit event ID saved: ' + res[0].id);",
-                    "}"
-                  ]
-                }
-              }
             ]
-          }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "var res = pm.response.json();",
+                  "if (Array.isArray(res) && res[0] && res[0].id) {",
+                  "  pm.collectionVariables.set('auditEventId', res[0].id);",
+                  "  console.log('Audit event ID saved: ' + res[0].id);",
+                  "}"
+                ]
+              }
+            }
+          ]
         },
         {
-          "name": "7.4 Get Audit Event by ID",
+          "name": "5.4 Get Audit Event by ID",
           "request": {
             "method": "GET",
             "url": {
@@ -2298,11 +3791,11 @@
       ]
     },
     {
-      "name": "8. Records & Transfer Packages",
+      "name": "6. Records & Transfer Packages",
       "description": "Manage archival records and transfer packages. Requires ARCHIVE_SUBMIT capability for submission, ARCHIVE_RECEIVE for receiving.",
       "item": [
         {
-          "name": "8.1 Create Record",
+          "name": "6.1 Create Record",
           "request": {
             "method": "POST",
             "header": [
@@ -2329,27 +3822,27 @@
                 "records"
               ]
             },
-            "description": "Create a new record (EMPLOYEE only, ADMIN denied).\n\nRecord starts in DRAFT status.",
-            "event": [
-              {
-                "listen": "test",
-                "script": {
-                  "exec": [
-                    "if (pm.response.code === 201) {",
-                    "  var res = pm.response.json();",
-                    "  if (res.id) {",
-                    "    pm.collectionVariables.set('recordId', res.id);",
-                    "    console.log('Record ID saved: ' + res.id);",
-                    "  }",
-                    "}"
-                  ]
-                }
+            "description": "Create a new record (EMPLOYEE only, ADMIN denied).\n\nRecord starts in DRAFT status."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 201) {",
+                  "  var res = pm.response.json();",
+                  "  if (res.id) {",
+                  "    pm.collectionVariables.set('recordId', res.id);",
+                  "    console.log('Record ID saved: ' + res.id);",
+                  "  }",
+                  "}"
+                ]
               }
-            ]
-          }
+            }
+          ]
         },
         {
-          "name": "8.2 Add Entry to Record",
+          "name": "6.2 Add Entry to Record",
           "request": {
             "method": "POST",
             "header": [
@@ -2382,7 +3875,7 @@
           }
         },
         {
-          "name": "8.3 Seal Record",
+          "name": "6.3 Seal Record",
           "request": {
             "method": "POST",
             "header": [
@@ -2407,7 +3900,7 @@
           }
         },
         {
-          "name": "8.4 Create Transfer Package",
+          "name": "6.4 Create Transfer Package",
           "request": {
             "method": "POST",
             "header": [
@@ -2434,27 +3927,27 @@
                 "transfer-packages"
               ]
             },
-            "description": "Create a transfer package.\n\nRequires ARCHIVE_SUBMIT capability + a TRANSFER permission grant scoped to this record/package workflow. ADMIN is denied from this operation.",
-            "event": [
-              {
-                "listen": "test",
-                "script": {
-                  "exec": [
-                    "if (pm.response.code === 201) {",
-                    "  var res = pm.response.json();",
-                    "  if (res.id) {",
-                    "    pm.collectionVariables.set('transferPackageId', res.id);",
-                    "    console.log('Transfer Package ID saved: ' + res.id);",
-                    "  }",
-                    "}"
-                  ]
-                }
+            "description": "Create a transfer package.\n\nRequires ARCHIVE_SUBMIT capability + a TRANSFER permission grant scoped to this record/package workflow. ADMIN is denied from this operation."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 201) {",
+                  "  var res = pm.response.json();",
+                  "  if (res.id) {",
+                  "    pm.collectionVariables.set('transferPackageId', res.id);",
+                  "    console.log('Transfer Package ID saved: ' + res.id);",
+                  "  }",
+                  "}"
+                ]
               }
-            ]
-          }
+            }
+          ]
         },
         {
-          "name": "8.5 Submit Transfer Package",
+          "name": "6.5 Submit Transfer Package",
           "request": {
             "method": "POST",
             "header": [
@@ -2479,7 +3972,7 @@
           }
         },
         {
-          "name": "8.6 Receive Transfer Package",
+          "name": "6.6 Receive Transfer Package",
           "request": {
             "method": "POST",
             "header": [
@@ -2504,7 +3997,7 @@
           }
         },
         {
-          "name": "8.7 Accept Transfer Package",
+          "name": "6.7 Accept Transfer Package",
           "request": {
             "method": "POST",
             "header": [
@@ -2529,7 +4022,7 @@
           }
         },
         {
-          "name": "8.8 Archive Transfer Package",
+          "name": "6.8 Archive Transfer Package",
           "request": {
             "method": "POST",
             "header": [
@@ -2554,7 +4047,7 @@
           }
         },
         {
-          "name": "8.9 Reject Transfer Package [ALTERNATIVE FLOW]",
+          "name": "6.9 Reject Transfer Package [ALTERNATIVE FLOW]",
           "request": {
             "method": "POST",
             "header": [
@@ -2583,17 +4076,17 @@
                 "reject"
               ]
             },
-            "description": "Alternative to accept/archive: run this on a fresh RECEIVED_CHECKING package, not after 8.7 or 8.8.\n\nRequires ARCHIVE_RECEIVE capability."
+            "description": "Alternative to accept/archive: run this on a fresh RECEIVED_CHECKING package, not after 6.7 or 6.6.\n\nRequires ARCHIVE_RECEIVE capability."
           }
         }
       ]
     },
     {
-      "name": "9. Retention & Disposal",
+      "name": "7. Retention & Disposal",
       "description": "Manage document retention policies, holds, and disposal. Requires DISPOSAL_APPROVE capability for disposal.",
       "item": [
         {
-          "name": "9.1 Check Retention Eligibility",
+          "name": "7.1 Check Retention Eligibility",
           "request": {
             "method": "POST",
             "header": [
@@ -2617,7 +4110,7 @@
           }
         },
         {
-          "name": "9.2 Place Retention Hold",
+          "name": "7.2 Place Retention Hold",
           "request": {
             "method": "POST",
             "header": [
@@ -2645,27 +4138,27 @@
                 "holds"
               ]
             },
-            "description": "Place a retention hold on a document.\n\nDocuments with active holds cannot be disposed.",
-            "event": [
-              {
-                "listen": "test",
-                "script": {
-                  "exec": [
-                    "if (pm.response.code === 201) {",
-                    "  var res = pm.response.json();",
-                    "  if (res.id) {",
-                    "    pm.collectionVariables.set('holdId', res.id);",
-                    "    console.log('Hold ID saved: ' + res.id);",
-                    "  }",
-                    "}"
-                  ]
-                }
+            "description": "Place a retention hold on a document.\n\nDocuments with active holds cannot be disposed."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 201) {",
+                  "  var res = pm.response.json();",
+                  "  if (res.id) {",
+                  "    pm.collectionVariables.set('holdId', res.id);",
+                  "    console.log('Hold ID saved: ' + res.id);",
+                  "  }",
+                  "}"
+                ]
               }
-            ]
-          }
+            }
+          ]
         },
         {
-          "name": "9.3 List Retention Holds",
+          "name": "7.3 List Retention Holds",
           "request": {
             "method": "GET",
             "url": {
@@ -2695,7 +4188,7 @@
           }
         },
         {
-          "name": "9.4 Release Retention Hold",
+          "name": "7.4 Release Retention Hold",
           "request": {
             "method": "POST",
             "header": [
@@ -2721,7 +4214,7 @@
           }
         },
         {
-          "name": "9.5 Approve Disposal",
+          "name": "7.5 Approve Disposal",
           "request": {
             "method": "POST",
             "header": [
@@ -2753,7 +4246,7 @@
           }
         },
         {
-          "name": "9.6 Execute Disposal",
+          "name": "7.6 Execute Disposal",
           "request": {
             "method": "POST",
             "header": [
@@ -2787,11 +4280,11 @@
       ]
     },
     {
-      "name": "10. Notifications",
+      "name": "8. Notifications",
       "description": "Manage user notifications and preferences.",
       "item": [
         {
-          "name": "10.1 Get Notification Preferences",
+          "name": "8.1 Get Notification Preferences",
           "request": {
             "method": "GET",
             "url": {
@@ -2816,7 +4309,7 @@
           }
         },
         {
-          "name": "10.2 Update Notification Preferences",
+          "name": "8.2 Update Notification Preferences",
           "request": {
             "method": "PUT",
             "header": [
@@ -2849,7 +4342,7 @@
           }
         },
         {
-          "name": "10.3 List Notifications",
+          "name": "8.3 List Notifications",
           "request": {
             "method": "GET",
             "url": {
@@ -2868,31 +4361,31 @@
                 }
               ]
             },
-            "description": "List notifications for the authenticated employee through the Gateway. Changing recipient_id to another user should return 403.\n\nAdd unread_only=true to filter unread only. The first notification ID is saved for 10.4.",
+            "description": "List notifications for the authenticated employee through the Gateway. Changing recipient_id to another user should return 403.\n\nAdd unread_only=true to filter unread only. The first notification ID is saved for 8.4.",
             "header": [
               {
                 "key": "Authorization",
                 "value": "Bearer {{empToken}}"
               }
-            ],
-            "event": [
-              {
-                "listen": "test",
-                "script": {
-                  "exec": [
-                    "var res = pm.response.json();",
-                    "if (Array.isArray(res) && res[0] && res[0].id) {",
-                    "  pm.collectionVariables.set('notificationId', res[0].id);",
-                    "  console.log('Notification ID saved: ' + res[0].id);",
-                    "}"
-                  ]
-                }
-              }
             ]
-          }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "var res = pm.response.json();",
+                  "if (Array.isArray(res) && res[0] && res[0].id) {",
+                  "  pm.collectionVariables.set('notificationId', res[0].id);",
+                  "  console.log('Notification ID saved: ' + res[0].id);",
+                  "}"
+                ]
+              }
+            }
+          ]
         },
         {
-          "name": "10.4 Mark Notification as Read",
+          "name": "8.4 Mark Notification as Read",
           "request": {
             "method": "POST",
             "url": {
@@ -2917,7 +4410,7 @@
           }
         },
         {
-          "name": "10.5 Mark All as Read",
+          "name": "8.5 Mark All as Read",
           "request": {
             "method": "POST",
             "header": [
@@ -2951,11 +4444,11 @@
       ]
     },
     {
-      "name": "11. Security Monitoring",
+      "name": "9. Security Monitoring",
       "description": "Manage security rules, alerts, and automatic account lockout.",
       "item": [
         {
-          "name": "11.1 Create Security Rule",
+          "name": "9.1 Create Security Rule",
           "request": {
             "method": "POST",
             "header": [
@@ -2983,27 +4476,27 @@
                 "rules"
               ]
             },
-            "description": "Create a security monitoring rule through the ADMIN-only Gateway route.\n\nrule_type: FAILED_LOGIN, DENIED_CONTENT_ACCESS\naction: ALERT (MEDIUM severity) or BLOCK (HIGH severity + session revocation)\nthreshold: number of events to trigger\nwindow_minutes: time window for counting",
-            "event": [
-              {
-                "listen": "test",
-                "script": {
-                  "exec": [
-                    "if (pm.response.code === 201) {",
-                    "  var res = pm.response.json();",
-                    "  if (res.id) {",
-                    "    pm.collectionVariables.set('ruleId', res.id);",
-                    "    console.log('Rule ID saved: ' + res.id);",
-                    "  }",
-                    "}"
-                  ]
-                }
+            "description": "Create a security monitoring rule through the ADMIN-only Gateway route.\n\nrule_type: FAILED_LOGIN, DENIED_CONTENT_ACCESS\naction: ALERT (MEDIUM severity) or BLOCK (HIGH severity + session revocation)\nthreshold: number of events to trigger\nwindow_minutes: time window for counting"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 201) {",
+                  "  var res = pm.response.json();",
+                  "  if (res.id) {",
+                  "    pm.collectionVariables.set('ruleId', res.id);",
+                  "    console.log('Rule ID saved: ' + res.id);",
+                  "  }",
+                  "}"
+                ]
               }
-            ]
-          }
+            }
+          ]
         },
         {
-          "name": "11.2 Create BLOCK Rule",
+          "name": "9.2 Create BLOCK Rule",
           "request": {
             "method": "POST",
             "header": [
@@ -3035,7 +4528,7 @@
           }
         },
         {
-          "name": "11.3 List Security Rules",
+          "name": "9.3 List Security Rules",
           "request": {
             "method": "GET",
             "url": {
@@ -3059,7 +4552,7 @@
           }
         },
         {
-          "name": "11.4 Toggle Rule",
+          "name": "9.4 Toggle Rule",
           "request": {
             "method": "PUT",
             "header": [
@@ -3093,7 +4586,7 @@
           }
         },
         {
-          "name": "11.5 List Security Alerts",
+          "name": "9.5 List Security Alerts",
           "request": {
             "method": "GET",
             "url": {
@@ -3107,31 +4600,31 @@
                 "alerts"
               ]
             },
-            "description": "List all security alerts through the ADMIN-only Gateway route.\n\nFilter by: status, severity, actor_id, rule_id. The first alert ID is saved for 11.6.",
+            "description": "List all security alerts through the ADMIN-only Gateway route.\n\nFilter by: status, severity, actor_id, rule_id. The first alert ID is saved for 9.6.",
             "header": [
               {
                 "key": "Authorization",
                 "value": "Bearer {{adminToken}}"
               }
-            ],
-            "event": [
-              {
-                "listen": "test",
-                "script": {
-                  "exec": [
-                    "var res = pm.response.json();",
-                    "if (Array.isArray(res) && res[0] && res[0].id) {",
-                    "  pm.collectionVariables.set('alertId', res[0].id);",
-                    "  console.log('Alert ID saved: ' + res[0].id);",
-                    "}"
-                  ]
-                }
-              }
             ]
-          }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "var res = pm.response.json();",
+                  "if (Array.isArray(res) && res[0] && res[0].id) {",
+                  "  pm.collectionVariables.set('alertId', res[0].id);",
+                  "  console.log('Alert ID saved: ' + res[0].id);",
+                  "}"
+                ]
+              }
+            }
+          ]
         },
         {
-          "name": "11.6 Resolve Alert",
+          "name": "9.6 Resolve Alert",
           "request": {
             "method": "POST",
             "header": [
@@ -3167,11 +4660,11 @@
       ]
     },
     {
-      "name": "12. Health & Verification",
+      "name": "10. Health & Verification",
       "description": "Verify all services are running and audit chain is intact.",
       "item": [
         {
-          "name": "12.1 Gateway Health",
+          "name": "10.1 Gateway Health",
           "request": {
             "method": "GET",
             "url": {
@@ -3187,7 +4680,7 @@
           }
         },
         {
-          "name": "12.2 Auth Service Health [INTERNAL DIAGNOSTIC]",
+          "name": "10.2 Auth Service Health [INTERNAL DIAGNOSTIC]",
           "request": {
             "method": "GET",
             "url": {
@@ -3203,7 +4696,7 @@
           }
         },
         {
-          "name": "12.3 Document Management Health [INTERNAL DIAGNOSTIC]",
+          "name": "10.3 Document Management Health [INTERNAL DIAGNOSTIC]",
           "request": {
             "method": "GET",
             "url": "http://localhost:3004/health",
@@ -3211,7 +4704,7 @@
           }
         },
         {
-          "name": "12.4 Document Security Health [INTERNAL DIAGNOSTIC]",
+          "name": "10.4 Document Security Health [INTERNAL DIAGNOSTIC]",
           "request": {
             "method": "GET",
             "url": "http://localhost:3005/health",
@@ -3219,7 +4712,7 @@
           }
         },
         {
-          "name": "12.5 Permission Service Health [INTERNAL DIAGNOSTIC]",
+          "name": "10.5 Permission Service Health [INTERNAL DIAGNOSTIC]",
           "request": {
             "method": "GET",
             "url": {
@@ -3235,7 +4728,7 @@
           }
         },
         {
-          "name": "12.6 Audit Service Health [INTERNAL DIAGNOSTIC]",
+          "name": "10.6 Audit Service Health [INTERNAL DIAGNOSTIC]",
           "request": {
             "method": "GET",
             "url": {
@@ -3251,7 +4744,7 @@
           }
         },
         {
-          "name": "12.7 Full Audit Chain Verify",
+          "name": "10.7 Full Audit Chain Verify",
           "request": {
             "method": "POST",
             "url": {
