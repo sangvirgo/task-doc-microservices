@@ -15,6 +15,27 @@ fi
 
 export IMAGE_PREFIX IMAGE_TAG
 
-docker compose --env-file .env pull
-docker compose --env-file .env up -d --no-build --remove-orphans
+# Pull and replace one application image at a time because the EC2 host has limited disk space.
+# Keeping old and new large backend layers during a parallel pull can exhaust containerd.
+services=(
+  api-gateway
+  authentication-identity-service
+  user-role-management-service
+  task-management-service
+  document-management-service
+  document-security-service
+  permission-service
+  audit-log-service
+  notification-service
+  security-monitoring-service
+  web
+)
+
+for service in "${services[@]}"; do
+  echo "Deploying $service"
+  docker compose --env-file .env pull "$service"
+  docker compose --env-file .env up -d --no-build --no-deps "$service"
+  docker image prune -af
+done
+
 docker compose --env-file .env ps
