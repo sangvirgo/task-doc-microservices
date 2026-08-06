@@ -1,7 +1,7 @@
-﻿'use client';
+'use client';
 
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
+import { usePathname, useRouter } from 'next/navigation';
 import { authApi } from '@/api/auth';
 import { clearSession } from '@/auth/session';
 import { NetworkBanner } from './network-banner';
@@ -10,7 +10,7 @@ import type { SessionRecord } from '@/types/auth';
 
 export function AppShell({ session, children }: { session: SessionRecord; children: React.ReactNode }) {
   const router = useRouter();
-  const pathname = typeof window !== 'undefined' ? window.location.pathname : '/workspace';
+  const pathname = usePathname() ?? '/workspace';
   const signOut = async () => { try { await authApi.logout(session.refresh_token); } catch { /* local clearance remains required */ } finally { clearSession(); router.replace('/login'); } };
   const navItems = session.role === 'ADMIN' ? [['Overview','/workspace','◈'],['Users & capabilities','/admin/users','♙'],['Monitoring','/admin/monitoring','◉'],['Audit metadata','/admin/audit','▤']] : [['Overview','/workspace','◈'],['Tasks','/tasks','✓'],['Documents','/documents','▧'],['Grants','/grants','⌘'],['Notifications','/notifications','◌'],['Records','/records','▦'],['Transfer packages','/transfer-packages','⇄'],['Retention & disposal','/retention-disposal','⌁']];
   const currentLabel = navItems.find(([, href]) => pathname === href || (href !== '/workspace' && pathname.startsWith(`${href}/`)))?.[0] ?? 'Workspace';
