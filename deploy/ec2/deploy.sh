@@ -15,6 +15,18 @@ fi
 
 export IMAGE_PREFIX IMAGE_TAG
 
-docker compose --env-file .env pull
+attempt=1
+max_attempts=3
+until docker compose --env-file .env pull; do
+  if (( attempt >= max_attempts )); then
+    echo "docker compose pull failed after ${max_attempts} attempts" >&2
+    exit 1
+  fi
+
+  echo "docker compose pull failed (attempt ${attempt}/${max_attempts}), retrying..." >&2
+  attempt=$((attempt + 1))
+  sleep 5
+done
+
 docker compose --env-file .env up -d --no-build --remove-orphans
 docker compose --env-file .env ps
