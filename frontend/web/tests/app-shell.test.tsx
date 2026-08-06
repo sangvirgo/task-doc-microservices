@@ -3,7 +3,7 @@ import { render, screen } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import { AppShell } from '@/components/app-shell';
 
-vi.mock('next/navigation', () => ({ useRouter: () => ({ replace: vi.fn() }) }));
+vi.mock('next/navigation', () => ({ useRouter: () => ({ replace: vi.fn() }), usePathname: () => '/admin/users' }));
 vi.mock('@/api/auth', () => ({ authApi: { logout: vi.fn() } }));
 
 describe('AppShell role boundary', () => {
