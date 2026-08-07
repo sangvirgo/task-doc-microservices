@@ -12,8 +12,9 @@ import {
 } from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import { z } from 'zod';
+import { paginationQuerySchema } from '@c17/contracts';
 
-import { AuditService, AuditEventDto } from './audit.service';
+import { AuditService } from './audit.service';
 
 const appendEventSchema = z.object({
   event_id: z.string().uuid(),
@@ -48,17 +49,22 @@ export class AuditController {
     @Query('actor_id') actor_id?: string,
     @Query('resource_type') resource_type?: string,
     @Query('resource_id') resource_id?: string,
-    @Query('limit') limit?: string,
-    @Query('offset') offset?: string,
-  ): Promise<AuditEventDto[]> {
-    return this.auditService.listEvents({
-      event_type,
-      actor_id,
-      resource_type,
-      resource_id,
-      limit: limit ? parseInt(limit, 10) : undefined,
-      offset: offset ? parseInt(offset, 10) : undefined,
-    });
+    @Query('page') page?: string,
+    @Query('page_size') page_size?: string,
+  ): Promise<unknown> {
+    const pagination = paginationQuerySchema.safeParse({ page, page_size });
+    if (!pagination.success) {
+      throw new BadRequestException(pagination.error.issues);
+    }
+    return this.auditService.listEvents(
+      {
+        event_type,
+        actor_id,
+        resource_type,
+        resource_id,
+      },
+      pagination.data,
+    );
   }
 
   @Get('events/:id')

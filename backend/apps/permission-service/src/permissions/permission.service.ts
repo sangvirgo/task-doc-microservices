@@ -18,6 +18,10 @@ import {
   ResourceType,
   isPermissionAction,
   isAdminForbiddenAction,
+  createPaginationMeta,
+  PaginatedResponse,
+  PaginationQuery,
+  toPrismaPagination,
 } from '@c17/contracts';
 import { EVENT_PUBLISHER, type EventPublisher } from '@c17/messaging';
 import { PermissionPrismaService } from '../prisma/permission-prisma.service';
@@ -39,6 +43,8 @@ export interface GrantDto {
   parent_grant_id: string | null;
   created_at: string;
 }
+
+const DEFAULT_PAGINATION: PaginationQuery = { page: 1, page_size: 20 };
 
 const TASK_PERMISSION_ACTIONS: ReadonlySet<PermissionAction> = new Set([
   PermissionAction.TASK_CREATE,
@@ -84,6 +90,8 @@ export class PermissionService {
     resource_id: string;
     action: PermissionAction;
     task_id?: string | null;
+    owner_id?: string;
+    creator_id?: string;
   }): Promise<{
     allowed: boolean;
     reason_code: PermissionReasonCode | null;
@@ -95,6 +103,19 @@ export class PermissionService {
         return {
           allowed: false,
           reason_code: PermissionReasonCode.ADMIN_CONTENT_DENIED,
+          effective_expires_at: null,
+        };
+      }
+
+      // Document owners and creators retain full control of their own content. This is an
+      // implicit ownership right, so it also works for standalone documents without a task grant.
+      if (
+        request.resource_type === ResourceType.DOCUMENT &&
+        (request.actor_id === request.owner_id || request.actor_id === request.creator_id)
+      ) {
+        return {
+          allowed: true,
+          reason_code: null,
           effective_expires_at: null,
         };
       }
@@ -305,18 +326,29 @@ export class PermissionService {
     return this.toDto(grant);
   }
 
-  async listGrants(filters?: {
-    actor_id?: string;
-    resource_type?: string;
-    resource_id?: string;
-    status?: string;
-    task_id?: string;
-  }): Promise<GrantDto[]> {
-    const grants = await this.prisma.grant.findMany({
-      where: filters,
-      orderBy: { created_at: 'desc' },
-    });
-    return grants.map((g) => this.toDto(g));
+  async listGrants(
+    filters?: {
+      actor_id?: string;
+      resource_type?: string;
+      resource_id?: string;
+      status?: string;
+      task_id?: string;
+    },
+    pagination: PaginationQuery = DEFAULT_PAGINATION,
+  ): Promise<PaginatedResponse<GrantDto>> {
+    const where = filters;
+    const [total, grants] = await Promise.all([
+      this.prisma.grant.count({ where }),
+      this.prisma.grant.findMany({
+        where: filters,
+        orderBy: [{ created_at: 'desc' }, { id: 'desc' }],
+        ...toPrismaPagination(pagination),
+      }),
+    ]);
+    return {
+      items: grants.map((g) => this.toDto(g)),
+      pagination: createPaginationMeta(pagination.page, pagination.page_size, total),
+    };
   }
 
   async delegateGrant(data: {

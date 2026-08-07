@@ -18,6 +18,7 @@ import type { Response } from 'express';
 import { createReadStream } from 'fs';
 import { rm } from 'fs/promises';
 import { pipeline } from 'stream/promises';
+import { paginationQuerySchema } from '@c17/contracts';
 
 import {
   SecurityPipelineService,
@@ -153,8 +154,14 @@ export class SecurityController {
 
   @Get('records')
   @ApiOperation({ summary: 'List encryption records' })
-  async listRecords(@Query('document_id') document_id?: string): Promise<EncryptionRecordDto[]> {
-    return this.securityService.listRecords(document_id);
+  async listRecords(
+    @Query('document_id') document_id?: string,
+    @Query('page') page?: string,
+    @Query('page_size') page_size?: string,
+  ): Promise<unknown> {
+    const pagination = paginationQuerySchema.safeParse({ page, page_size });
+    if (!pagination.success) throw new BadRequestException(pagination.error.issues);
+    return this.securityService.listRecords(document_id, pagination.data);
   }
 
   @Get('kek/active')
