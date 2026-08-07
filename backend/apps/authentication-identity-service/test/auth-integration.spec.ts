@@ -41,6 +41,7 @@ describe('Auth Service Integration (PostgreSQL + Redis)', () => {
           useValue: {
             provisionUser: jest.fn().mockResolvedValue(undefined),
             getCapabilities: jest.fn().mockResolvedValue([]),
+            getLockState: jest.fn().mockResolvedValue({ locked_at: null }),
           },
         },
       ],
