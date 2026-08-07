@@ -10,6 +10,8 @@ RUN pnpm install --frozen-lockfile --filter @c17/web...
 FROM node:24.13.0-alpine AS builder
 WORKDIR /workspace
 RUN corepack enable
+ARG NEXT_PUBLIC_API_BASE_URL=http://api-gateway:3000
+ENV NEXT_PUBLIC_API_BASE_URL=$NEXT_PUBLIC_API_BASE_URL
 COPY --from=dependencies /workspace/node_modules ./node_modules
 COPY --from=dependencies /workspace/frontend/web/node_modules ./frontend/web/node_modules
 COPY --from=root package.json pnpm-lock.yaml pnpm-workspace.yaml ./

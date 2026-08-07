@@ -80,7 +80,9 @@ export class AuthService {
       throw new AuthLoginFailedError('Invalid credentials', email, null, 'INVALID_CREDENTIALS');
     }
 
-    if (user.locked_at) {
+    const isLocked = await this.synchronizeLockState(user.id, user.locked_at);
+    if (isLocked) {
+      await this.revokeAllUserTokens(user.id);
       throw new AuthLoginFailedError('Account is locked', email, user.id, 'ACCOUNT_LOCKED');
     }
 
@@ -110,7 +112,12 @@ export class AuthService {
       throw new UnauthorizedException('Refresh token has expired');
     }
 
-    if (storedToken.user.locked_at) {
+    const isLocked = await this.synchronizeLockState(
+      storedToken.user.id,
+      storedToken.user.locked_at,
+    );
+    if (isLocked) {
+      await this.revokeAllUserTokens(storedToken.user.id);
       throw new UnauthorizedException('Account is locked');
     }
 
@@ -153,6 +160,20 @@ export class AuthService {
 
   verifyAccessToken(token: string): { sub: string; role: string; capabilities: string[] } {
     return this.jwtService.verify(token);
+  }
+
+  private async synchronizeLockState(userId: string, localLockedAt: Date | null): Promise<boolean> {
+    const directoryState = await this.userRoleClient.getLockState(userId);
+    const directoryLockedAt = directoryState.locked_at ? new Date(directoryState.locked_at) : null;
+
+    if ((localLockedAt?.getTime() ?? null) !== (directoryLockedAt?.getTime() ?? null)) {
+      await this.prisma.user.update({
+        where: { id: userId },
+        data: { locked_at: directoryLockedAt },
+      });
+    }
+
+    return directoryLockedAt !== null;
   }
 
   private async issueTokenPair(userId: string, email: string, role: string): Promise<TokenPair> {

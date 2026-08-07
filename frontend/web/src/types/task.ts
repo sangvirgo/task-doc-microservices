@@ -5,5 +5,7 @@ export interface AncestorTaskSummary { title: string; status: TaskStatus; assign
 export interface Participant { id: string; task_id: string; user_id: string; role: string; added_at: string; }
 export interface Activity { id: string; activity_type: string; actor_id: string; summary: string; created_at: string; }
 export interface TaskComment { id: string; task_id: string; author_id: string; content: string; created_at: string; }
-export interface TaskSubmission { id: string; task_id: string; author_id: string; content: string; created_at: string; }
+export interface TaskCommentResult { id: string; created_at: string; }
+export interface TaskSubmissionResult { id: string; status: string; created_at: string; }
+export interface TaskReviewResult { id: string; status: string; }
 export interface CreateTaskInput { title: string; description?: string; assignee_id?: string; parent_task_id?: string; deadline?: string; }

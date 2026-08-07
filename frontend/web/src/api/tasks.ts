@@ -1,5 +1,5 @@
 import { gatewayClient } from './client';
-import type { Activity, AncestorTaskSummary, CreateTaskInput, Participant, Task, TaskComment, TaskStatus, TaskSubmission } from '@/types/task';
+import type { Activity, AncestorTaskSummary, CreateTaskInput, Participant, Task, TaskComment, TaskCommentResult, TaskReviewResult, TaskStatus, TaskSubmissionResult } from '@/types/task';
 export const tasksApi = {
   list: (filters: Record<string, string> = {}) => gatewayClient.get<Task[]>(`/tasks${Object.keys(filters).length ? `?${new URLSearchParams(filters)}` : ''}`),
   get: (id: string) => gatewayClient.get<Task | AncestorTaskSummary>(`/tasks/${encodeURIComponent(id)}`),
@@ -9,10 +9,10 @@ export const tasksApi = {
   participants: (id: string) => gatewayClient.get<Participant[]>(`/tasks/${encodeURIComponent(id)}/participants`),
   activity: (id: string) => gatewayClient.get<Activity[]>(`/tasks/${encodeURIComponent(id)}/activity`),
   comments: (id: string) => gatewayClient.get<TaskComment[]>(`/tasks/${encodeURIComponent(id)}/comments`),
-  comment: (id: string, content: string) => gatewayClient.post(`/tasks/${encodeURIComponent(id)}/comments`, { content }),
+  comment: (id: string, content: string) => gatewayClient.post<TaskCommentResult>(`/tasks/${encodeURIComponent(id)}/comments`, { content }),
   status: (id: string, status: Exclude<TaskStatus, 'BLOCKED'>, reason?: string) => gatewayClient.post<Task>(`/tasks/${encodeURIComponent(id)}/status`, { status, reason }),
   block: (id: string, reason: string) => gatewayClient.post<Task>(`/tasks/${encodeURIComponent(id)}/block`, { reason }),
   unblock: (id: string) => gatewayClient.post<Task>(`/tasks/${encodeURIComponent(id)}/unblock`),
-  submit: (id: string, content: string) => gatewayClient.post<TaskSubmission>(`/tasks/${encodeURIComponent(id)}/submit`, { content }),
-  review: (submissionId: string, decision: 'APPROVED'|'NEED_REVISION'|'REJECTED', comment?: string) => gatewayClient.post<Task>(`/tasks/submissions/${encodeURIComponent(submissionId)}/review`, { decision, ...(comment ? { comment } : {}) }),
+  submit: (id: string, content: string) => gatewayClient.post<TaskSubmissionResult>(`/tasks/${encodeURIComponent(id)}/submit`, { content }),
+  review: (submissionId: string, decision: 'APPROVED'|'NEED_REVISION'|'REJECTED', comment?: string) => gatewayClient.post<TaskReviewResult>(`/tasks/submissions/${encodeURIComponent(submissionId)}/review`, { decision, ...(comment ? { comment } : {}) }),
 };

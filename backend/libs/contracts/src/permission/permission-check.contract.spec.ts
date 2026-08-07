@@ -17,6 +17,16 @@ describe('permission check request contract', () => {
     expect(permissionCheckRequestSchema.safeParse(valid).success).toBe(true);
   });
 
+  it('accepts document ownership context for implicit owner access', () => {
+    expect(
+      permissionCheckRequestSchema.safeParse({
+        ...valid,
+        owner_id: valid.actor_id,
+        creator_id: '55555555-5555-4555-8555-555555555555',
+      }).success,
+    ).toBe(true);
+  });
+
   // V3 §8.1: the caller must never supply an expiry. Permission Service resolves it from
   // permission_db alone, because a caller-supplied expiry would let the caller widen the access
   // that gates it.

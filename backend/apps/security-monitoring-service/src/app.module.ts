@@ -18,6 +18,7 @@ export const envSchema = baseEnvSchema.extend({
   SECURITY_MONITORING_DATABASE_URL: z.string().url(),
   RABBITMQ_URL: z.string().url().default('amqp://guest:guest@localhost:5672'),
   AUTHENTICATION_IDENTITY_SERVICE_URL: z.string().url().default('http://localhost:3001'),
+  SECURITY_MONITORING_CONSUMER_NAME: z.string().min(1).default(SERVICE),
 });
 
 @Module({
