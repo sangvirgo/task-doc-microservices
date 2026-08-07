@@ -27,4 +27,17 @@ describe('central Gateway client', () => {
     await expect(gatewayClient.get('/tasks')).rejects.toMatchObject({ status: 403, message: 'You do not have permission to do that.' } satisfies Partial<GatewayError>);
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
+  it('always uses the same-origin Gateway rewrite even when a public backend base URL is configured', async () => {
+    vi.stubEnv('NEXT_PUBLIC_API_BASE_URL', 'http://13.229.104.126:3000');
+    const fetchMock = vi.fn().mockResolvedValue(response({ items: [] }));
+    vi.stubGlobal('fetch', fetchMock);
+    await expect(gatewayClient.get('/tasks')).resolves.toEqual({ items: [] });
+    expect(fetchMock.mock.calls[0][0]).toBe('/gateway/tasks');
+  });
+  it('sends the task context required by secure document download tickets', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(response({ id: 'ticket-id' }));
+    vi.stubGlobal('fetch', fetchMock);
+    await gatewayClient.post('/documents/doc-id/download-ticket', { task_id: 'task-id', version: 1 });
+    expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toEqual({ task_id: 'task-id', version: 1 });
+  });
 });

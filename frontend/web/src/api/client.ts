@@ -4,8 +4,7 @@ import { GatewayError, toGatewayError } from '@/lib/errors';
 import type { TokenPair } from '@/types/auth';
 
 let refreshPromise: Promise<TokenPair> | null = null;
-const publicApiBase = process.env.NEXT_PUBLIC_API_BASE_URL?.replace(/\/$/, '');
-const apiUrl = (path: string) => publicApiBase ? `${publicApiBase}/api${path}` : `/gateway${path}`;
+const apiUrl = (path: string) => `/gateway${path}`;
 
 async function request<T>(path: string, init: RequestInit = {}, retryAfterRefresh = true): Promise<T> {
   const session = readSession();
