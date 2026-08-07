@@ -19,6 +19,11 @@ const EMP_EMAIL = 'employee@c17.local';
 const EMP_PASS = 'Employee123!';
 const EMP_ID = '00000000-0000-4000-a000-000000000002';
 
+type PaginatedList<T> = {
+  items: T[];
+  pagination: Record<string, unknown>;
+};
+
 async function post<T>(
   url: string,
   body: unknown,
@@ -110,14 +115,15 @@ describe('E2E core workflow', () => {
     });
 
     it('lists tasks and finds the created task', async () => {
-      const res = await get<Array<{ id: string }>>(
-        `${GW}/api/tasks?creator_id=${EMP_ID}`,
+      const res = await get<PaginatedList<{ id: string }>>(
+        `${GW}/api/tasks?creator_id=${EMP_ID}&page=1&page_size=20`,
         accessToken,
       );
 
       expect(res.status).toBe(200);
-      expect(Array.isArray(res.body)).toBe(true);
-      const found = (res.body as Array<{ id: string }>).find((t) => t.id === taskId);
+      expect(Array.isArray(res.body.items)).toBe(true);
+      expect(res.body.pagination).toMatchObject({ page: 1, page_size: 20 });
+      const found = res.body.items.find((t) => t.id === taskId);
       expect(found).toBeDefined();
     });
   });
@@ -225,9 +231,12 @@ describe('E2E core workflow', () => {
     });
 
     it('audit events list is queryable', async () => {
-      const res = await get<unknown[]>(`${AUDIT_URL}/audit/events?limit=10`);
+      const res = await get<PaginatedList<unknown>>(
+        `${AUDIT_URL}/audit/events?page=1&page_size=10`,
+      );
       expect(res.status).toBe(200);
-      expect(Array.isArray(res.body)).toBe(true);
+      expect(Array.isArray(res.body.items)).toBe(true);
+      expect(res.body.pagination).toMatchObject({ page: 1, page_size: 10 });
     });
   });
 
