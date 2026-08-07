@@ -1,8 +1,4 @@
-import {
-  createPaginationMeta,
-  paginationQuerySchema,
-  toPrismaPagination,
-} from './pagination';
+import { createPaginationMeta, paginationQuerySchema, toPrismaPagination } from './pagination';
 
 describe('pagination contract', () => {
   it('defaults page and page_size', () => {
