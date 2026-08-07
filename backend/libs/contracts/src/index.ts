@@ -4,6 +4,7 @@ export * from './events/event-types';
 export * from './permission/permission-actions';
 export * from './permission/permission-check.contract';
 export * from './permission/permission-reason-codes';
+export * from './pagination/pagination';
 export * from './roles';
 export * from './security-levels';
 export * from './services';
