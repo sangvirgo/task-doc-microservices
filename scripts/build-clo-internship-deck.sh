@@ -7,7 +7,7 @@ asset_dir="/tmp/c17-clo-internship-deck"
 node "$repo_root/scripts/create-clo-internship-deck.mjs" --assets-only
 
 for index in $(seq 1 11); do
-  magick "$asset_dir/slide${index}.svg" "$asset_dir/slide${index}.png"
+  magick "$asset_dir/slide${index}.svg" -strip "$asset_dir/slide${index}.png"
 done
 
 node "$repo_root/scripts/create-clo-internship-deck.mjs"
