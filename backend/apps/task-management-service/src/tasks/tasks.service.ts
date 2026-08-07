@@ -7,7 +7,14 @@ import {
 } from '@nestjs/common';
 import { randomUUID } from 'crypto';
 
-import { EventType, Producer } from '@c17/contracts';
+import {
+  createPaginationMeta,
+  EventType,
+  PaginatedResponse,
+  PaginationQuery,
+  Producer,
+  toPrismaPagination,
+} from '@c17/contracts';
 
 import { TaskPrismaService } from '../prisma/task-prisma.service';
 
@@ -108,6 +115,16 @@ export interface TaskCommentDto {
   content: string;
   created_at: string;
 }
+
+export interface TaskActivityDto {
+  id: string;
+  activity_type: string;
+  actor_id: string;
+  summary: string;
+  created_at: string;
+}
+
+const DEFAULT_PAGINATION: PaginationQuery = { page: 1, page_size: 20 };
 
 @Injectable()
 export class TasksService {
@@ -225,17 +242,30 @@ export class TasksService {
       status?: string;
       parent_task_id?: string;
     },
-  ): Promise<TaskDto[]> {
-    const tasks = await this.prisma.task.findMany({
-      where: {
-        participants: { some: { user_id: actor_id } },
-        creator_id: filters?.creator_id,
-        assignee_id: filters?.assignee_id,
-        status: filters?.status,
-        parent_task_id: filters?.parent_task_id,
-      },
-    });
-    return tasks.map((task) => this.toDto(task));
+    pagination: PaginationQuery = DEFAULT_PAGINATION,
+  ): Promise<PaginatedResponse<TaskDto>> {
+    const where = {
+      participants: { some: { user_id: actor_id } },
+      creator_id: filters?.creator_id,
+      assignee_id: filters?.assignee_id,
+      status: filters?.status,
+      parent_task_id: filters?.parent_task_id,
+    };
+    const { skip, take } = toPrismaPagination(pagination);
+    const [total, tasks] = await Promise.all([
+      this.prisma.task.count({ where }),
+      this.prisma.task.findMany({
+        where,
+        orderBy: [{ created_at: 'desc' }, { id: 'desc' }],
+        skip,
+        take,
+      }),
+    ]);
+
+    return {
+      items: tasks.map((task) => this.toDto(task)),
+      pagination: createPaginationMeta(pagination.page, pagination.page_size, total),
+    };
   }
 
   async updateTaskStatus(
@@ -428,25 +458,58 @@ export class TasksService {
     }
   }
 
-  async getParticipants(task_id: string, actor_id: string): Promise<TaskParticipantDto[]> {
+  async getParticipants(
+    task_id: string,
+    actor_id: string,
+    pagination: PaginationQuery = DEFAULT_PAGINATION,
+  ): Promise<PaginatedResponse<TaskParticipantDto>> {
     await this.assertDirectParticipant(task_id, actor_id);
-    const participants = await this.prisma.taskParticipant.findMany({ where: { task_id } });
-    return participants.map((participant) => this.participantToDto(participant));
+    const where = { task_id };
+    const { skip, take } = toPrismaPagination(pagination);
+    const [total, participants] = await Promise.all([
+      this.prisma.taskParticipant.count({ where }),
+      this.prisma.taskParticipant.findMany({
+        where,
+        orderBy: [{ added_at: 'asc' }, { id: 'asc' }],
+        skip,
+        take,
+      }),
+    ]);
+
+    return {
+      items: participants.map((participant) => this.participantToDto(participant)),
+      pagination: createPaginationMeta(pagination.page, pagination.page_size, total),
+    };
   }
 
-  async getComments(task_id: string, actor_id: string): Promise<TaskCommentDto[]> {
+  async getComments(
+    task_id: string,
+    actor_id: string,
+    pagination: PaginationQuery = DEFAULT_PAGINATION,
+  ): Promise<PaginatedResponse<TaskCommentDto>> {
     await this.assertDirectParticipant(task_id, actor_id);
-    const comments = await this.prisma.taskComment.findMany({
-      where: { task_id },
-      orderBy: { created_at: 'asc' },
-    });
-    return comments.map((comment) => ({
-      id: comment.id,
-      task_id: comment.task_id,
-      author_id: comment.author_id,
-      content: comment.content,
-      created_at: comment.created_at.toISOString(),
-    }));
+    const where = { task_id };
+    const { skip, take } = toPrismaPagination(pagination);
+    const [total, comments] = await Promise.all([
+      this.prisma.taskComment.count({ where }),
+      this.prisma.taskComment.findMany({
+        where,
+        orderBy: [{ created_at: 'asc' }, { id: 'asc' }],
+        skip,
+        take,
+      }),
+    ]);
+
+    return {
+      items: comments.map((comment) => ({
+        id: comment.id,
+        task_id: comment.task_id,
+        author_id: comment.author_id,
+        content: comment.content,
+        created_at: comment.created_at.toISOString(),
+      })),
+      pagination: createPaginationMeta(pagination.page, pagination.page_size, total),
+    };
   }
 
   async addComment(
@@ -579,27 +642,31 @@ export class TasksService {
   async getTaskActivity(
     task_id: string,
     actor_id: string,
-  ): Promise<
-    Array<{
-      id: string;
-      activity_type: string;
-      actor_id: string;
-      summary: string;
-      created_at: string;
-    }>
-  > {
+    pagination: PaginationQuery = DEFAULT_PAGINATION,
+  ): Promise<PaginatedResponse<TaskActivityDto>> {
     await this.assertDirectParticipant(task_id, actor_id);
-    const activities = await this.prisma.taskActivity.findMany({
-      where: { task_id },
-      orderBy: { created_at: 'asc' },
-    });
-    return activities.map((activity) => ({
-      id: activity.id,
-      activity_type: activity.activity_type,
-      actor_id: activity.actor_id,
-      summary: activity.summary,
-      created_at: activity.created_at.toISOString(),
-    }));
+    const where = { task_id };
+    const { skip, take } = toPrismaPagination(pagination);
+    const [total, activities] = await Promise.all([
+      this.prisma.taskActivity.count({ where }),
+      this.prisma.taskActivity.findMany({
+        where,
+        orderBy: [{ created_at: 'asc' }, { id: 'asc' }],
+        skip,
+        take,
+      }),
+    ]);
+
+    return {
+      items: activities.map((activity) => ({
+        id: activity.id,
+        activity_type: activity.activity_type,
+        actor_id: activity.actor_id,
+        summary: activity.summary,
+        created_at: activity.created_at.toISOString(),
+      })),
+      pagination: createPaginationMeta(pagination.page, pagination.page_size, total),
+    };
   }
 
   private toDto(task: TaskRecord): TaskDto {

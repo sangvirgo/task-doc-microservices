@@ -9,11 +9,13 @@ import {
   HttpStatus,
   Param,
   Post,
+  Query,
 } from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import { z } from 'zod';
 
 import { AuthContext, CurrentUser } from '@c17/auth-context';
+import { paginationQuerySchema, PaginationQuery } from '@c17/contracts';
 
 import { TaskDocumentsService } from './task-documents.service';
 
@@ -32,6 +34,12 @@ const attachSchema = z
     grants: z.array(grantSchema).min(1),
   })
   .strict();
+
+function parsePagination(page?: string, page_size?: string): PaginationQuery {
+  const parsed = paginationQuerySchema.safeParse({ page, page_size });
+  if (!parsed.success) throw new BadRequestException(parsed.error.issues);
+  return parsed.data;
+}
 
 @ApiTags('task-documents')
 @Controller('tasks')
@@ -59,8 +67,17 @@ export class TaskDocumentsController {
 
   @Get(':taskId/documents')
   @ApiOperation({ summary: 'List documents accessible to the caller in a task' })
-  async list(@Param('taskId') taskId: string, @CurrentUser() user?: AuthContext) {
-    return this.taskDocumentsService.list(taskId, this.requireUser(user));
+  async list(
+    @Param('taskId') taskId: string,
+    @CurrentUser() user?: AuthContext,
+    @Query('page') page?: string,
+    @Query('page_size') page_size?: string,
+  ) {
+    return this.taskDocumentsService.list(
+      taskId,
+      this.requireUser(user),
+      parsePagination(page, page_size),
+    );
   }
 
   @Post(':taskId/documents/:documentId/grants')

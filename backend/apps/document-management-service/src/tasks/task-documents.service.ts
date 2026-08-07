@@ -9,7 +9,14 @@ import {
 import { randomUUID } from 'crypto';
 
 import { AuthContext } from '@c17/auth-context';
-import { isPermissionAction, PermissionAction, ResourceType } from '@c17/contracts';
+import {
+  createPaginationMeta,
+  isPermissionAction,
+  PaginatedResponse,
+  PermissionAction,
+  PaginationQuery,
+  ResourceType,
+} from '@c17/contracts';
 
 import {
   DocumentDto,
@@ -30,6 +37,8 @@ const DOCUMENT_GRANTABLE_ACTIONS = new Set<string>([
 ]);
 
 const DOCUMENT_ACCESS_ACTIONS = Array.from(DOCUMENT_GRANTABLE_ACTIONS) as PermissionAction[];
+const DEFAULT_PAGINATION: PaginationQuery = { page: 1, page_size: 20 };
+const PERMISSION_SCAN_PAGE_SIZE = 100;
 
 export interface TaskDocumentGrantInput {
   actor_id: string;
@@ -139,15 +148,34 @@ export class TaskDocumentsService {
     return { association, document, grants: createdGrants };
   }
 
-  async list(taskId: string, caller: AuthContext): Promise<TaskDocumentListItem[]> {
+  async list(
+    taskId: string,
+    caller: AuthContext,
+    pagination: PaginationQuery = DEFAULT_PAGINATION,
+  ): Promise<PaginatedResponse<TaskDocumentListItem>> {
     const context = await this.taskContextClient.getContext(taskId);
     await this.assertDirectParticipant(context, caller, taskId, 'TASK_DOCUMENT_LIST_DENIED');
 
-    const associations = await this.documentsService.listTaskDocuments(taskId);
+    const associations: Array<{
+      association: TaskDocumentAssociationDto;
+      document: DocumentDto;
+    }> = [];
+    let sourcePage = 1;
+    let hasNext = true;
+    while (hasNext) {
+      const associationPage = await this.documentsService.listTaskDocuments(taskId, {
+        page: sourcePage,
+        page_size: PERMISSION_SCAN_PAGE_SIZE,
+      });
+      associations.push(...associationPage.items);
+      hasNext = associationPage.pagination.has_next;
+      sourcePage += 1;
+    }
+
     const visible: TaskDocumentListItem[] = [];
 
     for (const item of associations) {
-      const access = await this.getAccess(taskId, item.document.id, caller);
+      const access = await this.getAccess(taskId, item.document, caller);
       if (!access.permissions.includes(PermissionAction.PREVIEW)) continue;
 
       visible.push({
@@ -165,7 +193,11 @@ export class TaskDocumentsService {
       });
     }
 
-    return visible;
+    const start = (pagination.page - 1) * pagination.page_size;
+    return {
+      items: visible.slice(start, start + pagination.page_size),
+      pagination: createPaginationMeta(pagination.page, pagination.page_size, visible.length),
+    };
   }
 
   async addGrant(
@@ -329,6 +361,8 @@ export class TaskDocumentsService {
             resource_id: documentId,
             action: permission as PermissionAction,
             task_id: null,
+            owner_id: document.owner_id,
+            creator_id: document.creator_id,
             correlation_id: randomUUID(),
           });
           if (!decision.allowed) {
@@ -358,6 +392,8 @@ export class TaskDocumentsService {
       resource_id: document.id,
       action: PermissionAction.SHARE,
       task_id: null,
+      owner_id: document.owner_id,
+      creator_id: document.creator_id,
       correlation_id: randomUUID(),
     });
 
@@ -372,7 +408,7 @@ export class TaskDocumentsService {
 
   private async getAccess(
     taskId: string,
-    documentId: string,
+    document: DocumentDto,
     caller: AuthContext,
   ): Promise<{ permissions: PermissionAction[]; effective_expires_at: string | null }> {
     const permissions: PermissionAction[] = [];
@@ -383,9 +419,11 @@ export class TaskDocumentsService {
         actor_id: caller.userId,
         actor_role: caller.role,
         resource_type: ResourceType.DOCUMENT,
-        resource_id: documentId,
+        resource_id: document.id,
         action,
         task_id: taskId,
+        owner_id: document.owner_id,
+        creator_id: document.creator_id,
         correlation_id: randomUUID(),
       });
 
