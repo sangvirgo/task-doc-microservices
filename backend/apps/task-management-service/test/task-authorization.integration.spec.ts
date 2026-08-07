@@ -440,7 +440,7 @@ describe('Task authorization integration (PostgreSQL)', () => {
       .set(authHeaders(EMPLOYEE_ID, 'EMPLOYEE'));
 
     expect(listRes.status).toBe(200);
-    expect(listRes.body).toEqual(
+    expect(listRes.body.items).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
           content: 'Visible to participants only',
@@ -476,7 +476,7 @@ describe('Task authorization integration (PostgreSQL)', () => {
       .set(authHeaders(EMPLOYEE_ID, 'EMPLOYEE'));
 
     expect(res.status).toBe(200);
-    expect(res.body).toEqual(
+    expect(res.body.items).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
           activity_type: 'COMMENT',

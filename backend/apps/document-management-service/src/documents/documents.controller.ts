@@ -13,10 +13,10 @@ import {
   Req,
   Res,
   ServiceUnavailableException,
-  UploadedFile,
+  UploadedFiles,
   UseInterceptors,
 } from '@nestjs/common';
-import { FileInterceptor } from '@nestjs/platform-express';
+import { FilesInterceptor } from '@nestjs/platform-express';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import { z } from 'zod';
 import { randomUUID } from 'crypto';
@@ -30,7 +30,14 @@ import { pipeline } from 'stream/promises';
 
 import { CurrentUser, AuthContext, isAdmin, hasCapability } from '@c17/auth-context';
 import { getCorrelationId } from '@c17/observability';
-import { Capability } from '@c17/contracts';
+import {
+  Capability,
+  createPaginationMeta,
+  paginationQuerySchema,
+  PaginatedResponse,
+  PaginationQuery,
+  PermissionAction,
+} from '@c17/contracts';
 
 import {
   DocumentsService,
@@ -88,7 +95,16 @@ const recordEntrySchema = z.object({
 
 const TMP_UPLOAD_DIR =
   process.env.DOCUMENT_UPLOAD_TMP_DIR || join(tmpdir(), 'c17-document-management-uploads');
+
+const PERMISSION_SCAN_PAGE_SIZE = 100;
+
+function parsePagination(page?: string, page_size?: string): PaginationQuery {
+  const parsed = paginationQuerySchema.safeParse({ page, page_size });
+  if (!parsed.success) throw new BadRequestException(parsed.error.issues);
+  return parsed.data;
+}
 const MAX_UPLOAD_BYTES = Number(process.env.DOCUMENT_UPLOAD_MAX_BYTES || 25 * 1024 * 1024);
+const MAX_UPLOAD_FILES = Number(process.env.DOCUMENT_UPLOAD_MAX_FILES || 10);
 const ALLOWED_UPLOAD_MIME_TYPES = new Set(
   (
     process.env.DOCUMENT_ALLOWED_MIME_TYPES ||
@@ -171,6 +187,12 @@ interface UploadedDocumentResult {
   grants?: TaskDocumentGrantResult['grants'];
 }
 
+interface UploadedDocumentBatchResult {
+  items: UploadedDocumentResult[];
+}
+
+type UploadDocumentsResponse = UploadedDocumentResult | UploadedDocumentBatchResult;
+
 interface UploadMetadata {
   title: string;
   document_type: string;
@@ -218,8 +240,11 @@ export class DocumentsController {
     @Query('creator_id') creator_id?: string,
     @Query('status') status?: string,
     @CurrentUser() user?: AuthContext,
-  ): Promise<DocumentDto[]> {
+    @Query('page') page?: string,
+    @Query('page_size') page_size?: string,
+  ): Promise<PaginatedResponse<DocumentDto>> {
     if (!user) throw new ForbiddenException('Authentication required');
+    const pagination = parsePagination(page, page_size);
 
     if (!isAdmin(user)) {
       if (owner_id && owner_id !== user.userId) {
@@ -229,63 +254,94 @@ export class DocumentsController {
         throw new ForbiddenException('Employees may only list documents they created');
       }
 
-      return this.documentsService.listDocuments({
-        owner_id: user.userId,
-        creator_id,
-        status,
-      });
+      return this.documentsService.listDocuments(
+        { owner_id: user.userId, creator_id, status },
+        pagination,
+      );
     }
 
-    const documents = await this.documentsService.listDocuments({ owner_id, creator_id, status });
-    const visible = await Promise.all(
-      documents.map(async (document) => {
-        const decision = await this.permissionClient.check({
-          actor_id: user.userId,
-          actor_role: user.role,
-          resource_type: 'DOCUMENT',
-          resource_id: document.id,
-          action: 'PREVIEW',
-          correlation_id: getCorrelationId() ?? randomUUID(),
-        });
-        return decision.allowed ? document : null;
-      }),
-    );
-    return visible.filter((document): document is DocumentDto => document !== null);
+    const allVisible: DocumentDto[] = [];
+    let scanPage = 1;
+    let hasNext = true;
+    while (hasNext) {
+      const documents = await this.documentsService.listDocuments(
+        { owner_id, creator_id, status },
+        { page: scanPage, page_size: PERMISSION_SCAN_PAGE_SIZE },
+      );
+      const visible = await Promise.all(
+        documents.items.map(async (document) => {
+          const decision = await this.permissionClient.check({
+            actor_id: user.userId,
+            actor_role: user.role,
+            resource_type: 'DOCUMENT',
+            resource_id: document.id,
+            action: 'PREVIEW',
+            owner_id: document.owner_id,
+            creator_id: document.creator_id,
+            correlation_id: getCorrelationId() ?? randomUUID(),
+          });
+          return decision.allowed ? document : null;
+        }),
+      );
+      allVisible.push(...visible.filter((document): document is DocumentDto => document !== null));
+      hasNext = documents.pagination.has_next;
+      scanPage += 1;
+    }
+
+    const start = (pagination.page - 1) * pagination.page_size;
+    return {
+      items: allVisible.slice(start, start + pagination.page_size),
+      pagination: createPaginationMeta(pagination.page, pagination.page_size, allVisible.length),
+    };
   }
 
   @Post('upload')
   @UseInterceptors(
-    FileInterceptor('file', {
+    FilesInterceptor('file', MAX_UPLOAD_FILES, {
       dest: TMP_UPLOAD_DIR,
-      limits: { fileSize: MAX_UPLOAD_BYTES, files: 1 },
+      limits: { fileSize: MAX_UPLOAD_BYTES, files: MAX_UPLOAD_FILES },
     }),
   )
-  @ApiOperation({ summary: 'Upload a document with streamed downstream processing' })
+  @ApiOperation({ summary: 'Upload one or more documents with streamed downstream processing' })
   async uploadDocument(
-    @UploadedFile() file: UploadedFilePayload | undefined,
+    @UploadedFiles() files: UploadedFilePayload[] | undefined,
     @Body() body: Record<string, string>,
     @CurrentUser() user?: AuthContext,
-  ): Promise<UploadedDocumentResult> {
+  ): Promise<UploadDocumentsResponse> {
     if (!user) throw new ForbiddenException('Authentication required');
     if (isAdmin(user)) throw new ForbiddenException('ADMIN cannot upload documents');
-    if (!file) throw new BadRequestException('A file upload is required');
+    if (!files?.length) throw new BadRequestException('A file upload is required');
 
     const parsed = multipartUploadSchema.safeParse(body);
     if (!parsed.success) {
-      await safeDelete(file.path);
+      await Promise.all(files.map((file) => safeDelete(file.path)));
       throw new BadRequestException(parsed.error.issues);
     }
 
-    return this.handleUploadedFile(
-      {
-        filePath: file.path,
-        fileSize: file.size,
-        mimeType: normalizeMimeType(file.mimetype),
-        originalName: file.originalname,
-      },
-      { ...parsed.data, owner_id: user.userId },
-      user,
-    );
+    const results: UploadedDocumentResult[] = [];
+    const unprocessedPaths = new Set(files.map((file) => file.path));
+
+    try {
+      for (const file of files) {
+        results.push(
+          await this.handleUploadedFile(
+            {
+              filePath: file.path,
+              fileSize: file.size,
+              mimeType: normalizeMimeType(file.mimetype),
+              originalName: file.originalname,
+            },
+            { ...parsed.data, owner_id: user.userId },
+            user,
+          ),
+        );
+        unprocessedPaths.delete(file.path);
+      }
+    } finally {
+      await Promise.all([...unprocessedPaths].map((filePath) => safeDelete(filePath)));
+    }
+
+    return files.length === 1 ? results[0] : { items: results };
   }
 
   @Post('upload/raw')
@@ -382,20 +438,17 @@ export class DocumentsController {
   ): Promise<DocumentDto> {
     if (!user) throw new ForbiddenException('Authentication required');
 
-    const permCheck = await this.permissionClient.check({
-      actor_id: user.userId,
-      actor_role: user.role,
-      resource_type: 'DOCUMENT',
-      resource_id: documentId,
-      action: 'PREVIEW',
-      correlation_id: getCorrelationId() ?? randomUUID(),
-    });
+    const { document, decision: permCheck } = await this.checkDocumentPermission(
+      documentId,
+      user,
+      PermissionAction.PREVIEW,
+    );
 
     if (!permCheck.allowed) {
       throw new ForbiddenException(`Document access denied: ${permCheck.reason_code}`);
     }
 
-    return this.documentsService.getDocument(documentId);
+    return document;
   }
 
   @Get(':id/preview')
@@ -403,14 +456,11 @@ export class DocumentsController {
   async getDocumentPreview(@Param('id') documentId: string, @CurrentUser() user?: AuthContext) {
     if (!user) throw new ForbiddenException('Authentication required');
 
-    const permCheck = await this.permissionClient.check({
-      actor_id: user.userId,
-      actor_role: user.role,
-      resource_type: 'DOCUMENT',
-      resource_id: documentId,
-      action: 'PREVIEW',
-      correlation_id: getCorrelationId() ?? randomUUID(),
-    });
+    const { decision: permCheck } = await this.checkDocumentPermission(
+      documentId,
+      user,
+      PermissionAction.PREVIEW,
+    );
 
     if (!permCheck.allowed) {
       throw new ForbiddenException(`Document access denied: ${permCheck.reason_code}`);
@@ -429,14 +479,11 @@ export class DocumentsController {
     if (!user) throw new ForbiddenException('Authentication required');
     if (isAdmin(user)) throw new ForbiddenException('ADMIN cannot create document versions');
 
-    const permCheck = await this.permissionClient.check({
-      actor_id: user.userId,
-      actor_role: user.role,
-      resource_type: 'DOCUMENT',
-      resource_id: documentId,
-      action: 'UPDATE',
-      correlation_id: getCorrelationId() ?? randomUUID(),
-    });
+    const { decision: permCheck } = await this.checkDocumentPermission(
+      documentId,
+      user,
+      PermissionAction.UPDATE,
+    );
     if (!permCheck.allowed)
       throw new ForbiddenException(`Document update denied: ${permCheck.reason_code}`);
 
@@ -475,9 +522,11 @@ export class DocumentsController {
   async getVersions(
     @Param('id') documentId: string,
     @CurrentUser() user?: AuthContext,
-  ): Promise<DocumentVersionDto[]> {
+    @Query('page') page?: string,
+    @Query('page_size') page_size?: string,
+  ) {
     await this.requireDocumentPreview(documentId, user);
-    return this.documentsService.getDocumentVersions(documentId);
+    return this.documentsService.getDocumentVersions(documentId, parsePagination(page, page_size));
   }
 
   @Get(':id/versions/:version')
@@ -495,14 +544,11 @@ export class DocumentsController {
 
   private async requireDocumentPreview(documentId: string, user?: AuthContext): Promise<void> {
     if (!user) throw new ForbiddenException('Authentication required');
-    const decision = await this.permissionClient.check({
-      actor_id: user.userId,
-      actor_role: user.role,
-      resource_type: 'DOCUMENT',
-      resource_id: documentId,
-      action: 'PREVIEW',
-      correlation_id: getCorrelationId() ?? randomUUID(),
-    });
+    const { decision } = await this.checkDocumentPermission(
+      documentId,
+      user,
+      PermissionAction.PREVIEW,
+    );
     if (!decision.allowed)
       throw new ForbiddenException(`Document access denied: ${decision.reason_code}`);
   }
@@ -521,15 +567,12 @@ export class DocumentsController {
       throw new BadRequestException(parsed.error.issues);
     }
 
-    const permCheck = await this.permissionClient.check({
-      actor_id: user.userId,
-      actor_role: user.role,
-      resource_type: 'DOCUMENT',
-      resource_id: documentId,
-      action: 'DOWNLOAD',
-      task_id: parsed.data.task_id,
-      correlation_id: getCorrelationId() ?? randomUUID(),
-    });
+    const { decision: permCheck } = await this.checkDocumentPermission(
+      documentId,
+      user,
+      PermissionAction.DOWNLOAD,
+      parsed.data.task_id,
+    );
 
     if (!permCheck.allowed) {
       throw new ForbiddenException(`Download denied: ${permCheck.reason_code}`);
@@ -571,15 +614,12 @@ export class DocumentsController {
     const parsedTaskId = z.string().uuid().safeParse(taskId);
     if (!parsedTaskId.success) throw new BadRequestException('task_id is required');
 
-    const permCheck = await this.permissionClient.check({
-      actor_id: user.userId,
-      actor_role: user.role,
-      resource_type: 'DOCUMENT',
-      resource_id: documentId,
-      action: 'DOWNLOAD',
-      task_id: parsedTaskId.data,
-      correlation_id: getCorrelationId() ?? randomUUID(),
-    });
+    const { decision: permCheck } = await this.checkDocumentPermission(
+      documentId,
+      user,
+      PermissionAction.DOWNLOAD,
+      parsedTaskId.data,
+    );
 
     if (!permCheck.allowed) {
       throw new ForbiddenException(`Download denied: ${permCheck.reason_code}`);
@@ -664,15 +704,12 @@ export class DocumentsController {
       throw new ForbiddenException('Download denied');
     }
 
-    const permCheck = await this.permissionClient.check({
-      actor_id: user.userId,
-      actor_role: user.role,
-      resource_type: 'DOCUMENT',
-      resource_id: documentId,
-      action: 'DOWNLOAD',
-      task_id: ticket.task_id,
-      correlation_id: correlationId,
-    });
+    const { decision: permCheck } = await this.checkDocumentPermission(
+      documentId,
+      user,
+      PermissionAction.DOWNLOAD,
+      ticket.task_id,
+    );
 
     if (!permCheck.allowed) {
       await auditDeny(permCheck.reason_code || 'DOWNLOAD_DENIED');
@@ -723,6 +760,28 @@ export class DocumentsController {
     }
 
     await pipeline(Readable.fromWeb(securityResponse.body as never), res);
+  }
+
+  private async checkDocumentPermission(
+    documentId: string,
+    user: AuthContext,
+    action: PermissionAction,
+    taskId?: string | null,
+  ) {
+    const document = await this.documentsService.getDocument(documentId);
+    const decision = await this.permissionClient.check({
+      actor_id: user.userId,
+      actor_role: user.role,
+      resource_type: 'DOCUMENT',
+      resource_id: documentId,
+      action,
+      task_id: taskId,
+      owner_id: document.owner_id,
+      creator_id: document.creator_id,
+      correlation_id: getCorrelationId() ?? randomUUID(),
+    });
+
+    return { document, decision };
   }
 
   private async handleUploadedFile(
@@ -860,10 +919,15 @@ export class RecordsController {
     @Query('creator_id') _creator_id?: string,
     @Query('status') status?: string,
     @CurrentUser() user?: AuthContext,
-  ): Promise<RecordDto[]> {
+    @Query('page') page?: string,
+    @Query('page_size') page_size?: string,
+  ) {
     if (!user) throw new ForbiddenException('Authentication required');
     if (isAdmin(user)) throw new ForbiddenException('ADMIN cannot access records');
-    return this.documentsService.listRecords({ creator_id: user.userId, status });
+    return this.documentsService.listRecords(
+      { creator_id: user.userId, status },
+      parsePagination(page, page_size),
+    );
   }
 
   @Post()
@@ -1283,17 +1347,22 @@ export class TransferPackagesController {
     @Query('status') status?: string,
     @Query('submitter_id') submitter_id?: string,
     @CurrentUser() user?: AuthContext,
-  ): Promise<TransferPackageDto[]> {
+    @Query('page') page?: string,
+    @Query('page_size') page_size?: string,
+  ) {
     if (!user) throw new ForbiddenException('Authentication required');
     if (isAdmin(user)) throw new ForbiddenException('ADMIN cannot access transfer packages');
+    const pagination = parsePagination(page, page_size);
     if (!isAdmin(user) && !hasCapability(user, Capability.ARCHIVE_RECEIVE)) {
-      return this.documentsService.listTransferPackages({
-        record_id,
-        status,
-        submitter_id: user.userId,
-      });
+      return this.documentsService.listTransferPackages(
+        { record_id, status, submitter_id: user.userId },
+        pagination,
+      );
     }
-    return this.documentsService.listTransferPackages({ record_id, status, submitter_id });
+    return this.documentsService.listTransferPackages(
+      { record_id, status, submitter_id },
+      pagination,
+    );
   }
 }
 
@@ -1357,14 +1426,11 @@ export class RetentionDisposalController {
       throw new BadRequestException(parsed.error.issues);
     }
 
-    const permCheck = await this.permissionClient.check({
-      actor_id: user.userId,
-      actor_role: user.role,
-      resource_type: 'DOCUMENT',
-      resource_id: parsed.data.document_id,
-      action: 'DISPOSE',
-      correlation_id: getCorrelationId() ?? randomUUID(),
-    });
+    const { decision: permCheck } = await this.checkDocumentPermission(
+      parsed.data.document_id,
+      user,
+      PermissionAction.DISPOSE,
+    );
 
     if (!permCheck.allowed) {
       throw new ForbiddenException(`Disposal approval denied: ${permCheck.reason_code}`);
@@ -1402,14 +1468,11 @@ export class RetentionDisposalController {
       throw new BadRequestException(parsed.error.issues);
     }
 
-    const permCheck = await this.permissionClient.check({
-      actor_id: user.userId,
-      actor_role: user.role,
-      resource_type: 'DOCUMENT',
-      resource_id: parsed.data.document_id,
-      action: 'DISPOSE',
-      correlation_id: getCorrelationId() ?? randomUUID(),
-    });
+    const { decision: permCheck } = await this.checkDocumentPermission(
+      parsed.data.document_id,
+      user,
+      PermissionAction.DISPOSE,
+    );
 
     if (!permCheck.allowed) {
       throw new ForbiddenException(`Disposal execution denied: ${permCheck.reason_code}`);
@@ -1431,6 +1494,26 @@ export class RetentionDisposalController {
     });
 
     return result;
+  }
+
+  private async checkDocumentPermission(
+    documentId: string,
+    user: AuthContext,
+    action: PermissionAction,
+  ) {
+    const document = await this.documentsService.getDocument(documentId);
+    const decision = await this.permissionClient.check({
+      actor_id: user.userId,
+      actor_role: user.role,
+      resource_type: 'DOCUMENT',
+      resource_id: documentId,
+      action,
+      owner_id: document.owner_id,
+      creator_id: document.creator_id,
+      correlation_id: getCorrelationId() ?? randomUUID(),
+    });
+
+    return { document, decision };
   }
 
   @Post('holds')
@@ -1473,13 +1556,18 @@ export class RetentionDisposalController {
     @Query('document_id') document_id?: string,
     @Query('released') released?: string,
     @CurrentUser() user?: AuthContext,
+    @Query('page') page?: string,
+    @Query('page_size') page_size?: string,
   ) {
     const operator = this.requireRetentionEmployee(user);
-    return this.documentsService.listRetentionHolds({
-      document_id,
-      released: released === 'true' ? true : released === 'false' ? false : undefined,
-      placed_by: operator.userId,
-    });
+    return this.documentsService.listRetentionHolds(
+      {
+        document_id,
+        released: released === 'true' ? true : released === 'false' ? false : undefined,
+        placed_by: operator.userId,
+      },
+      parsePagination(page, page_size),
+    );
   }
 
   @Get('approvals')
@@ -1487,12 +1575,14 @@ export class RetentionDisposalController {
   async listApprovals(
     @Query('document_id') document_id?: string,
     @CurrentUser() user?: AuthContext,
+    @Query('page') page?: string,
+    @Query('page_size') page_size?: string,
   ) {
     const operator = this.requireRetentionEmployee(user);
-    return this.documentsService.listDisposalApprovals({
-      document_id,
-      approver_id: operator.userId,
-    });
+    return this.documentsService.listDisposalApprovals(
+      { document_id, approver_id: operator.userId },
+      parsePagination(page, page_size),
+    );
   }
 
   private requireRetentionEmployee(user?: AuthContext): AuthContext {

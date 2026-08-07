@@ -43,6 +43,20 @@ function document() {
   };
 }
 
+function associationPage(items: unknown[]) {
+  return {
+    items,
+    pagination: {
+      page: 1,
+      page_size: 100,
+      total: items.length,
+      total_pages: items.length > 0 ? 1 : 0,
+      has_next: false,
+      has_previous: false,
+    },
+  };
+}
+
 function makeService() {
   const documentsService = {
     getDocument: jest.fn().mockResolvedValue(document()),
@@ -167,18 +181,20 @@ describe('TaskDocumentsService', () => {
 
   it('lists only attached Documents with PREVIEW in the same Task context', async () => {
     const { service, documentsService, permissionClient } = makeService();
-    documentsService.listTaskDocuments.mockResolvedValue([
-      {
-        association: {
-          id: 'association-1',
-          task_id: TASK_ID,
-          document_id: DOCUMENT_ID,
-          attached_by: CREATOR_ID,
-          attached_at: '2026-08-05T12:00:00.000Z',
+    documentsService.listTaskDocuments.mockResolvedValue(
+      associationPage([
+        {
+          association: {
+            id: 'association-1',
+            task_id: TASK_ID,
+            document_id: DOCUMENT_ID,
+            attached_by: CREATOR_ID,
+            attached_at: '2026-08-05T12:00:00.000Z',
+          },
+          document: document(),
         },
-        document: document(),
-      },
-    ]);
+      ]),
+    );
     permissionClient.check.mockImplementation(({ action }: { action: string }) => ({
       allowed: action === PermissionAction.PREVIEW,
       effective_expires_at: action === PermissionAction.PREVIEW ? EXPIRY : null,
@@ -186,8 +202,8 @@ describe('TaskDocumentsService', () => {
 
     const result = await service.list(TASK_ID, caller(ASSIGNEE_ID));
 
-    expect(result).toHaveLength(1);
-    expect(result[0]).toMatchObject({
+    expect(result.items).toHaveLength(1);
+    expect(result.items[0]).toMatchObject({
       task_id: TASK_ID,
       document_id: DOCUMENT_ID,
       permissions: [PermissionAction.PREVIEW],
@@ -202,44 +218,97 @@ describe('TaskDocumentsService', () => {
     );
   });
 
+  it('passes pagination to the task-document association query', async () => {
+    const { service, documentsService } = makeService();
+    documentsService.listTaskDocuments.mockResolvedValue(associationPage([]));
+
+    await service.list(TASK_ID, caller(ASSIGNEE_ID), { page: 2, page_size: 2 });
+
+    expect(documentsService.listTaskDocuments).toHaveBeenCalledWith(TASK_ID, {
+      page: 1,
+      page_size: 100,
+    });
+  });
+
   it('does not list an attached Document when the caller has no task-scoped PREVIEW grant', async () => {
     const { service, documentsService } = makeService();
-    documentsService.listTaskDocuments.mockResolvedValue([
-      {
-        association: {
-          id: 'association-1',
-          task_id: TASK_ID,
-          document_id: DOCUMENT_ID,
-          attached_by: CREATOR_ID,
-          attached_at: '2026-08-05T12:00:00.000Z',
+    documentsService.listTaskDocuments.mockResolvedValue(
+      associationPage([
+        {
+          association: {
+            id: 'association-1',
+            task_id: TASK_ID,
+            document_id: DOCUMENT_ID,
+            attached_by: CREATOR_ID,
+            attached_at: '2026-08-05T12:00:00.000Z',
+          },
+          document: document(),
         },
-        document: document(),
-      },
-    ]);
+      ]),
+    );
 
-    await expect(service.list(TASK_ID, caller(ASSIGNEE_ID))).resolves.toEqual([]);
+    await expect(service.list(TASK_ID, caller(ASSIGNEE_ID))).resolves.toEqual(
+      expect.objectContaining({ items: [] }),
+    );
+  });
+
+  it('gives the document owner all document actions in the task listing', async () => {
+    const { service, documentsService, permissionClient } = makeService();
+    documentsService.listTaskDocuments.mockResolvedValue(
+      associationPage([
+        {
+          association: {
+            id: 'association-1',
+            task_id: TASK_ID,
+            document_id: DOCUMENT_ID,
+            attached_by: CREATOR_ID,
+            attached_at: '2026-08-05T12:00:00.000Z',
+          },
+          document: document(),
+        },
+      ]),
+    );
+    permissionClient.check.mockImplementation(({ owner_id }: { owner_id?: string }) => ({
+      allowed: owner_id === CREATOR_ID,
+      effective_expires_at: owner_id === CREATOR_ID ? null : null,
+    }));
+
+    const result = await service.list(TASK_ID, caller(CREATOR_ID));
+
+    expect(result.items[0]?.permissions).toEqual([
+      PermissionAction.PREVIEW,
+      PermissionAction.DOWNLOAD,
+      PermissionAction.UPDATE,
+      PermissionAction.SHARE,
+      PermissionAction.TRANSFER,
+      PermissionAction.DISPOSE,
+    ]);
   });
 
   it('does not let a grant from another Task authorize this Task listing', async () => {
     const { service, documentsService, permissionClient } = makeService();
-    documentsService.listTaskDocuments.mockResolvedValue([
-      {
-        association: {
-          id: 'association-1',
-          task_id: TASK_ID,
-          document_id: DOCUMENT_ID,
-          attached_by: CREATOR_ID,
-          attached_at: '2026-08-05T12:00:00.000Z',
+    documentsService.listTaskDocuments.mockResolvedValue(
+      associationPage([
+        {
+          association: {
+            id: 'association-1',
+            task_id: TASK_ID,
+            document_id: DOCUMENT_ID,
+            attached_by: CREATOR_ID,
+            attached_at: '2026-08-05T12:00:00.000Z',
+          },
+          document: document(),
         },
-        document: document(),
-      },
-    ]);
+      ]),
+    );
     permissionClient.check.mockImplementation(({ task_id, action }) => ({
       allowed: task_id === OTHER_TASK_ID && action === PermissionAction.PREVIEW,
       effective_expires_at: task_id === OTHER_TASK_ID ? EXPIRY : null,
     }));
 
-    await expect(service.list(TASK_ID, caller(ASSIGNEE_ID))).resolves.toEqual([]);
+    await expect(service.list(TASK_ID, caller(ASSIGNEE_ID))).resolves.toEqual(
+      expect.objectContaining({ items: [] }),
+    );
     expect(permissionClient.check).toHaveBeenCalledWith(
       expect.objectContaining({ task_id: TASK_ID, action: PermissionAction.PREVIEW }),
     );

@@ -15,16 +15,15 @@ import { z } from 'zod';
 import { randomUUID } from 'crypto';
 
 import { CurrentUser, AuthContext } from '@c17/auth-context';
-import { PermissionAction, ResourceType } from '@c17/contracts';
+import {
+  paginationQuerySchema,
+  PaginationQuery,
+  PermissionAction,
+  ResourceType,
+} from '@c17/contracts';
 import { getCorrelationId } from '@c17/observability';
 
-import {
-  AncestorTaskSummaryDto,
-  TasksService,
-  TaskCommentDto,
-  TaskDto,
-  TaskContextDto,
-} from './tasks.service';
+import { AncestorTaskSummaryDto, TasksService, TaskDto, TaskContextDto } from './tasks.service';
 import { PermissionClient } from '../permissions/permission.client';
 import { AuditClient } from '../audit/audit.client';
 import { UserRoleClient } from '../users/user-role.client';
@@ -93,6 +92,12 @@ const reviewSchema = z
     }
   });
 
+function parsePagination(page?: string, page_size?: string): PaginationQuery {
+  const parsed = paginationQuerySchema.safeParse({ page, page_size });
+  if (!parsed.success) throw new BadRequestException(parsed.error.issues);
+  return parsed.data;
+}
+
 /**
  * Task Management API (V3 §5.3, §5.10).
  * Full task lifecycle with participation, comments, submissions, and activity tracking.
@@ -125,17 +130,23 @@ export class TasksController {
     @Query('status') status?: string,
     @Query('parent_task_id') parent_task_id?: string,
     @CurrentUser() user?: AuthContext,
-  ): Promise<TaskDto[]> {
+    @Query('page') page?: string,
+    @Query('page_size') page_size?: string,
+  ) {
     if (!user) throw new ForbiddenException('Authentication required');
 
     await this.assertPermission(user, PermissionAction.TASK_VIEW, randomUUID());
 
-    return this.tasksService.listTasks(user.userId, {
-      creator_id,
-      assignee_id,
-      status,
-      parent_task_id,
-    });
+    return this.tasksService.listTasks(
+      user.userId,
+      {
+        creator_id,
+        assignee_id,
+        status,
+        parent_task_id,
+      },
+      parsePagination(page, page_size),
+    );
   }
 
   @Get(':id')
@@ -293,10 +304,15 @@ export class TasksController {
 
   @Get(':id/participants')
   @ApiOperation({ summary: 'Get task participants' })
-  async getParticipants(@Param('id') taskId: string, @CurrentUser() user?: AuthContext) {
+  async getParticipants(
+    @Param('id') taskId: string,
+    @CurrentUser() user?: AuthContext,
+    @Query('page') page?: string,
+    @Query('page_size') page_size?: string,
+  ) {
     if (!user) throw new ForbiddenException('Authentication required');
     await this.assertPermission(user, PermissionAction.TASK_VIEW, taskId);
-    return this.tasksService.getParticipants(taskId, user.userId);
+    return this.tasksService.getParticipants(taskId, user.userId, parsePagination(page, page_size));
   }
 
   @Get(':id/comments')
@@ -304,13 +320,19 @@ export class TasksController {
   async getComments(
     @Param('id') taskId: string,
     @CurrentUser() user?: AuthContext,
-  ): Promise<TaskCommentDto[]> {
+    @Query('page') page?: string,
+    @Query('page_size') page_size?: string,
+  ) {
     if (!user) throw new ForbiddenException('Authentication required');
     await this.assertPermission(user, PermissionAction.TASK_COMMENT, taskId, {
       deniedEventType: 'TASK_COMMENT_ACCESS_DENIED',
     });
     try {
-      return await this.tasksService.getComments(taskId, user.userId);
+      return await this.tasksService.getComments(
+        taskId,
+        user.userId,
+        parsePagination(page, page_size),
+      );
     } catch (error) {
       await this.auditDirectCommentDenial(taskId, user.userId, error);
       throw error;
@@ -384,10 +406,15 @@ export class TasksController {
 
   @Get(':id/activity')
   @ApiOperation({ summary: 'Get task activity log' })
-  async getActivity(@Param('id') taskId: string, @CurrentUser() user?: AuthContext) {
+  async getActivity(
+    @Param('id') taskId: string,
+    @CurrentUser() user?: AuthContext,
+    @Query('page') page?: string,
+    @Query('page_size') page_size?: string,
+  ) {
     if (!user) throw new ForbiddenException('Authentication required');
     await this.assertPermission(user, PermissionAction.TASK_VIEW, taskId);
-    return this.tasksService.getTaskActivity(taskId, user.userId);
+    return this.tasksService.getTaskActivity(taskId, user.userId, parsePagination(page, page_size));
   }
 
   private async assertPermission(

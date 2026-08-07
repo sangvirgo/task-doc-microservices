@@ -16,6 +16,7 @@ const EMPLOYEE_ID = '10000000-0000-4000-8000-000000000001';
 const ASSIGNEE_ID = '10000000-0000-4000-8000-000000000002';
 const TASK_ID = '10000000-0000-4000-a000-000000000003';
 const GRANT_EXPIRY = '2026-08-10T17:00:00.000Z';
+const DOCX_MIME = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
 
 function authHeaders(userId: string): Record<string, string> {
   return {
@@ -174,6 +175,64 @@ describe('Document upload integration (PostgreSQL)', () => {
     expect(await prisma.taskDocument.count()).toBe(0);
   });
 
+  it('accepts a DOCX upload through the security pipeline', async () => {
+    const response = await request(app.getHttpServer())
+      .post('/documents/upload')
+      .set(authHeaders(EMPLOYEE_ID))
+      .field('title', 'Word memo')
+      .field('document_type', 'MEMO')
+      .field('security_level', 'INTERNAL')
+      .attach('file', Buffer.from('docx bytes!'), {
+        filename: 'word-memo.docx',
+        contentType: DOCX_MIME,
+      })
+      .expect(201);
+
+    expect(response.body.document.title).toBe('Word memo');
+    expect(
+      fetchMock.mock.calls.some(([input, init]) => {
+        const url = fetchUrl(input);
+        if (!url.endsWith('/security/uploads/process')) return false;
+        return new Headers(init?.headers).get('content-type') === DOCX_MIME;
+      }),
+    ).toBe(true);
+  });
+
+  it('processes multiple files sent under the file field and returns one item per document', async () => {
+    const response = await request(app.getHttpServer())
+      .post('/documents/upload')
+      .set(authHeaders(EMPLOYEE_ID))
+      .field('title', 'Batch upload')
+      .field('document_type', 'MEMO')
+      .field('security_level', 'INTERNAL')
+      .attach('file', Buffer.from('hello world'), {
+        filename: 'first.txt',
+        contentType: 'text/plain',
+      })
+      .attach('file', Buffer.from('second doc'), {
+        filename: 'second.txt',
+        contentType: 'text/plain',
+      })
+      .expect(201);
+
+    expect(response.body.items).toHaveLength(2);
+    expect(response.body.items).toEqual([
+      expect.objectContaining({
+        document: expect.objectContaining({ title: 'Batch upload' }),
+      }),
+      expect.objectContaining({
+        document: expect.objectContaining({ title: 'Batch upload' }),
+      }),
+    ]);
+    expect(await prisma.document.count()).toBe(2);
+    expect(await prisma.documentVersion.count()).toBe(2);
+    expect(
+      fetchMock.mock.calls.filter(([input]) =>
+        fetchUrl(input).endsWith('/security/uploads/process'),
+      ),
+    ).toHaveLength(2);
+  });
+
   it('lists an independently uploaded document in the owner inventory before task attachment', async () => {
     const upload = await request(app.getHttpServer())
       .post('/documents/upload')
@@ -192,9 +251,10 @@ describe('Document upload integration (PostgreSQL)', () => {
       .set(authHeaders(EMPLOYEE_ID))
       .expect(200);
 
-    expect(response.body).toEqual([
+    expect(response.body.items).toEqual([
       expect.objectContaining({ id: upload.body.document.id, title: 'Discoverable memo' }),
     ]);
+    expect(response.body.pagination).toMatchObject({ page: 1, page_size: 20, total: 1 });
   });
 
   it('uploads and attaches a document to a task when explicit task grants are supplied', async () => {
