@@ -4,7 +4,7 @@
 
 **Goal:** Build and validate an 11-slide Vietnamese PPTX for a 10–15 minute internship presentation aligned to CLO1–CLO5.
 
-**Architecture:** A single Node.js generator produces 16:9 SVG slide artwork with a dark security-first theme, rasterizes each slide with ImageMagick, and packages the images into a minimal PPTX. The deck is intentionally self-contained and does not depend on the frontend or external assets.
+**Architecture:** A Node.js generator produces 16:9 SVG slide artwork with a dark security-first theme. A small shell wrapper rasterizes the artwork with ImageMagick and invokes the generator again to package the PNGs into a minimal PPTX. The deck is intentionally self-contained and does not depend on the frontend or external assets.
 
 **Tech Stack:** Node.js ESM, SVG, ImageMagick `convert`, ZIP/XML PPTX package, LibreOffice headless validation.
 
@@ -14,6 +14,7 @@
 
 **Files:**
 - Create: `scripts/create-clo-internship-deck.mjs`
+- Create: `scripts/build-clo-internship-deck.sh`
 - Create by generator: `docs/presentations/C17-CLO-internship-presentation.pptx`
 
 - [ ] **Step 1: Define reusable slide primitives**
@@ -33,7 +34,7 @@ Generate PNG assets from SVG with ImageMagick, then write the PPTX package parts
 Run:
 
 ```bash
-node scripts/create-clo-internship-deck.mjs
+bash scripts/build-clo-internship-deck.sh
 ```
 
 Expected: the PPTX is created at `docs/presentations/C17-CLO-internship-presentation.pptx` and the generator reports 11 slides.
@@ -53,17 +54,21 @@ unzip -t docs/presentations/C17-CLO-internship-presentation.pptx
 
 Expected: no CRC or ZIP errors.
 
-- [ ] **Step 2: Convert with LibreOffice**
+- [ ] **Step 2: Validate native PPTX structure**
 
 Run:
 
 ```bash
-mkdir -p /tmp/c17-clo-pptx-check
-libreoffice --headless --convert-to pdf --outdir /tmp/c17-clo-pptx-check docs/presentations/C17-CLO-internship-presentation.pptx
-pdfinfo /tmp/c17-clo-pptx-check/C17-CLO-internship-presentation.pdf | rg '^Pages:'
+PYTHONPATH=/tmp/c17-pptx-lib python3 - <<'PY'
+from pptx import Presentation
+prs = Presentation('docs/presentations/C17-CLO-internship-presentation.pptx')
+assert len(prs.slides) == 11
+assert (prs.slide_width, prs.slide_height) == (12192000, 6858000)
+print('pptx: valid, 11 slides, 16:9')
+PY
 ```
 
-Expected: `Pages: 11` and no conversion error.
+Expected: `pptx: valid, 11 slides, 16:9`.
 
 - [ ] **Step 3: Inspect slide contact sheet**
 

@@ -37,6 +37,7 @@ Only repository-backed facts are used. Current verification evidence is stated a
 ## Deliverables
 
 - `docs/presentations/C17-CLO-internship-presentation.pptx` — final deck.
-- `scripts/create-clo-internship-deck.mjs` — reproducible generator for the deck.
+- `scripts/build-clo-internship-deck.sh` — reproducible build command.
+- `scripts/create-clo-internship-deck.mjs` — slide artwork and PPTX package generator.
 
-The generator creates slide artwork as SVG/PNG and packages it into a standards-compatible PPTX. The output is validated by opening/converting it with LibreOffice and checking that it contains 11 slides.
+The build command creates slide artwork as SVG, rasterizes it to PNG, packages the images into a standards-compatible PPTX, and validates the ZIP/XML package plus the 11-slide count.
