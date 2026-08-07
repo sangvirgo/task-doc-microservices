@@ -12,6 +12,12 @@ import { tmpdir } from 'os';
 import { join } from 'path';
 import type { Readable } from 'stream';
 import { pipeline } from 'stream/promises';
+import {
+  createPaginationMeta,
+  PaginatedResponse,
+  PaginationQuery,
+  toPrismaPagination,
+} from '@c17/contracts';
 
 import { DocumentSecurityPrismaService } from '../prisma/document-security-prisma.service';
 import { ClamavService } from './clamav.service';
@@ -57,6 +63,8 @@ export interface DecryptedDownloadArtifact {
   fileSize: number;
   mimeType: string;
 }
+
+const DEFAULT_PAGINATION: PaginationQuery = { page: 1, page_size: 20 };
 
 interface EncryptionMaterial {
   checksum: string;
@@ -252,12 +260,23 @@ export class SecurityPipelineService {
     return this.toDto(record);
   }
 
-  async listRecords(document_id?: string): Promise<EncryptionRecordDto[]> {
-    const records = await this.prisma.encryptionRecord.findMany({
-      where: document_id ? { document_id } : undefined,
-      orderBy: { created_at: 'desc' },
-    });
-    return records.map((record) => this.toDto(record));
+  async listRecords(
+    document_id?: string,
+    pagination: PaginationQuery = DEFAULT_PAGINATION,
+  ): Promise<PaginatedResponse<EncryptionRecordDto>> {
+    const where = document_id ? { document_id } : undefined;
+    const [total, records] = await Promise.all([
+      this.prisma.encryptionRecord.count({ where }),
+      this.prisma.encryptionRecord.findMany({
+        where,
+        orderBy: [{ created_at: 'desc' }, { id: 'desc' }],
+        ...toPrismaPagination(pagination),
+      }),
+    ]);
+    return {
+      items: records.map((record) => this.toDto(record)),
+      pagination: createPaginationMeta(pagination.page, pagination.page_size, total),
+    };
   }
 
   async getActiveKekVersion(): Promise<number> {

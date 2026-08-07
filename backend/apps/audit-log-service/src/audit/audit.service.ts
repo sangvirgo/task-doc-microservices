@@ -1,6 +1,12 @@
 import { Injectable } from '@nestjs/common';
 import { createHash } from 'crypto';
 import type { Prisma } from '@prisma/client-audit';
+import {
+  createPaginationMeta,
+  PaginatedResponse,
+  PaginationQuery,
+  toPrismaPagination,
+} from '@c17/contracts';
 
 import { AuditPrismaService } from '../prisma/audit-prisma.service';
 
@@ -17,6 +23,8 @@ export interface AuditEventDto {
   sequence_number: number;
   created_at: string;
 }
+
+const DEFAULT_PAGINATION: PaginationQuery = { page: 1, page_size: 20 };
 
 /**
  * Audit Log Service append operation (V3 §5.7, ADR-0002).
@@ -122,26 +130,33 @@ export class AuditService {
     return this.toDto(event);
   }
 
-  async listEvents(filters?: {
-    event_type?: string;
-    actor_id?: string;
-    resource_type?: string;
-    resource_id?: string;
-    limit?: number;
-    offset?: number;
-  }): Promise<AuditEventDto[]> {
-    const events = await this.prisma.auditEvent.findMany({
-      where: {
-        event_type: filters?.event_type,
-        actor_id: filters?.actor_id,
-        resource_type: filters?.resource_type,
-        resource_id: filters?.resource_id,
-      },
-      orderBy: { sequence_number: 'desc' },
-      take: filters?.limit || 50,
-      skip: filters?.offset || 0,
-    });
-    return events.map((e) => this.toDto(e));
+  async listEvents(
+    filters?: {
+      event_type?: string;
+      actor_id?: string;
+      resource_type?: string;
+      resource_id?: string;
+    },
+    pagination: PaginationQuery = DEFAULT_PAGINATION,
+  ): Promise<PaginatedResponse<AuditEventDto>> {
+    const where = {
+      event_type: filters?.event_type,
+      actor_id: filters?.actor_id,
+      resource_type: filters?.resource_type,
+      resource_id: filters?.resource_id,
+    };
+    const [total, events] = await Promise.all([
+      this.prisma.auditEvent.count({ where }),
+      this.prisma.auditEvent.findMany({
+        where,
+        orderBy: [{ sequence_number: 'desc' }, { id: 'desc' }],
+        ...toPrismaPagination(pagination),
+      }),
+    ]);
+    return {
+      items: events.map((e) => this.toDto(e)),
+      pagination: createPaginationMeta(pagination.page, pagination.page_size, total),
+    };
   }
 
   async verifyChainIntegrity(): Promise<{ valid: boolean; broken_at?: number }> {

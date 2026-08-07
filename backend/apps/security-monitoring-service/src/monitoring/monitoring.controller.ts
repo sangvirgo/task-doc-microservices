@@ -15,6 +15,7 @@ import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import { z } from 'zod';
 
 import { CurrentUser, type AuthContext, isAdmin } from '@c17/auth-context';
+import { paginationQuerySchema, PaginationQuery } from '@c17/contracts';
 import { MonitoringService, SecurityAlertDto, SecurityRuleDto } from './monitoring.service';
 
 const recordEventSchema = z.object({
@@ -64,9 +65,12 @@ export class MonitoringController {
     @Query('actor_id') actor_id?: string,
     @Query('rule_id') rule_id?: string,
     @CurrentUser() user?: AuthContext,
-  ): Promise<SecurityAlertDto[]> {
+    @Query('page') page?: string,
+    @Query('page_size') page_size?: string,
+  ): Promise<unknown> {
     this.requireAdmin(user as AuthContext);
-    return this.monitoringService.listAlerts({ status, severity, actor_id, rule_id });
+    const pagination = this.parsePagination(page, page_size);
+    return this.monitoringService.listAlerts({ status, severity, actor_id, rule_id }, pagination);
   }
 
   @Get('alerts/:id')
@@ -107,9 +111,19 @@ export class MonitoringController {
 
   @Get('rules')
   @ApiOperation({ summary: 'List security rules' })
-  async listRules(@CurrentUser() user?: AuthContext): Promise<SecurityRuleDto[]> {
+  async listRules(
+    @CurrentUser() user?: AuthContext,
+    @Query('page') page?: string,
+    @Query('page_size') page_size?: string,
+  ): Promise<unknown> {
     this.requireAdmin(user as AuthContext);
-    return this.monitoringService.listRules();
+    return this.monitoringService.listRules(this.parsePagination(page, page_size));
+  }
+
+  private parsePagination(page?: string, page_size?: string): PaginationQuery {
+    const parsed = paginationQuerySchema.safeParse({ page, page_size });
+    if (!parsed.success) throw new BadRequestException(parsed.error.issues);
+    return parsed.data;
   }
 
   @Put('rules/:id/toggle')

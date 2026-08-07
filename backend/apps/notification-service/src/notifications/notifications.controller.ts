@@ -15,6 +15,7 @@ import {
 import type { Request } from 'express';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import { z } from 'zod';
+import { paginationQuerySchema } from '@c17/contracts';
 
 import { NotificationsService, NotificationDto } from './notifications.service';
 
@@ -63,10 +64,18 @@ export class NotificationsController {
     @Query('recipient_id') recipient_id: string,
     @Query('unread_only') unread_only?: string,
     @Req() req?: Request,
-  ): Promise<NotificationDto[]> {
+    @Query('page') page?: string,
+    @Query('page_size') page_size?: string,
+  ): Promise<unknown> {
     if (!recipient_id) throw new BadRequestException('recipient_id query param is required');
+    const pagination = paginationQuerySchema.safeParse({ page, page_size });
+    if (!pagination.success) throw new BadRequestException(pagination.error.issues);
     this.requireOwner(req, recipient_id);
-    return this.notificationsService.listNotifications(recipient_id, unread_only === 'true');
+    return this.notificationsService.listNotifications(
+      recipient_id,
+      unread_only === 'true',
+      pagination.data,
+    );
   }
 
   @Post(':id/read')

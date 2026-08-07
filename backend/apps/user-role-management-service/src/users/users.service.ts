@@ -6,6 +6,12 @@ import {
 } from '@nestjs/common';
 
 import { isContentAdjacentCapability, type Capability } from '@c17/contracts';
+import {
+  createPaginationMeta,
+  PaginatedResponse,
+  PaginationQuery,
+  toPrismaPagination,
+} from '@c17/contracts';
 
 import { UserRolePrismaService } from '../prisma/user-role-prisma.service';
 
@@ -22,6 +28,8 @@ export interface UserDto {
   capabilities: string[];
   created_at: string;
 }
+
+const DEFAULT_PAGINATION: PaginationQuery = { page: 1, page_size: 20 };
 
 @Injectable()
 export class UsersService {
@@ -48,17 +56,40 @@ export class UsersService {
     return this.toDto(user);
   }
 
-  async listUsers(): Promise<UserDto[]> {
-    const users = await this.prisma.user.findMany({ include: { Capability: true } });
-    return users.map((u) => this.toDto(u));
+  async listUsers(
+    pagination: PaginationQuery = DEFAULT_PAGINATION,
+  ): Promise<PaginatedResponse<UserDto>> {
+    const [total, users] = await Promise.all([
+      this.prisma.user.count(),
+      this.prisma.user.findMany({
+        include: { Capability: true },
+        orderBy: [{ created_at: 'desc' }, { id: 'desc' }],
+        ...toPrismaPagination(pagination),
+      }),
+    ]);
+    return {
+      items: users.map((u) => this.toDto(u)),
+      pagination: createPaginationMeta(pagination.page, pagination.page_size, total),
+    };
   }
 
-  async memberDirectory(): Promise<MemberDirectoryDto[]> {
-    return this.prisma.user.findMany({
-      where: { role: 'EMPLOYEE', locked_at: null },
-      select: { id: true, email: true },
-      orderBy: { email: 'asc' },
-    });
+  async memberDirectory(
+    pagination: PaginationQuery = DEFAULT_PAGINATION,
+  ): Promise<PaginatedResponse<MemberDirectoryDto>> {
+    const where = { role: 'EMPLOYEE', locked_at: null };
+    const [total, users] = await Promise.all([
+      this.prisma.user.count({ where }),
+      this.prisma.user.findMany({
+        where,
+        select: { id: true, email: true },
+        orderBy: [{ email: 'asc' }, { id: 'asc' }],
+        ...toPrismaPagination(pagination),
+      }),
+    ]);
+    return {
+      items: users,
+      pagination: createPaginationMeta(pagination.page, pagination.page_size, total),
+    };
   }
 
   async lockUser(id: string): Promise<UserDto> {
