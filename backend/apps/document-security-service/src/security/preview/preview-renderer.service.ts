@@ -263,7 +263,7 @@ function createWatermarkSvg(width: number, height: number, input: WatermarkInput
   const shortText = escapeXml(`${input.actorLabel} · PREVIEW ONLY`);
   const header = escapeXml(`${input.documentId} · v${input.version} · ${input.sessionId}`);
   const footer = escapeXml(
-    `${input.actorLabel} · ${input.renderedAt.toISOString()} · page ${input.page}`,
+    `${input.actorLabel} · VIEWED AT: ${input.renderedAt.toISOString()} · page ${input.page}`,
   );
   const rotation = watermark.layers.find((layer) => layer.kind === 'repeat')?.rotation || -20;
 

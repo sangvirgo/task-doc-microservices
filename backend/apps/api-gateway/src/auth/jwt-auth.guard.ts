@@ -14,6 +14,7 @@ export const Public = () => SetMetadata(IS_PUBLIC_KEY, true);
 
 export interface JwtPayload {
   sub: string;
+  email?: string;
   role: string;
   capabilities: string[];
   iat: number;
@@ -53,6 +54,7 @@ export class JwtAuthGuard implements CanActivate {
       const payload = this.jwtService.verify<JwtPayload>(token);
       (request as unknown as Record<string, unknown>)['user'] = {
         userId: payload.sub,
+        email: payload.email,
         role: payload.role,
         capabilities: payload.capabilities ?? [],
         sessionId: '',

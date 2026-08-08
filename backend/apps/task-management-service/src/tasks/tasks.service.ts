@@ -17,6 +17,7 @@ import {
 } from '@c17/contracts';
 
 import { TaskPrismaService } from '../prisma/task-prisma.service';
+import { calculateTaskProgress, CompletionColor } from './task-progress';
 
 const CANONICAL_STATUSES = [
   'CREATED',
@@ -82,6 +83,10 @@ export interface TaskDto {
   blocked_reason: string | null;
   result: string | null;
   is_overdue: boolean;
+  completion_percentage: number;
+  child_task_count: number;
+  approved_child_task_count: number;
+  completion_color: CompletionColor;
   created_at: string;
   updated_at: string;
 }
@@ -132,13 +137,14 @@ export class TasksService {
 
   async getTaskContext(id: string): Promise<TaskContextDto> {
     const task = await this.requireTask(id);
+    const childStatuses = await this.getChildStatuses(id);
     const participants = await this.prisma.taskParticipant.findMany({
       where: { task_id: id },
       orderBy: { added_at: 'asc' },
     });
 
     return {
-      task: this.toDto(task),
+      task: this.toDto(task, childStatuses),
       participants: participants.map((participant) => this.participantToDto(participant)),
     };
   }
@@ -217,14 +223,14 @@ export class TasksService {
       return created;
     });
 
-    return this.toDto(task);
+    return this.toDto(task, await this.getChildStatuses(task.id));
   }
 
   async getTask(id: string, actor_id: string): Promise<TaskDto | AncestorTaskSummaryDto> {
     const task = await this.requireTask(id);
 
     if (await this.hasDirectParticipation(id, actor_id)) {
-      return this.toDto(task);
+      return this.toDto(task, await this.getChildStatuses(id));
     }
 
     if (await this.hasAncestorOversight(task, actor_id)) {
@@ -261,9 +267,12 @@ export class TasksService {
         take,
       }),
     ]);
+    const childStatusesByTaskId = await this.getChildStatusesByTaskIds(
+      tasks.map((task) => task.id),
+    );
 
     return {
-      items: tasks.map((task) => this.toDto(task)),
+      items: tasks.map((task) => this.toDto(task, childStatusesByTaskId.get(task.id) ?? [])),
       pagination: createPaginationMeta(pagination.page, pagination.page_size, total),
     };
   }
@@ -311,7 +320,7 @@ export class TasksService {
       ),
     );
 
-    return this.toDto(updated);
+    return this.toDto(updated, await this.getChildStatuses(id));
   }
 
   async assignTask(id: string, assignee_id: string, assigned_by: string): Promise<TaskDto> {
@@ -368,7 +377,7 @@ export class TasksService {
       return nextTask;
     });
 
-    return this.toDto(updated);
+    return this.toDto(updated, await this.getChildStatuses(id));
   }
 
   async blockTask(id: string, blocked_reason: string, blocked_by: string): Promise<TaskDto> {
@@ -403,7 +412,7 @@ export class TasksService {
       },
     });
 
-    return this.toDto(updated);
+    return this.toDto(updated, await this.getChildStatuses(id));
   }
 
   async unblockTask(id: string, unblocked_by: string): Promise<TaskDto> {
@@ -436,7 +445,7 @@ export class TasksService {
       },
     });
 
-    return this.toDto(updated);
+    return this.toDto(updated, await this.getChildStatuses(id));
   }
 
   async addParticipant(
@@ -669,7 +678,9 @@ export class TasksService {
     };
   }
 
-  private toDto(task: TaskRecord): TaskDto {
+  private toDto(task: TaskRecord, childStatuses: readonly string[] = []): TaskDto {
+    const progress = calculateTaskProgress(task.status, childStatuses);
+
     return {
       id: task.id,
       title: task.title,
@@ -683,6 +694,7 @@ export class TasksService {
       blocked_reason: task.blocked_reason,
       result: task.result,
       is_overdue: this.isOverdue(task),
+      ...progress,
       created_at: task.created_at.toISOString(),
       updated_at: task.updated_at.toISOString(),
     };
@@ -721,6 +733,41 @@ export class TasksService {
       throw new NotFoundException('Task not found');
     }
     return task;
+  }
+
+  private async getChildStatuses(taskId: string): Promise<string[]> {
+    const children = await this.prisma.task.findMany({
+      where: { parent_task_id: taskId },
+      select: { status: true },
+    });
+
+    return children.map((child) => child.status);
+  }
+
+  private async getChildStatusesByTaskIds(
+    taskIds: readonly string[],
+  ): Promise<Map<string, string[]>> {
+    if (taskIds.length === 0) {
+      return new Map();
+    }
+
+    const children = await this.prisma.task.findMany({
+      where: { parent_task_id: { in: [...taskIds] } },
+      select: { parent_task_id: true, status: true },
+    });
+    const statusesByTaskId = new Map<string, string[]>();
+
+    for (const child of children) {
+      if (!child.parent_task_id) {
+        continue;
+      }
+
+      const statuses = statusesByTaskId.get(child.parent_task_id) ?? [];
+      statuses.push(child.status);
+      statusesByTaskId.set(child.parent_task_id, statuses);
+    }
+
+    return statusesByTaskId;
   }
 
   private async assertDirectParticipant(task_id: string, user_id: string): Promise<void> {

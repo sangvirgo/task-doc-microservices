@@ -16,6 +16,7 @@ const PAGE_BYTES = Buffer.from('watermarked-preview-page');
 function authHeaders(userId = EMPLOYEE_ID): Record<string, string> {
   return {
     'x-user-id': userId,
+    'x-user-email': 'alice@example.test',
     'x-user-role': 'EMPLOYEE',
     'x-correlation-id': randomUUID(),
   };
@@ -44,6 +45,7 @@ describe('Document preview integration (PostgreSQL)', () => {
   let downloadAllowed = false;
   let previewExpiresAt = new Date(Date.now() + 5 * 60 * 1000).toISOString();
   const auditEvents: Array<{ event_type?: string }> = [];
+  const previewPreparationBodies: Array<Record<string, unknown>> = [];
 
   beforeAll(async () => {
     process.env.MESSAGING_IN_MEMORY = 'true';
@@ -65,6 +67,7 @@ describe('Document preview integration (PostgreSQL)', () => {
         return Promise.resolve(jsonResponse(201, { ok: true }));
       }
       if (url.endsWith('/preview/prepare')) {
+        previewPreparationBodies.push(parseBody(init?.body));
         return Promise.resolve(
           jsonResponse(201, {
             preview_id: PREVIEW_ID,
@@ -99,6 +102,7 @@ describe('Document preview integration (PostgreSQL)', () => {
     downloadAllowed = false;
     previewExpiresAt = new Date(Date.now() + 5 * 60 * 1000).toISOString();
     auditEvents.length = 0;
+    previewPreparationBodies.length = 0;
     fetchMock.mockClear();
     await prisma.previewSession.deleteMany();
     await prisma.downloadTicket.deleteMany();
@@ -120,6 +124,12 @@ describe('Document preview integration (PostgreSQL)', () => {
 
     expect(session.body.capabilities).toEqual({ preview: true, download: false });
     expect(session.body).not.toHaveProperty('security_preview_id');
+    expect(previewPreparationBodies[0]).toEqual(
+      expect.objectContaining({
+        actor_label:
+          'USER: alice | EMAIL: alice@example.test | ID: 10000000-0000-4000-8000-000000000001',
+      }),
+    );
 
     const page = await request(app.getHttpServer())
       .get(`/documents/${document.id}/versions/1/preview-session/${session.body.id}/pages/1`)
