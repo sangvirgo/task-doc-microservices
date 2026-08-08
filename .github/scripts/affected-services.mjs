@@ -20,6 +20,10 @@ const SHARED_WORKSPACE_FILES = new Set([
   ".npmrc",
 ]);
 
+const CI_ALL_IMAGES_FILES = new Set([
+  ".github/scripts/affected-services.mjs",
+]);
+
 const ALL_BACKEND_PREFIXES = [
   "backend/libs/",
   "backend/infra/Dockerfile",
@@ -53,6 +57,12 @@ export function classifyChangedFiles(files) {
   for (const rawFile of files) {
     const file = String(rawFile).trim();
     if (!file) continue;
+
+    if (file.startsWith(".github/workflows/") || CI_ALL_IMAGES_FILES.has(file)) {
+      addAllBackendApps(backendApps);
+      webChanged = true;
+      continue;
+    }
 
     if (SHARED_WORKSPACE_FILES.has(file)) {
       addAllBackendApps(backendApps);
