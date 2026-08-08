@@ -83,6 +83,10 @@ const redeemDownloadTicketSchema = z.object({
   ticket_id: z.string().uuid(),
 });
 
+const previewSessionSchema = z.object({
+  task_id: z.string().uuid().optional(),
+});
+
 const createRecordSchema = z.object({
   title: z.string().min(1),
   description: z.string().optional(),
@@ -551,6 +555,180 @@ export class DocumentsController {
     );
     if (!decision.allowed)
       throw new ForbiddenException(`Document access denied: ${decision.reason_code}`);
+  }
+
+  @Post(':id/versions/:version/preview-session')
+  @HttpCode(HttpStatus.CREATED)
+  @ApiOperation({ summary: 'Create a short-lived, watermarked preview session' })
+  async createPreviewSession(
+    @Param('id') documentId: string,
+    @Param('version') version: string,
+    @Body() body: z.infer<typeof previewSessionSchema>,
+    @CurrentUser() user?: AuthContext,
+  ) {
+    if (!user) throw new ForbiddenException('Authentication required');
+
+    const parsedBody = previewSessionSchema.safeParse(body);
+    if (!parsedBody.success) throw new BadRequestException(parsedBody.error.issues);
+    const versionNum = parseInt(version, 10);
+    if (isNaN(versionNum) || versionNum < 1) {
+      throw new BadRequestException('Invalid version number');
+    }
+
+    const { document, decision: previewDecision } = await this.checkDocumentPermission(
+      documentId,
+      user,
+      PermissionAction.PREVIEW,
+      parsedBody.data.task_id,
+    );
+    if (!previewDecision.allowed) {
+      await this.auditClient.record({
+        event_type: 'DOCUMENT_PREVIEW_DENIED',
+        actor_id: user.userId,
+        resource_type: 'DOCUMENT',
+        resource_id: documentId,
+        payload: { version: versionNum, reason_code: previewDecision.reason_code },
+      });
+      throw new ForbiddenException(`Document preview denied: ${previewDecision.reason_code}`);
+    }
+
+    const sessionId = randomUUID();
+    const securityPreview = await this.securityClient.preparePreview({
+      document_id: documentId,
+      version: versionNum,
+      actor_label: user.userId,
+      session_id: sessionId,
+    });
+    if (!securityPreview) {
+      throw new ServiceUnavailableException('Document preview renderer is unavailable');
+    }
+
+    const downloadDecision = await this.checkDocumentPermission(
+      documentId,
+      user,
+      PermissionAction.DOWNLOAD,
+      parsedBody.data.task_id,
+    );
+    const session = await this.documentsService.createPreviewSession({
+      id: sessionId,
+      document_id: documentId,
+      task_id: parsedBody.data.task_id,
+      version: versionNum,
+      actor_id: user.userId,
+      security_preview_id: securityPreview.preview_id,
+      page_count: securityPreview.page_count,
+      mime_type: securityPreview.mime_type,
+      expires_at: new Date(securityPreview.expires_at),
+    });
+
+    await this.auditClient.record({
+      event_type: 'DOCUMENT_PREVIEW_SESSION_CREATED',
+      actor_id: user.userId,
+      resource_type: 'DOCUMENT',
+      resource_id: documentId,
+      payload: { version: versionNum, session_id: session.id, page_count: session.page_count },
+    });
+
+    return {
+      id: session.id,
+      document_id: session.document_id,
+      version: session.version,
+      page_count: session.page_count,
+      mime_type: session.mime_type,
+      expires_at: session.expires_at,
+      capabilities: { preview: true, download: downloadDecision.decision.allowed },
+      title: document.title,
+    };
+  }
+
+  @Get(':id/versions/:version/preview-session/:sessionId/pages/:page')
+  @ApiOperation({ summary: 'Get one server-rendered, watermarked preview page' })
+  async getPreviewPage(
+    @Param('id') documentId: string,
+    @Param('version') version: string,
+    @Param('sessionId') sessionId: string,
+    @Param('page') page: string,
+    @CurrentUser() user: AuthContext | undefined,
+    @Res() res: Response,
+  ): Promise<void> {
+    if (!user) throw new ForbiddenException('Authentication required');
+    const versionNum = parseInt(version, 10);
+    const pageNum = parseInt(page, 10);
+    if (isNaN(versionNum) || versionNum < 1) throw new BadRequestException('Invalid version number');
+    if (isNaN(pageNum) || pageNum < 1) throw new BadRequestException('Invalid preview page number');
+
+    const session = await this.documentsService.getPreviewSession(sessionId);
+    if (session.actor_id !== user.userId) throw new ForbiddenException('Preview access denied');
+
+    const { decision } = await this.checkDocumentPermission(
+      documentId,
+      user,
+      PermissionAction.PREVIEW,
+      session.task_id ?? undefined,
+    );
+    if (!decision.allowed) throw new ForbiddenException('Document preview permission revoked');
+
+    await this.documentsService.markPreviewPageRequested({
+      session_id: sessionId,
+      document_id: documentId,
+      version: versionNum,
+      actor_id: user.userId,
+      page: pageNum,
+    });
+
+    const pageArtifact = await this.securityClient.getPreviewPage(
+      session.security_preview_id,
+      pageNum,
+    );
+    if (!pageArtifact) {
+      throw new ServiceUnavailableException('Document preview page is unavailable');
+    }
+
+    res.setHeader('content-type', pageArtifact.mime_type);
+    res.setHeader('cache-control', 'private, no-store');
+    res.setHeader('pragma', 'no-cache');
+    res.setHeader('x-content-type-options', 'nosniff');
+    res.status(HttpStatus.OK).send(pageArtifact.bytes);
+
+    await this.auditClient.record({
+      event_type: 'DOCUMENT_PREVIEW_PAGE_VIEWED',
+      actor_id: user.userId,
+      resource_type: 'DOCUMENT',
+      resource_id: documentId,
+      payload: { version: versionNum, session_id: sessionId, page: pageNum },
+    });
+  }
+
+  @Post(':id/versions/:version/preview-session/:sessionId/revoke')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @ApiOperation({ summary: 'Revoke a preview session' })
+  async revokePreviewSession(
+    @Param('id') documentId: string,
+    @Param('version') version: string,
+    @Param('sessionId') sessionId: string,
+    @CurrentUser() user?: AuthContext,
+  ): Promise<void> {
+    if (!user) throw new ForbiddenException('Authentication required');
+    const versionNum = parseInt(version, 10);
+    if (isNaN(versionNum) || versionNum < 1) throw new BadRequestException('Invalid version number');
+    const session = await this.documentsService.getPreviewSession(sessionId);
+    if (
+      session.document_id !== documentId ||
+      session.version !== versionNum ||
+      session.actor_id !== user.userId
+    ) {
+      throw new ForbiddenException('Preview session access denied');
+    }
+
+    await this.documentsService.revokePreviewSession(sessionId, user.userId);
+    await this.securityClient.revokePreview(session.security_preview_id);
+    await this.auditClient.record({
+      event_type: 'DOCUMENT_PREVIEW_SESSION_REVOKED',
+      actor_id: user.userId,
+      resource_type: 'DOCUMENT',
+      resource_id: documentId,
+      payload: { version: versionNum, session_id: sessionId },
+    });
   }
 
   @Post(':id/download-ticket')
@@ -1500,6 +1678,7 @@ export class RetentionDisposalController {
     documentId: string,
     user: AuthContext,
     action: PermissionAction,
+    taskId?: string,
   ) {
     const document = await this.documentsService.getDocument(documentId);
     const decision = await this.permissionClient.check({
@@ -1508,6 +1687,7 @@ export class RetentionDisposalController {
       resource_type: 'DOCUMENT',
       resource_id: documentId,
       action,
+      task_id: taskId,
       owner_id: document.owner_id,
       creator_id: document.creator_id,
       correlation_id: getCorrelationId() ?? randomUUID(),

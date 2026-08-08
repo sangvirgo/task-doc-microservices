@@ -98,6 +98,23 @@ export interface DownloadTicketRecord {
   used_at: Date | null;
 }
 
+export interface PreviewSessionDto {
+  id: string;
+  document_id: string;
+  task_id: string | null;
+  version: number;
+  page_count: number;
+  mime_type: string;
+  expires_at: string;
+}
+
+export interface PreviewSessionRecord extends PreviewSessionDto {
+  actor_id: string;
+  security_preview_id: string;
+  revoked_at: Date | null;
+  page_requests: number;
+}
+
 const DEFAULT_PAGINATION: PaginationQuery = { page: 1, page_size: 20 };
 
 export interface TransferPackageDto {
@@ -448,6 +465,86 @@ export class DocumentsService {
       security_level: document.security_level,
       document_type: document.document_type,
     };
+  }
+
+  async createPreviewSession(data: {
+    id: string;
+    document_id: string;
+    task_id?: string;
+    version: number;
+    actor_id: string;
+    security_preview_id: string;
+    page_count: number;
+    mime_type: string;
+    expires_at: Date;
+  }): Promise<PreviewSessionRecord> {
+    const session = await this.prisma.previewSession.create({
+      data: {
+        id: data.id,
+        document_id: data.document_id,
+        task_id: data.task_id,
+        version: data.version,
+        actor_id: data.actor_id,
+        security_preview_id: data.security_preview_id,
+        page_count: data.page_count,
+        mime_type: data.mime_type,
+        expires_at: data.expires_at,
+      },
+    });
+    return this.previewSessionToRecord(session);
+  }
+
+  async getPreviewSession(sessionId: string): Promise<PreviewSessionRecord> {
+    const session = await this.prisma.previewSession.findUnique({ where: { id: sessionId } });
+    if (!session) throw new NotFoundException('Preview session not found');
+    if (session.revoked_at || session.expires_at.getTime() <= Date.now()) {
+      throw new ForbiddenException('Preview session is expired or revoked');
+    }
+    return this.previewSessionToRecord(session);
+  }
+
+  async markPreviewPageRequested(data: {
+    session_id: string;
+    document_id: string;
+    version: number;
+    actor_id: string;
+    page: number;
+  }): Promise<void> {
+    const session = await this.getPreviewSession(data.session_id);
+    if (
+      session.document_id !== data.document_id ||
+      session.version !== data.version ||
+      session.actor_id !== data.actor_id
+    ) {
+      throw new ForbiddenException('Preview session does not belong to this request');
+    }
+    if (data.page > session.page_count) {
+      throw new NotFoundException('Preview page not found');
+    }
+
+    const updated = await this.prisma.previewSession.updateMany({
+      where: {
+        id: data.session_id,
+        document_id: data.document_id,
+        version: data.version,
+        actor_id: data.actor_id,
+        revoked_at: null,
+        expires_at: { gt: new Date() },
+        page_requests: { lt: 200 },
+      },
+      data: { page_requests: { increment: 1 }, last_used_at: new Date() },
+    });
+    if (updated.count !== 1) {
+      throw new ForbiddenException('Preview page request limit reached');
+    }
+  }
+
+  async revokePreviewSession(sessionId: string, actorId: string): Promise<void> {
+    const result = await this.prisma.previewSession.updateMany({
+      where: { id: sessionId, actor_id: actorId, revoked_at: null },
+      data: { revoked_at: new Date() },
+    });
+    if (result.count !== 1) throw new ForbiddenException('Preview session cannot be revoked');
   }
 
   async createDownloadTicket(data: {
@@ -1060,6 +1157,34 @@ export class DocumentsService {
       version: ticket.version,
       actor_id: ticket.actor_id,
       expires_at: ticket.expires_at.toISOString(),
+    };
+  }
+
+  private previewSessionToRecord(session: {
+    id: string;
+    document_id: string;
+    task_id: string | null;
+    version: number;
+    actor_id: string;
+    security_preview_id: string;
+    page_count: number;
+    mime_type: string;
+    expires_at: Date;
+    revoked_at: Date | null;
+    page_requests: number;
+  }): PreviewSessionRecord {
+    return {
+      id: session.id,
+      document_id: session.document_id,
+      task_id: session.task_id,
+      version: session.version,
+      actor_id: session.actor_id,
+      security_preview_id: session.security_preview_id,
+      page_count: session.page_count,
+      mime_type: session.mime_type,
+      expires_at: session.expires_at.toISOString(),
+      revoked_at: session.revoked_at,
+      page_requests: session.page_requests,
     };
   }
 
