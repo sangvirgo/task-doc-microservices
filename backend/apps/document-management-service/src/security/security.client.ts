@@ -24,6 +24,18 @@ export interface SecurityUploadResult {
   scan_status: string;
 }
 
+export interface SecurityPreviewResult {
+  preview_id: string;
+  page_count: number;
+  mime_type: 'image/png';
+  expires_at: string;
+}
+
+export interface SecurityPreviewPage {
+  bytes: Buffer;
+  mime_type: 'image/png';
+}
+
 /**
  * HTTP client for Document Security Service.
  * Called when a new document version is uploaded to run it through the security pipeline.
@@ -166,6 +178,87 @@ export class SecurityClient {
         `Security download client error: ${error instanceof Error ? error.message : 'unknown'}`,
       );
       return null;
+    } finally {
+      clearTimeout(timeout);
+    }
+  }
+
+  async preparePreview(params: {
+    document_id: string;
+    version: number;
+    actor_label: string;
+    session_id: string;
+  }): Promise<SecurityPreviewResult | null> {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), this.timeoutMs);
+
+    try {
+      const response = await fetch(
+        `${this.securityServiceUrl}/security/${params.document_id}/versions/${params.version}/preview/prepare`,
+        {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({
+            actor_label: params.actor_label,
+            session_id: params.session_id,
+          }),
+          signal: controller.signal,
+        },
+      );
+      if (!response.ok) {
+        this.logger.warn(`Security preview preparation failed: ${response.status}`);
+        return null;
+      }
+      return (await response.json()) as SecurityPreviewResult;
+    } catch (error) {
+      this.logger.warn(
+        `Security preview preparation error: ${error instanceof Error ? error.message : 'unknown'}`,
+      );
+      return null;
+    } finally {
+      clearTimeout(timeout);
+    }
+  }
+
+  async getPreviewPage(previewId: string, page: number): Promise<SecurityPreviewPage | null> {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), this.timeoutMs);
+
+    try {
+      const response = await fetch(
+        `${this.securityServiceUrl}/security/preview/${previewId}/pages/${page}`,
+        { method: 'GET', signal: controller.signal },
+      );
+      if (!response.ok) {
+        this.logger.warn(`Security preview page failed: ${response.status}`);
+        return null;
+      }
+      return {
+        bytes: Buffer.from(await response.arrayBuffer()),
+        mime_type: 'image/png',
+      };
+    } catch (error) {
+      this.logger.warn(
+        `Security preview page error: ${error instanceof Error ? error.message : 'unknown'}`,
+      );
+      return null;
+    } finally {
+      clearTimeout(timeout);
+    }
+  }
+
+  async revokePreview(previewId: string): Promise<void> {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), this.timeoutMs);
+    try {
+      await fetch(`${this.securityServiceUrl}/security/preview/${previewId}/revoke`, {
+        method: 'POST',
+        signal: controller.signal,
+      });
+    } catch (error) {
+      this.logger.warn(
+        `Security preview revoke error: ${error instanceof Error ? error.message : 'unknown'}`,
+      );
     } finally {
       clearTimeout(timeout);
     }
