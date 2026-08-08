@@ -228,4 +228,3 @@ git commit -m "feat: render watermarked document preview pages"
 - [ ] **Step 5: Write the verification report with commands and observed output.** Do not claim completion until all required commands have fresh successful output.
 
 - [ ] **Step 6: Request a code review against the secure-preview design and fix all Critical/Important findings before final handoff.**
-
