@@ -1,7 +1,7 @@
 # Local development and evaluation stack: five infrastructure containers and the ten applications.
 #
-# Image tags are pinned to exact versions rather than `latest`, so that a rebuild months from now
-# produces the stack this phase was verified against.
+# Image tags are selected through IMAGE_TAG. Local development defaults to `local`; CI deployment
+# uses service-specific `latest` tags and also publishes immutable sha-* tags for rollback.
 
 name: c17-task-document-platform
 
