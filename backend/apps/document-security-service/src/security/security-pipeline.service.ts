@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  ForbiddenException,
   Injectable,
   InternalServerErrorException,
   NotFoundException,
@@ -27,6 +28,10 @@ import {
 } from './document-signature.service';
 import { EnvKekProvider } from './kek-provider.service';
 import { MinioStorageService } from './minio-storage.service';
+import {
+  PreviewRenderer,
+  type PreviewRenderRequest,
+} from './preview/preview-renderer.service';
 
 export interface EncryptionRecordDto {
   id: string;
@@ -64,6 +69,23 @@ export interface DecryptedDownloadArtifact {
   mimeType: string;
 }
 
+export interface PreviewPreparationResult {
+  preview_id: string;
+  page_count: number;
+  mime_type: 'image/png';
+  expires_at: string;
+}
+
+export interface PreviewPageArtifact {
+  bytes: Buffer;
+  mime_type: 'image/png';
+}
+
+interface StoredPreview {
+  expiresAt: number;
+  pages: Buffer[];
+}
+
 const DEFAULT_PAGINATION: PaginationQuery = { page: 1, page_size: 20 };
 
 interface EncryptionMaterial {
@@ -78,12 +100,15 @@ interface EncryptionMaterial {
 
 @Injectable()
 export class SecurityPipelineService {
+  private readonly previews = new Map<string, StoredPreview>();
+
   constructor(
     private readonly prisma: DocumentSecurityPrismaService,
     private readonly clamavService: ClamavService,
     private readonly storageService: MinioStorageService,
     private readonly kekProvider: EnvKekProvider,
     private readonly signatureService: DocumentSignatureService,
+    private readonly previewRenderer: PreviewRenderer,
   ) {}
 
   async processUploadStream(data: {
@@ -346,6 +371,66 @@ export class SecurityPipelineService {
     }
 
     return plaintext;
+  }
+
+  async preparePreview(data: {
+    document_id: string;
+    version: number;
+    actor_label: string;
+    session_id: string;
+  }): Promise<PreviewPreparationResult> {
+    this.removeExpiredPreviews();
+    const record = await this.prisma.encryptionRecord.findUnique({
+      where: { document_id_version: { document_id: data.document_id, version: data.version } },
+    });
+    if (!record) throw new NotFoundException('Encryption record not found');
+    if (record.scan_status === 'INFECTED') {
+      throw new BadRequestException('Document is not available for preview');
+    }
+
+    const content = await this.decryptDocumentVersionToBuffer(data.document_id, data.version);
+    const rendered = await this.previewRenderer.render({
+      content,
+      mimeType: record.mime_type,
+      watermark: {
+        actorLabel: data.actor_label,
+        documentId: data.document_id,
+        version: data.version,
+        sessionId: data.session_id,
+        renderedAt: new Date(),
+        page: 1,
+      },
+    } satisfies PreviewRenderRequest);
+    const previewId = randomUUID();
+    const expiresAt = Date.now() + 5 * 60 * 1000;
+    this.previews.set(previewId, { expiresAt, pages: rendered.pages });
+
+    return {
+      preview_id: previewId,
+      page_count: rendered.pages.length,
+      mime_type: rendered.mimeType,
+      expires_at: new Date(expiresAt).toISOString(),
+    };
+  }
+
+  async getPreviewPage(previewId: string, page: number): Promise<PreviewPageArtifact> {
+    this.removeExpiredPreviews();
+    const preview = this.previews.get(previewId);
+    if (!preview) throw new ForbiddenException('Preview session is expired or revoked');
+    const pageBytes = preview.pages[page - 1];
+    if (!pageBytes) throw new NotFoundException('Preview page not found');
+    return { bytes: pageBytes, mime_type: 'image/png' };
+  }
+
+  async revokePreview(previewId: string): Promise<void> {
+    this.previews.delete(previewId);
+  }
+
+  private removeExpiredPreviews(): void {
+    const now = Date.now();
+    for (const [previewId, preview] of this.previews) {
+      if (preview.expiresAt <= now) this.previews.delete(previewId);
+    }
   }
 
   async preparePlaintextDownload(

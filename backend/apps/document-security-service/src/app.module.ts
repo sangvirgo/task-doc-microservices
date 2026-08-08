@@ -16,6 +16,7 @@ import { ClamavService } from './security/clamav.service';
 import { MinioStorageService } from './security/minio-storage.service';
 import { EnvKekProvider } from './security/kek-provider.service';
 import { DocumentSignatureService } from './security/document-signature.service';
+import { PreviewRenderer } from './security/preview/preview-renderer.service';
 
 export const SERVICE = 'document-security-service';
 
@@ -46,6 +47,10 @@ export const envSchema = baseEnvSchema
     MinioStorageService,
     EnvKekProvider,
     DocumentSignatureService,
+    {
+      provide: PreviewRenderer,
+      useFactory: () => new PreviewRenderer(),
+    },
   ],
 })
 export class AppModule {}
