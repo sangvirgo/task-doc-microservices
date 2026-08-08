@@ -75,6 +75,9 @@ jobs:
       - name: Validate Docker Compose
         run: docker compose --env-file .env.example config --quiet
 
+      - name: Validate EC2 deployment retry script
+        run: bash deploy/ec2/deploy.test.sh
+
   changes:
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     needs: verify
