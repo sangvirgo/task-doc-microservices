@@ -16,3 +16,15 @@
 .safePreviewMetadata dd{overflow:hidden;margin:5px 0 0;font-size:.7rem;font-weight:800;text-overflow:ellipsis}
 .safePreviewMetadata p{max-width:560px;margin:14px 0 0;color:#6b778c;font-size:.68rem;line-height:1.5}
 @media(max-width:700px){.safePreviewMetadata dl{grid-template-columns:1fr}.safePreviewMetadata dl>div{border-right:0;border-bottom:1px solid #ebecf0}.safePreviewMetadata dl>div:last-child{border-bottom:0}}
+/* Server-rendered, watermarked secure preview */
+.previewPanel{margin:0;padding:1rem;border:1px solid #263244;border-radius:12px;background:#111827;color:#f9fafb;box-shadow:0 6px 24px rgb(9 30 66 / 22%)}
+.previewHeader{display:flex;align-items:flex-start;justify-content:space-between;gap:1rem}
+.previewHeader h2{margin:0;font-size:1rem}
+.previewHeader p{margin:.35rem 0;color:#d1d5db;font-size:.7rem}
+.previewHeader button{border:1px solid #9ca3af;border-radius:5px;padding:.45rem .7rem;background:transparent;color:#fff}
+.previewWarning{margin:1rem 0;padding:.65rem;text-align:center;border:1px solid #fca5a5;border-radius:5px;color:#fecaca;font-size:.68rem;font-weight:800;letter-spacing:.08em}
+.previewPages{display:grid;gap:1rem;justify-items:center;max-height:70vh;overflow:auto;padding:4px}
+.previewPage{position:relative;max-width:100%;margin:0;background:#fff;box-shadow:0 4px 18px rgb(0 0 0 / 30%)}
+.previewPage img{display:block;max-width:100%;height:auto;user-select:none}
+.previewPage figcaption{padding:.35rem;text-align:center;background:#7f1d1d;color:#fff;font-size:.62rem;font-weight:700;letter-spacing:.04em}
+@media(max-width:767px){.previewHeader{flex-direction:column}.previewHeader button{align-self:flex-end}}

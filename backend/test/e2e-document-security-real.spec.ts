@@ -34,6 +34,10 @@ const MINIO_SECRET_KEY = process.env.MINIO_SECRET_KEY || 'c17pass-local-test-000
 const MINIO_ENDPOINT = process.env.MINIO_ENDPOINT || 'localhost';
 const MINIO_PORT = parseInt(process.env.MINIO_PORT || '9000', 10);
 
+type PaginatedList<T> = {
+  items: T[];
+};
+
 let tempDir: string;
 let accessToken: string;
 let minioClient: MinioClient;
@@ -438,19 +442,21 @@ describe('Real document security E2E (full Docker stack)', () => {
 
     it('an allow Audit event exists', async () => {
       await sleep(1000);
-      const res = await apiGet<Array<{ event_type: string; payload: unknown }>>(
-        `${AUDIT_URL}/audit/events?actor_id=${EMP_ID}&limit=50`,
+      const res = await apiGet<PaginatedList<{ event_type: string; payload: unknown }>>(
+        `${AUDIT_URL}/audit/events?actor_id=${EMP_ID}&page=1&page_size=100`,
       );
       expect(res.status).toBe(200);
-      const redeemedEvent = res.body.find((e) => e.event_type === 'DOCUMENT_DOWNLOAD_REDEEMED');
+      const redeemedEvent = res.body.items.find(
+        (e) => e.event_type === 'DOCUMENT_DOWNLOAD_REDEEMED',
+      );
       expect(redeemedEvent).toBeDefined();
     });
 
     it('Audit payload contains no DEK, KEK, or object-storage secret', async () => {
-      const res = await apiGet<Array<{ event_type: string; payload: unknown }>>(
-        `${AUDIT_URL}/audit/events?actor_id=${EMP_ID}&limit=50`,
+      const res = await apiGet<PaginatedList<{ event_type: string; payload: unknown }>>(
+        `${AUDIT_URL}/audit/events?actor_id=${EMP_ID}&page=1&page_size=100`,
       );
-      for (const event of res.body) {
+      for (const event of res.body.items) {
         if (!event.payload) continue;
         const payloadStr = JSON.stringify(event.payload);
         expect(payloadStr).not.toContain(MINIO_ACCESS_KEY);
@@ -583,11 +589,11 @@ describe('Real document security E2E (full Docker stack)', () => {
     });
 
     it('no usable Document row remains', async () => {
-      const res = await apiGet<Array<{ id: string; title: string }>>(
-        `${GW}/api/documents?owner_id=${EMP_ID}`,
+      const res = await apiGet<PaginatedList<{ id: string; title: string }>>(
+        `${GW}/api/documents?owner_id=${EMP_ID}&page=1&page_size=100`,
         accessToken,
       );
-      const eicarDocs = res.body.filter((d) => d.title.includes(`EICAR test ${runId}`));
+      const eicarDocs = res.body.items.filter((d) => d.title.includes(`EICAR test ${runId}`));
       expect(eicarDocs).toHaveLength(0);
     });
 
@@ -655,11 +661,11 @@ describe('Real document security E2E (full Docker stack)', () => {
         });
 
         it('no Document row exists', async () => {
-          const res = await apiGet<Array<{ title: string }>>(
-            `${GW}/api/documents?owner_id=${EMP_ID}`,
+          const res = await apiGet<PaginatedList<{ title: string }>>(
+            `${GW}/api/documents?owner_id=${EMP_ID}&page=1&page_size=100`,
             accessToken,
           );
-          const found = res.body.filter((d) => d.title.includes(marker));
+          const found = res.body.items.filter((d) => d.title.includes(marker));
           expect(found).toHaveLength(0);
         });
 
@@ -670,18 +676,18 @@ describe('Real document security E2E (full Docker stack)', () => {
         });
 
         it('no Grant is created for this resource', async () => {
-          const res = await apiGet<Array<{ resource_id: string }>>(
-            `${PERM_URL}/grants?actor_id=${EMP_ID}`,
+          const res = await apiGet<PaginatedList<{ resource_id: string }>>(
+            `${PERM_URL}/grants?actor_id=${EMP_ID}&page=1&page_size=100`,
           );
           expect(res.status).toBe(200);
         });
 
         it('a safe denial Audit event is recorded', async () => {
           await sleep(500);
-          const res = await apiGet<Array<{ event_type: string; payload: unknown }>>(
-            `${AUDIT_URL}/audit/events?limit=100`,
+          const res = await apiGet<PaginatedList<{ event_type: string; payload: unknown }>>(
+            `${AUDIT_URL}/audit/events?page=1&page_size=100`,
           );
-          const rejectionEvents = res.body.filter(
+          const rejectionEvents = res.body.items.filter(
             (e) =>
               e.event_type === 'DOCUMENT_UPLOAD_REJECTED' &&
               typeof e.payload === 'object' &&
@@ -693,10 +699,10 @@ describe('Real document security E2E (full Docker stack)', () => {
         });
 
         it('raw file content bytes are absent from Audit payloads (title is metadata)', async () => {
-          const res = await apiGet<Array<{ event_type: string; payload: unknown }>>(
-            `${AUDIT_URL}/audit/events?limit=100`,
+          const res = await apiGet<PaginatedList<{ event_type: string; payload: unknown }>>(
+            `${AUDIT_URL}/audit/events?page=1&page_size=100`,
           );
-          for (const event of res.body) {
+          for (const event of res.body.items) {
             if (!event.payload) continue;
             const payloadStr = JSON.stringify(event.payload);
             // The file content should not be in the payload — but the title (metadata) is allowed
@@ -809,10 +815,10 @@ describe('Real document security E2E (full Docker stack)', () => {
     });
 
     it('Audit events contain no plaintext', async () => {
-      const res = await apiGet<Array<{ event_type: string; payload: unknown }>>(
-        `${AUDIT_URL}/audit/events?limit=100`,
+      const res = await apiGet<PaginatedList<{ event_type: string; payload: unknown }>>(
+        `${AUDIT_URL}/audit/events?page=1&page_size=100`,
       );
-      for (const event of res.body) {
+      for (const event of res.body.items) {
         if (!event.payload) continue;
         const payloadStr = JSON.stringify(event.payload);
         expect(payloadStr).not.toContain('Document for unauthorized actor test');
@@ -825,14 +831,37 @@ describe('Real document security E2E (full Docker stack)', () => {
   describe('CASE 7 — Expired and revoked Grant', () => {
     let documentId: string;
     let taskId: string;
+    let taskOwnerToken: string;
 
     beforeAll(async () => {
+      const ownerEmail = `expiry-owner-${Date.now()}@test.local`;
+      const ownerReg = await apiPost<{ id: string }>(`${AUTH_URL}/auth/register`, {
+        email: ownerEmail,
+        password: 'Employee123!',
+        role: 'EMPLOYEE',
+      });
+      expect(ownerReg.status).toBe(201);
+
+      const ownerLogin = await apiPost<{ access_token: string }>(`${AUTH_URL}/auth/login`, {
+        email: ownerEmail,
+        password: 'Employee123!',
+      });
+      expect(ownerLogin.status).toBe(200);
+      taskOwnerToken = ownerLogin.body.access_token;
+
       const taskRes = await apiPost<{ id: string }>(
         `${GW}/api/tasks`,
         { title: `Expiry test task ${Date.now()}`, description: 'test' },
-        accessToken,
+        taskOwnerToken,
       );
       taskId = taskRes.body.id;
+
+      const participantRes = await apiPost(
+        `${GW}/api/tasks/${taskId}/participants`,
+        { user_id: EMP_ID },
+        taskOwnerToken,
+      );
+      expect(participantRes.status).toBe(201);
 
       const docContent = Buffer.from(`Expiry test document ${Date.now()}`);
       const uploadRes = await uploadMultipartToGateway(
@@ -844,12 +873,12 @@ describe('Real document security E2E (full Docker stack)', () => {
           owner_id: EMP_ID,
           security_level: 'INTERNAL',
         },
-        accessToken,
+        taskOwnerToken,
       );
       expect(uploadRes.status).toBe(201);
       documentId = (uploadRes.body as { document: { id: string } }).document.id;
 
-      await attachDocumentToTask(taskId, documentId, accessToken);
+      await attachDocumentToTask(taskId, documentId, taskOwnerToken);
     });
 
     it('denies ticket creation after effective expiry', async () => {
@@ -950,7 +979,7 @@ describe('Real document security E2E (full Docker stack)', () => {
       const participantRes = await apiPost(
         `${GW}/api/tasks/${taskId}/participants`,
         { user_id: childActorId },
-        accessToken,
+        taskOwnerToken,
       );
       expect(participantRes.status).toBe(201);
 
@@ -1088,10 +1117,10 @@ describe('Real document security E2E (full Docker stack)', () => {
 
     it('replay denial is audited', async () => {
       await sleep(500);
-      const res = await apiGet<Array<{ event_type: string; payload: unknown }>>(
-        `${AUDIT_URL}/audit/events?limit=100`,
+      const res = await apiGet<PaginatedList<{ event_type: string; payload: unknown }>>(
+        `${AUDIT_URL}/audit/events?page=1&page_size=100`,
       );
-      const replayDenials = res.body.filter(
+      const replayDenials = res.body.items.filter(
         (e) =>
           e.event_type === 'DOCUMENT_DOWNLOAD_DENIED' &&
           typeof e.payload === 'object' &&
@@ -1308,11 +1337,11 @@ describe('Real document security E2E (full Docker stack)', () => {
     });
 
     it('no usable Document remains after rejection', async () => {
-      const res = await apiGet<Array<{ title: string }>>(
-        `${GW}/api/documents?owner_id=${EMP_ID}`,
+      const res = await apiGet<PaginatedList<{ title: string }>>(
+        `${GW}/api/documents?owner_id=${EMP_ID}&page=1&page_size=100`,
         accessToken,
       );
-      const cleanupDocs = res.body.filter((d) => d.title.includes('Cleanup test'));
+      const cleanupDocs = res.body.items.filter((d) => d.title.includes('Cleanup test'));
       expect(cleanupDocs).toHaveLength(0);
     });
 

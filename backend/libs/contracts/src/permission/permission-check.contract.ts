@@ -25,6 +25,8 @@ export const permissionCheckRequestSchema = z
     resource_id: z.string().uuid(),
     action: z.nativeEnum(PermissionAction),
     task_id: z.string().uuid().nullable().optional(),
+    owner_id: z.string().uuid().optional(),
+    creator_id: z.string().uuid().optional(),
     correlation_id: z.string().uuid(),
   })
   .strict();

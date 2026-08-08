@@ -237,7 +237,17 @@ describe('Retention and disposal integration (PostgreSQL)', () => {
         .get('/retention-disposal/holds')
         .set(otherEmployeeHeaders())
         .expect(200)
-        .expect([]);
+        .expect({
+          items: [],
+          pagination: {
+            page: 1,
+            page_size: 20,
+            total: 0,
+            total_pages: 0,
+            has_next: false,
+            has_previous: false,
+          },
+        });
 
       await request(app.getHttpServer())
         .post(`/retention-disposal/holds/${placeRes.body.id}/release`)

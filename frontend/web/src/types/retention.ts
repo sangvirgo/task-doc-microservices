@@ -15,6 +15,23 @@ export interface DisposalApproval {
   approved_at: string;
 }
 
+export interface RetentionHoldPlacementResult {
+  id: string;
+  document_id: string;
+  placed_at: string;
+}
+
+export interface RetentionHoldReleaseResult {
+  id: string;
+  released_at: string;
+}
+
+export interface DisposalApprovalResult {
+  id: string;
+  document_id: string;
+  approved_at: string;
+}
+
 export interface EligibilityResult {
   eligible_count: number;
   eligible_ids: string[];

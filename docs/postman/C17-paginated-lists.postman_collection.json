@@ -1,0 +1,161 @@
+{
+  "info": {
+    "name": "C17 Workspace - Paginated Lists",
+    "description": "Backend list endpoints. All successful list responses use { items, pagination }. Query defaults are page=1 and page_size=20; page_size must be between 1 and 100.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "baseUrl", "value": "http://127.0.0.1:3000/api" },
+    { "key": "access_token", "value": "" },
+    { "key": "taskId", "value": "00000000-0000-4000-a000-000000000010" },
+    { "key": "documentId", "value": "00000000-0000-4000-a000-000000000011" },
+    { "key": "ownerId", "value": "00000000-0000-4000-a000-000000000002" },
+    { "key": "recipientId", "value": "00000000-0000-4000-a000-000000000002" }
+  ],
+  "event": [
+    {
+      "listen": "prerequest",
+      "script": {
+        "type": "text/javascript",
+        "exec": ["pm.request.headers.upsert({ key: 'Authorization', value: 'Bearer {{access_token}}' });"]
+      }
+    }
+  ],
+  "item": [
+    {
+      "name": "1. Tasks",
+      "item": [
+        {
+          "name": "List tasks - page 1",
+          "request": { "method": "GET", "url": "{{baseUrl}}/tasks?page=1&page_size=20" },
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.test('200 OK', () => pm.response.to.have.status(200));", "const body = pm.response.json();", "pm.test('paginated envelope', () => { pm.expect(body.items).to.be.an('array'); pm.expect(body.pagination).to.have.property('page', 1); pm.expect(body.pagination).to.have.property('page_size', 20); });"] } }]
+        },
+        {
+          "name": "List task participants",
+          "request": { "method": "GET", "url": "{{baseUrl}}/tasks/{{taskId}}/participants?page=1&page_size=20" },
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.test('200 OK', () => pm.response.to.have.status(200));", "const body = pm.response.json(); pm.expect(body.items).to.be.an('array'); pm.expect(body.pagination).to.have.property('page_size', 20);"] } }]
+        },
+        {
+          "name": "List task comments",
+          "request": { "method": "GET", "url": "{{baseUrl}}/tasks/{{taskId}}/comments?page=1&page_size=20" },
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.test('200 OK', () => pm.response.to.have.status(200));", "const body = pm.response.json(); pm.expect(body.items).to.be.an('array'); pm.expect(body.pagination).to.have.property('total');"] } }]
+        },
+        {
+          "name": "List task activity",
+          "request": { "method": "GET", "url": "{{baseUrl}}/tasks/{{taskId}}/activity?page=1&page_size=20" },
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.test('200 OK', () => pm.response.to.have.status(200));", "const body = pm.response.json(); pm.expect(body.items).to.be.an('array'); pm.expect(body.pagination).to.have.property('has_next');"] } }]
+        }
+      ]
+    },
+    {
+      "name": "2. Documents & records",
+      "item": [
+        {
+          "name": "List documents",
+          "request": { "method": "GET", "url": "{{baseUrl}}/documents?page=1&page_size=20" },
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.test('200 OK', () => pm.response.to.have.status(200));", "const body = pm.response.json(); pm.expect(body.items).to.be.an('array'); pm.expect(body.pagination).to.have.property('total_pages');"] } }]
+        },
+        {
+          "name": "List documents by owner",
+          "request": { "method": "GET", "url": "{{baseUrl}}/documents?owner_id={{ownerId}}&page=1&page_size=20" },
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.test('200 OK', () => pm.response.to.have.status(200));", "const body = pm.response.json(); pm.expect(body.items).to.be.an('array');"] } }]
+        },
+        {
+          "name": "List document versions",
+          "request": { "method": "GET", "url": "{{baseUrl}}/documents/{{documentId}}/versions?page=1&page_size=20" },
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.test('200 OK', () => pm.response.to.have.status(200));", "const body = pm.response.json(); pm.expect(body.items).to.be.an('array'); pm.expect(body.pagination).to.have.property('page');"] } }]
+        },
+        {
+          "name": "List documents attached to task",
+          "request": { "method": "GET", "url": "{{baseUrl}}/tasks/{{taskId}}/documents?page=1&page_size=20" },
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.test('200 OK', () => pm.response.to.have.status(200));", "const body = pm.response.json(); pm.expect(body.items).to.be.an('array'); pm.expect(body.pagination).to.have.property('has_previous');"] } }]
+        },
+        {
+          "name": "List records",
+          "request": { "method": "GET", "url": "{{baseUrl}}/records?page=1&page_size=20" },
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.test('200 OK', () => pm.response.to.have.status(200));", "const body = pm.response.json(); pm.expect(body.items).to.be.an('array');"] } }]
+        },
+        {
+          "name": "List transfer packages",
+          "request": { "method": "GET", "url": "{{baseUrl}}/transfer-packages?page=1&page_size=20" },
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.test('200 OK', () => pm.response.to.have.status(200));", "const body = pm.response.json(); pm.expect(body.items).to.be.an('array');"] } }]
+        },
+        {
+          "name": "List retention holds",
+          "request": { "method": "GET", "url": "{{baseUrl}}/retention-disposal/holds?page=1&page_size=20" },
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.test('200 OK', () => pm.response.to.have.status(200));", "const body = pm.response.json(); pm.expect(body.items).to.be.an('array');"] } }]
+        },
+        {
+          "name": "List disposal approvals",
+          "request": { "method": "GET", "url": "{{baseUrl}}/retention-disposal/approvals?page=1&page_size=20" },
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.test('200 OK', () => pm.response.to.have.status(200));", "const body = pm.response.json(); pm.expect(body.items).to.be.an('array');"] } }]
+        }
+      ]
+    },
+    {
+      "name": "3. Permissions & notifications",
+      "item": [
+        {
+          "name": "List grants",
+          "request": { "method": "GET", "url": "{{baseUrl}}/permissions/grants?page=1&page_size=20" },
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.test('200 OK', () => pm.response.to.have.status(200));", "const body = pm.response.json(); pm.expect(body.items).to.be.an('array'); pm.expect(body.pagination).to.have.property('total');"] } }]
+        },
+        {
+          "name": "List notifications for recipient",
+          "request": { "method": "GET", "url": "{{baseUrl}}/notifications?recipient_id={{recipientId}}&page=1&page_size=20" },
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.test('200 OK', () => pm.response.to.have.status(200));", "const body = pm.response.json(); pm.expect(body.items).to.be.an('array'); pm.expect(body.pagination).to.have.property('total_pages');"] } }]
+        }
+      ]
+    },
+    {
+      "name": "4. Admin, audit & security",
+      "item": [
+        {
+          "name": "List users",
+          "request": { "method": "GET", "url": "{{baseUrl}}/users?page=1&page_size=20" },
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.test('200 OK', () => pm.response.to.have.status(200));", "const body = pm.response.json(); pm.expect(body.items).to.be.an('array');"] } }]
+        },
+        {
+          "name": "List active employee directory",
+          "request": { "method": "GET", "url": "{{baseUrl}}/users/directory?page=1&page_size=20" },
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.test('200 OK', () => pm.response.to.have.status(200));", "const body = pm.response.json(); pm.expect(body.items).to.be.an('array');"] } }]
+        },
+        {
+          "name": "List audit events",
+          "request": { "method": "GET", "url": "{{baseUrl}}/audit/events?page=1&page_size=20" },
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.test('200 OK', () => pm.response.to.have.status(200));", "const body = pm.response.json(); pm.expect(body.items).to.be.an('array'); pm.expect(body.pagination).to.have.property('total_pages');"] } }]
+        },
+        {
+          "name": "List security alerts",
+          "request": { "method": "GET", "url": "{{baseUrl}}/monitoring/alerts?page=1&page_size=20" },
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.test('200 OK', () => pm.response.to.have.status(200));", "const body = pm.response.json(); pm.expect(body.items).to.be.an('array');"] } }]
+        },
+        {
+          "name": "List security rules",
+          "request": { "method": "GET", "url": "{{baseUrl}}/monitoring/rules?page=1&page_size=20" },
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.test('200 OK', () => pm.response.to.have.status(200));", "const body = pm.response.json(); pm.expect(body.items).to.be.an('array');"] } }]
+        },
+        {
+          "name": "List encryption records",
+          "request": { "method": "GET", "url": "{{baseUrl}}/security/records?document_id={{documentId}}&page=1&page_size=20" },
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.test('200 OK', () => pm.response.to.have.status(200));", "const body = pm.response.json(); pm.expect(body.items).to.be.an('array');"] } }]
+        }
+      ]
+    },
+    {
+      "name": "5. Pagination boundary checks",
+      "item": [
+        {
+          "name": "Reject page_size above 100",
+          "request": { "method": "GET", "url": "{{baseUrl}}/tasks?page=1&page_size=101" },
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.test('400 Bad Request', () => pm.response.to.have.status(400));"] } }]
+        },
+        {
+          "name": "Allow a page beyond the last page",
+          "request": { "method": "GET", "url": "{{baseUrl}}/tasks?page=999999&page_size=20" },
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.test('200 OK', () => pm.response.to.have.status(200));", "const body = pm.response.json(); pm.expect(body.items).to.be.an('array'); pm.expect(body.pagination.page).to.eql(999999); pm.expect(body.pagination.has_next).to.eql(false);"] } }]
+        }
+      ]
+    }
+  ]
+}

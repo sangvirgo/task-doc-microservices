@@ -50,7 +50,8 @@ export const gatewayClient = {
   delete: <T>(path: string, body?: unknown) => request<T>(path, { method: 'DELETE', body: body === undefined ? undefined : JSON.stringify(body) }),
   postForm: <T>(path: string, body: FormData, signal?: AbortSignal) => request<T>(path, { method: 'POST', body, signal }),
   postFormWithProgress: <T>(path: string, body: FormData, onProgress: (percent: number) => void) => requestFormWithProgress<T>(path, body, onProgress),
-  postBlob: (path: string, body: unknown) => requestBlob(path, body),
+  getBlob: (path: string) => requestBlob(path, undefined, 'GET'),
+  postBlob: (path: string, body: unknown) => requestBlob(path, body, 'POST'),
 };
 
 async function requestFormWithProgress<T>(path: string, body: FormData, onProgress: (percent: number) => void, retryAfterRefresh = true): Promise<T> {
@@ -75,15 +76,19 @@ async function requestFormWithProgress<T>(path: string, body: FormData, onProgre
   return response.json() as Promise<T>;
 }
 
-async function requestBlob(path: string, body: unknown): Promise<Blob> {
+async function requestBlob(path: string, body: unknown, method: 'GET' | 'POST'): Promise<Blob> {
   const session = readSession();
   const headers = new Headers({ 'x-correlation-id': createCorrelationId(), accept: 'application/octet-stream', 'content-type': 'application/json' });
   if (session) headers.set('authorization', `Bearer ${session.access_token}`);
-  const response = await fetch(apiUrl(path), { method: 'POST', headers, body: JSON.stringify(body) });
+  const response = await fetch(apiUrl(path), {
+    method,
+    headers,
+    ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+  });
   if (response.status === 401 && session) {
     try {
       await refreshSession(session.refresh_token);
-      return requestBlob(path, body);
+      return requestBlob(path, body, method);
     } catch {
       clearSession();
       window.location.assign('/login?reason=session-expired');

@@ -6,6 +6,12 @@ import { EVENT_PUBLISHER, type EventPublisher } from '@c17/messaging';
 
 import { AuthAdminClient } from '../auth/auth-admin.client';
 import { SecurityMonitoringPrismaService } from '../prisma/security-monitoring-prisma.service';
+import {
+  createPaginationMeta,
+  PaginatedResponse,
+  PaginationQuery,
+  toPrismaPagination,
+} from '@c17/contracts';
 
 export interface SecurityAlertDto {
   id: string;
@@ -31,6 +37,8 @@ export interface SecurityRuleDto {
   action: string;
   created_at: string;
 }
+
+const DEFAULT_PAGINATION: PaginationQuery = { page: 1, page_size: 20 };
 
 @Injectable()
 export class MonitoringService {
@@ -73,22 +81,33 @@ export class MonitoringService {
     return { triggered: false };
   }
 
-  async listAlerts(filters?: {
-    status?: string;
-    severity?: string;
-    actor_id?: string;
-    rule_id?: string;
-  }): Promise<SecurityAlertDto[]> {
-    const alerts = await this.prisma.securityAlert.findMany({
-      where: {
-        ...(filters?.status ? { status: filters.status } : {}),
-        ...(filters?.severity ? { severity: filters.severity } : {}),
-        ...(filters?.actor_id ? { actor_id: filters.actor_id } : {}),
-        ...(filters?.rule_id ? { rule_id: filters.rule_id } : {}),
-      },
-      orderBy: { created_at: 'desc' },
-    });
-    return alerts.map((a) => this.toAlertDto(a));
+  async listAlerts(
+    filters?: {
+      status?: string;
+      severity?: string;
+      actor_id?: string;
+      rule_id?: string;
+    },
+    pagination: PaginationQuery = DEFAULT_PAGINATION,
+  ): Promise<PaginatedResponse<SecurityAlertDto>> {
+    const where = {
+      ...(filters?.status ? { status: filters.status } : {}),
+      ...(filters?.severity ? { severity: filters.severity } : {}),
+      ...(filters?.actor_id ? { actor_id: filters.actor_id } : {}),
+      ...(filters?.rule_id ? { rule_id: filters.rule_id } : {}),
+    };
+    const [total, alerts] = await Promise.all([
+      this.prisma.securityAlert.count({ where }),
+      this.prisma.securityAlert.findMany({
+        where,
+        orderBy: [{ created_at: 'desc' }, { id: 'desc' }],
+        ...toPrismaPagination(pagination),
+      }),
+    ]);
+    return {
+      items: alerts.map((a) => this.toAlertDto(a)),
+      pagination: createPaginationMeta(pagination.page, pagination.page_size, total),
+    };
   }
 
   async getAlert(id: string): Promise<SecurityAlertDto> {
@@ -129,9 +148,20 @@ export class MonitoringService {
     return this.toRuleDto(rule);
   }
 
-  async listRules(): Promise<SecurityRuleDto[]> {
-    const rules = await this.prisma.securityRule.findMany({ orderBy: { name: 'asc' } });
-    return rules.map((r) => this.toRuleDto(r));
+  async listRules(
+    pagination: PaginationQuery = DEFAULT_PAGINATION,
+  ): Promise<PaginatedResponse<SecurityRuleDto>> {
+    const [total, rules] = await Promise.all([
+      this.prisma.securityRule.count(),
+      this.prisma.securityRule.findMany({
+        orderBy: [{ name: 'asc' }, { id: 'asc' }],
+        ...toPrismaPagination(pagination),
+      }),
+    ]);
+    return {
+      items: rules.map((r) => this.toRuleDto(r)),
+      pagination: createPaginationMeta(pagination.page, pagination.page_size, total),
+    };
   }
 
   async toggleRule(id: string, enabled: boolean): Promise<SecurityRuleDto> {

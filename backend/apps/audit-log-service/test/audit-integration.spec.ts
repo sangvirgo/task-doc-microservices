@@ -186,16 +186,16 @@ describe('Audit Log Service Integration (PostgreSQL)', () => {
       .get(`/audit/events?actor_id=${ACTOR_ID}`)
       .expect(200);
 
-    expect(res.body.length).toBeGreaterThanOrEqual(2);
-    for (const event of res.body) {
+    expect(res.body.items.length).toBeGreaterThanOrEqual(2);
+    for (const event of res.body.items) {
       expect(event.actor_id).toBe(ACTOR_ID);
     }
+    expect(res.body.pagination).toMatchObject({ page: 1, page_size: 20 });
   });
 
   it('does not fork the chain on duplicate RabbitMQ delivery', async () => {
     const eventId = randomUUID();
     const resourceId = randomUUID();
-    const before = await prisma.auditEvent.count();
 
     const envelope = buildEventEnvelope({
       event_id: eventId,
@@ -228,10 +228,11 @@ describe('Audit Log Service Integration (PostgreSQL)', () => {
       return Boolean(event);
     });
 
-    const after = await prisma.auditEvent.count();
-    expect(after).toBe(before + 1);
+    const matchingEvents = await prisma.auditEvent.findMany({ where: { id: eventId } });
+    expect(matchingEvents).toHaveLength(1);
 
-    const event = await prisma.auditEvent.findUniqueOrThrow({ where: { id: eventId } });
+    const event = matchingEvents[0];
+    expect(event).toBeDefined();
     expect(event.sequence_number).toBeGreaterThan(0);
 
     const integrity = await request(app.getHttpServer()).post('/audit/chain/verify').expect(200);
