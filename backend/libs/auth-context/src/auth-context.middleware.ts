@@ -32,6 +32,7 @@ export function attachAuthContextFromHeaders(
 
   const authContext: AuthContext = {
     userId,
+    email: req.header('x-user-email') ?? undefined,
     role: role as SystemRole,
     capabilities: parseCapabilities(req.header('x-user-capabilities') ?? undefined),
     sessionId: req.header('x-session-id') ?? '',

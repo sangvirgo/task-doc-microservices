@@ -85,6 +85,7 @@ describe('AuthService user-role integration', () => {
     expect(jwtService.sign).toHaveBeenCalledWith(
       {
         sub: '10000000-0000-4000-8000-000000000001',
+        email: 'employee@example.com',
         role: 'EMPLOYEE',
         capabilities: ['DISPOSAL_APPROVE'],
       },

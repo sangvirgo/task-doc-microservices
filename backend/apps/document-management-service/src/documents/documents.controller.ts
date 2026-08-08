@@ -51,6 +51,7 @@ import { PermissionClient } from '../permissions/permission.client';
 import { AuditClient } from '../audit/audit.client';
 import { SecurityClient } from '../security/security.client';
 import { TaskDocumentsService } from '../tasks/task-documents.service';
+import { formatPreviewActorLabel } from '../security/preview-watermark-identity';
 import type {
   TaskDocumentGrantInput,
   TaskDocumentGrantResult,
@@ -596,7 +597,7 @@ export class DocumentsController {
     const securityPreview = await this.securityClient.preparePreview({
       document_id: documentId,
       version: versionNum,
-      actor_label: user.userId,
+      actor_label: formatPreviewActorLabel(user),
       session_id: sessionId,
     });
     if (!securityPreview) {

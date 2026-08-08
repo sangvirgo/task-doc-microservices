@@ -268,6 +268,40 @@ describe('Task authorization integration (PostgreSQL)', () => {
     expect(res.body.id).toBe(taskId);
   });
 
+  it('returns completion metrics from direct child task approvals', async () => {
+    const parentTaskId = await seedTask({
+      creatorId: EMPLOYEE_ID,
+      assigneeId: SECOND_EMPLOYEE_ID,
+      status: 'IN_PROGRESS',
+    });
+    await seedTask({
+      creatorId: SECOND_EMPLOYEE_ID,
+      assigneeId: EMPLOYEE_ID,
+      parentTaskId,
+      status: 'APPROVED',
+    });
+    await seedTask({
+      creatorId: SECOND_EMPLOYEE_ID,
+      assigneeId: EMPLOYEE_ID,
+      parentTaskId,
+      status: 'CANCELLED',
+    });
+
+    const res = await request(app.getHttpServer())
+      .get(`/tasks/${parentTaskId}`)
+      .set(authHeaders(EMPLOYEE_ID, 'EMPLOYEE'));
+
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual(
+      expect.objectContaining({
+        completion_percentage: 50,
+        child_task_count: 2,
+        approved_child_task_count: 1,
+        completion_color: 'RED',
+      }),
+    );
+  });
+
   it('allows ancestor creator to read only the restricted descendant summary', async () => {
     const childAssigneeId = randomUUID();
     const parentTaskId = await seedTask({
