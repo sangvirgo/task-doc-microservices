@@ -8,11 +8,13 @@ import {
   HttpStatus,
   Param,
   Post,
+  Query,
 } from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import { z } from 'zod';
 
 import { UsersService, UserDto } from './users.service';
+import { paginationQuerySchema, PaginationQuery } from '@c17/contracts';
 
 const createUserSchema = z.object({
   id: z.string().uuid(),
@@ -31,14 +33,26 @@ export class UsersController {
 
   @Get()
   @ApiOperation({ summary: 'List all users' })
-  listUsers(): Promise<UserDto[]> {
-    return this.usersService.listUsers();
+  listUsers(
+    @Query('page') page?: string,
+    @Query('page_size') page_size?: string,
+  ): Promise<unknown> {
+    return this.usersService.listUsers(this.parsePagination(page, page_size));
   }
 
   @Get('directory')
   @ApiOperation({ summary: 'List active employee choices for assignment' })
-  memberDirectory(): Promise<Array<{ id: string; email: string }>> {
-    return this.usersService.memberDirectory();
+  memberDirectory(
+    @Query('page') page?: string,
+    @Query('page_size') page_size?: string,
+  ): Promise<unknown> {
+    return this.usersService.memberDirectory(this.parsePagination(page, page_size));
+  }
+
+  private parsePagination(page?: string, page_size?: string): PaginationQuery {
+    const parsed = paginationQuerySchema.safeParse({ page, page_size });
+    if (!parsed.success) throw new BadRequestException(parsed.error.issues);
+    return parsed.data;
   }
 
   @Get(':id')

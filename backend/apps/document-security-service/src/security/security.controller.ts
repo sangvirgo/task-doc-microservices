@@ -18,6 +18,7 @@ import type { Response } from 'express';
 import { createReadStream } from 'fs';
 import { rm } from 'fs/promises';
 import { pipeline } from 'stream/promises';
+import { paginationQuerySchema } from '@c17/contracts';
 
 import {
   SecurityPipelineService,
@@ -53,6 +54,11 @@ const uploadHeaderSchema = z.object({
   version: z.coerce.number().int().positive(),
   file_size: z.coerce.number().int().positive(),
   mime_type: z.string().min(1),
+});
+
+const previewPrepareSchema = z.object({
+  actor_label: z.string().min(1).max(320),
+  session_id: z.string().uuid(),
 });
 
 @ApiTags('security')
@@ -151,10 +157,64 @@ export class SecurityController {
     await this.pipeArtifact(res, artifact);
   }
 
+  @Post(':documentId/versions/:version/preview/prepare')
+  @HttpCode(HttpStatus.CREATED)
+  @ApiOperation({ summary: 'Prepare a short-lived server-rendered document preview' })
+  async preparePreview(
+    @Param('documentId') documentId: string,
+    @Param('version') version: string,
+    @Body() body: z.infer<typeof previewPrepareSchema>,
+  ) {
+    const parsed = previewPrepareSchema.safeParse(body);
+    if (!parsed.success) throw new BadRequestException(parsed.error.issues);
+    const versionNum = parseInt(version, 10);
+    if (isNaN(versionNum)) throw new BadRequestException('Invalid version number');
+
+    return this.securityService.preparePreview({
+      document_id: documentId,
+      version: versionNum,
+      actor_label: parsed.data.actor_label,
+      session_id: parsed.data.session_id,
+    });
+  }
+
+  @Get('preview/:previewId/pages/:page')
+  @ApiOperation({ summary: 'Return one internally prepared, watermarked preview page' })
+  getPreviewPage(
+    @Param('previewId') previewId: string,
+    @Param('page') page: string,
+    @Res() res: Response,
+  ): void {
+    const parsedPage = parseInt(page, 10);
+    if (isNaN(parsedPage) || parsedPage < 1) {
+      throw new BadRequestException('Invalid preview page number');
+    }
+
+    const artifact = this.securityService.getPreviewPage(previewId, parsedPage);
+    res.setHeader('content-type', artifact.mime_type);
+    res.setHeader('cache-control', 'private, no-store');
+    res.setHeader('pragma', 'no-cache');
+    res.setHeader('x-content-type-options', 'nosniff');
+    res.status(HttpStatus.OK).send(artifact.bytes);
+  }
+
+  @Post('preview/:previewId/revoke')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @ApiOperation({ summary: 'Revoke an internal preview handle' })
+  revokePreview(@Param('previewId') previewId: string): void {
+    this.securityService.revokePreview(previewId);
+  }
+
   @Get('records')
   @ApiOperation({ summary: 'List encryption records' })
-  async listRecords(@Query('document_id') document_id?: string): Promise<EncryptionRecordDto[]> {
-    return this.securityService.listRecords(document_id);
+  async listRecords(
+    @Query('document_id') document_id?: string,
+    @Query('page') page?: string,
+    @Query('page_size') page_size?: string,
+  ): Promise<unknown> {
+    const pagination = paginationQuerySchema.safeParse({ page, page_size });
+    if (!pagination.success) throw new BadRequestException(pagination.error.issues);
+    return this.securityService.listRecords(document_id, pagination.data);
   }
 
   @Get('kek/active')

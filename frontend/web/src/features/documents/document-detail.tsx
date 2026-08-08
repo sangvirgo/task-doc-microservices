@@ -7,13 +7,12 @@ import { tasksApi } from '@/api/tasks';
 import { grantsApi } from '@/api/grants';
 import { readSession } from '@/auth/session';
 import { ErrorState, LoadingState, PermissionDeniedState } from '@/components/common-states';
-import { GatewayError } from '@/lib/errors';
-import type { Document, DocumentVersion } from '@/types/document';
-import type { Task } from '@/types/task';
-import styles from './documents.module.css';
 import { SearchableSelect } from '@/components/searchable-select';
-
-type SafePreview = { id: string; title: string; security_level: string; document_type: string };
+import { GatewayError } from '@/lib/errors';
+import type { Document, DocumentVersion, PreviewSession } from '@/types/document';
+import type { Task } from '@/types/task';
+import { DocumentPreview } from './document-preview';
+import styles from './documents.module.css';
 
 const fileName = (document: Document, version: DocumentVersion) => {
   const extension = document.document_type.toLowerCase();
@@ -32,7 +31,8 @@ export function DocumentDetail({ id, taskId }: { id: string; taskId?: string }) 
   const [contextsLoading, setContextsLoading] = useState(true);
   const [status, setStatus] = useState('');
   const [busy, setBusy] = useState('');
-  const [preview, setPreview] = useState<SafePreview>();
+  const [previewVersion, setPreviewVersion] = useState<number>();
+  const [previewCapabilities, setPreviewCapabilities] = useState<PreviewSession['capabilities']>();
   const [error, setError] = useState<number>();
 
   const load = () => {
@@ -80,10 +80,9 @@ export function DocumentDetail({ id, taskId }: { id: string; taskId?: string }) 
           access[grant.task_id] = [...new Set([...(access[grant.task_id] ?? []), ...grant.permissions])];
         }
 
-        const availableTaskIds = Object.keys(access);
         const preferredTaskId =
           (taskId && access[taskId] ? taskId : '') ||
-          availableTaskIds[0] ||
+          Object.keys(access)[0] ||
           '';
 
         setContexts(associations.map(item => item.task));
@@ -101,35 +100,29 @@ export function DocumentDetail({ id, taskId }: { id: string; taskId?: string }) 
 
   const latestVersion = useMemo(() => versions.find(item => item.version === document?.current_version) ?? versions.at(-1), [document?.current_version, versions]);
   const activePermissions = permissionsByTask[activeTaskId] ?? [];
-  const canDownload = Boolean(activeTaskId) && activePermissions.includes('DOWNLOAD');
+  const canDownload = Boolean(activeTaskId) && activePermissions.includes('DOWNLOAD') && previewCapabilities?.download !== false;
 
-  const redeem = async (version: DocumentVersion) => {
-    if (!activeTaskId || !canDownload) {
-      throw new GatewayError(403, 'Tài khoản không có quyền DOWNLOAD trong task context đang chọn.');
-    }
-    const ticket = await documentsApi.ticket(id, version.version, activeTaskId);
-    return documentsApi.redeem(id, version.version, ticket.id);
+  const closePreview = () => {
+    setPreviewVersion(undefined);
+    setPreviewCapabilities(undefined);
   };
 
-  const openPreview = async () => {
-    setBusy('preview');
-    setStatus('Đang tải bản xem trước an toàn…');
-    try {
-      const metadata = await documentsApi.preview(id);
-      setPreview(metadata);
-      setStatus('Đã tải bản xem trước an toàn bằng quyền PREVIEW.');
-    } catch (reason) {
-      setStatus(reason instanceof GatewayError ? `Không thể xem trước (${reason.status}): ${reason.message}` : 'Không thể xem trước tài liệu.');
-    } finally {
-      setBusy('');
-    }
+  const openPreview = (version: number) => {
+    setPreviewCapabilities(undefined);
+    setPreviewVersion(version);
+    setStatus('Đang chuẩn bị các trang xem trước có watermark…');
   };
 
   const download = async (version: DocumentVersion) => {
+    if (!activeTaskId || !canDownload) {
+      setStatus('Tài khoản không có quyền DOWNLOAD trong công việc đang chọn.');
+      return;
+    }
     setBusy(`download-${version.id}`);
     setStatus('Đang chuẩn bị tải xuống bảo mật…');
     try {
-      const blob = await redeem(version);
+      const ticket = await documentsApi.ticket(id, version.version, activeTaskId);
+      const blob = await documentsApi.redeem(id, version.version, ticket.id);
       const url = URL.createObjectURL(blob);
       const link = window.document.createElement('a');
       link.href = url;
@@ -155,18 +148,18 @@ export function DocumentDetail({ id, taskId }: { id: string; taskId?: string }) 
     <header className={styles.documentHero}>
       <div className={styles.documentHeroIcon}>▧</div>
       <div className={styles.documentHeroCopy}><span className={styles.documentEyebrow}>Secure document · v{document.current_version}</span><h1>{document.title}</h1><div className={styles.documentChips}><span>{document.document_type}</span><span className={styles[`level${document.security_level}`]}>{document.security_level}</span><span className={styles.statusChip}>{document.status}</span></div></div>
-      <div className={styles.heroActions}><button type="button" disabled={Boolean(busy)} onClick={() => void openPreview()}>◉ Xem trước</button><button type="button" disabled={!latestVersion || contextsLoading || !canDownload || Boolean(busy)} onClick={() => latestVersion && void download(latestVersion)}>⇩ Tải bản mới nhất</button></div>
+      <div className={styles.heroActions}><button type="button" disabled={!latestVersion || Boolean(busy)} onClick={() => latestVersion && openPreview(latestVersion.version)}>◉ Xem trước</button><button type="button" disabled={!latestVersion || contextsLoading || !canDownload || Boolean(busy)} onClick={() => latestVersion && void download(latestVersion)}>⇩ Tải bản mới nhất</button></div>
     </header>
 
     <div className={styles.documentDetailGrid}>
       <main className={styles.documentMainColumn}>
-        {preview ? <section className={styles.blobPreview}><div className={styles.previewToolbar}><div><strong>{preview.title}</strong><span>Bản xem trước an toàn · quyền PREVIEW</span></div><button type="button" onClick={() => setPreview(undefined)}>Đóng</button></div><div className={styles.safePreviewMetadata}><span>◎</span><h2>Metadata tài liệu</h2><dl><div><dt>Loại tài liệu</dt><dd>{preview.document_type}</dd></div><div><dt>Mức bảo mật</dt><dd>{preview.security_level}</dd></div><div><dt>Mã tài liệu</dt><dd>{preview.id}</dd></div></dl><p>Backend chỉ trả metadata an toàn cho quyền PREVIEW. Nội dung tệp yêu cầu quyền DOWNLOAD.</p></div></section> : <section className={styles.previewEmpty}><span>◎</span><h2>Xem trước tài liệu an toàn</h2><p>Quyền PREVIEW cho phép xem metadata an toàn của tài liệu mà không tạo download ticket.</p><button type="button" disabled={Boolean(busy)} onClick={() => void openPreview()}>{busy === 'preview' ? 'Đang xử lý…' : 'Xem trước an toàn'}</button></section>}
+        {previewVersion ? <DocumentPreview documentId={id} version={previewVersion} taskId={activeTaskId || undefined} onClose={closePreview} onCapabilitiesChange={setPreviewCapabilities} /> : <section className={styles.previewEmpty}><span>◎</span><h2>Xem trước tài liệu an toàn</h2><p>Nội dung được backend render thành từng trang có watermark. Luồng PREVIEW không tạo download ticket và không gửi file gốc.</p><button type="button" disabled={!latestVersion || Boolean(busy)} onClick={() => latestVersion && openPreview(latestVersion.version)}>Xem trước an toàn</button></section>}
 
-        <section className={styles.versionPanel}><div className={styles.panelHeading}><div><span>Lịch sử tài liệu</span><h2>Các phiên bản</h2></div><strong>{versions.length} phiên bản</strong></div><div className={styles.versionTableWrap}><table><thead><tr><th>Phiên bản</th><th>MIME type</th><th>Kích thước</th><th>Hành động</th></tr></thead><tbody>{versions.map(version => <tr key={version.id}><td><span className={styles.versionBadge}>v{version.version}</span>{version.version === document.current_version && <small>Mới nhất</small>}</td><td>{version.mime_type}</td><td>{version.file_size.toLocaleString()} bytes</td><td><div className={styles.rowActions}><button type="button" disabled={Boolean(busy)} onClick={() => void openPreview()}>{busy === 'preview' ? 'Đang mở…' : 'Xem trước'}</button><button type="button" disabled={contextsLoading || !canDownload || Boolean(busy)} onClick={() => void download(version)}>{busy === `download-${version.id}` ? 'Đang tải…' : 'Tải xuống'}</button></div></td></tr>)}</tbody></table></div></section>
+        <section className={styles.versionPanel}><div className={styles.panelHeading}><div><span>Lịch sử tài liệu</span><h2>Các phiên bản</h2></div><strong>{versions.length} phiên bản</strong></div><div className={styles.versionTableWrap}><table><thead><tr><th>Phiên bản</th><th>MIME type</th><th>Kích thước</th><th>Hành động</th></tr></thead><tbody>{versions.map(version => <tr key={version.id}><td><span className={styles.versionBadge}>v{version.version}</span>{version.version === document.current_version && <small>Mới nhất</small>}</td><td>{version.mime_type}</td><td>{version.file_size.toLocaleString()} bytes</td><td><div className={styles.rowActions}><button type="button" disabled={Boolean(busy)} onClick={() => openPreview(version.version)}>Xem trước</button><button type="button" disabled={contextsLoading || !canDownload || Boolean(busy)} onClick={() => void download(version)}>{busy === `download-${version.id}` ? 'Đang tải…' : 'Tải xuống'}</button></div></td></tr>)}</tbody></table></div></section>
       </main>
 
       <aside className={styles.documentSideColumn}>
-        <section className={styles.contextCard}><span className={styles.cardLabel}>Task context</span><h2>Quyền truy cập</h2>{contextsLoading ? <p>Đang dò công việc đã gắn tài liệu…</p> : Object.keys(permissionsByTask).length > 0 ? <>{contexts.length > 0 && <label>Công việc được ủy quyền<SearchableSelect value={activeTaskId} onChange={event => setActiveTaskId(event.target.value)}>{contexts.map(task => <option key={task.id} value={task.id}>{task.title}</option>)}</SearchableSelect></label>}<div className={styles.contextSuccess}><span>✓</span><p><strong>Capability đang có</strong>{activePermissions.length ? activePermissions.join(' · ') : 'Không có quyền trong task context này'}</p></div>{!canDownload && <div className={styles.contextWarning}><span>!</span><p><strong>Không có quyền DOWNLOAD</strong>Bạn vẫn có thể xem metadata bằng PREVIEW, nhưng không thể tải nội dung tệp.</p></div>}</> : <div className={styles.contextWarning}><span>!</span><p><strong>Không tìm thấy task context</strong>Xem trước vẫn được backend kiểm tra bằng quyền PREVIEW. Tải xuống cần grant DOWNLOAD kèm task_id.</p></div>}</section>
+        <section className={styles.contextCard}><span className={styles.cardLabel}>Task context</span><h2>Quyền truy cập</h2>{contextsLoading ? <p>Đang dò công việc đã gắn tài liệu…</p> : Object.keys(permissionsByTask).length > 0 ? <>{contexts.length > 0 && <label>Công việc được ủy quyền<SearchableSelect value={activeTaskId} onChange={event => { setActiveTaskId(event.target.value); closePreview(); }}>{contexts.map(task => <option key={task.id} value={task.id}>{task.title}</option>)}</SearchableSelect></label>}<div className={styles.contextSuccess}><span>✓</span><p><strong>Capability đang có</strong>{activePermissions.length ? activePermissions.join(' · ') : 'Không có quyền trong task context này'}</p></div>{!activePermissions.includes('DOWNLOAD') && <div className={styles.contextWarning}><span>!</span><p><strong>Chỉ được xem trước</strong>Backend sẽ phát các trang có watermark; download ticket vẫn bị từ chối.</p></div>}</> : <div className={styles.contextWarning}><span>!</span><p><strong>Không tìm thấy task context</strong>Backend vẫn kiểm tra quyền khi tạo preview session. Tải xuống cần grant DOWNLOAD kèm task_id.</p></div>}</section>
         <section className={styles.infoCard}><span className={styles.cardLabel}>Thông tin</span><dl><div><dt>Loại tài liệu</dt><dd>{document.document_type}</dd></div><div><dt>Mức bảo mật</dt><dd>{document.security_level}</dd></div><div><dt>Phiên bản hiện tại</dt><dd>v{document.current_version}</dd></div><div><dt>Trạng thái</dt><dd>{document.status}</dd></div><div><dt>Cập nhật</dt><dd>{new Date(document.updated_at).toLocaleDateString()}</dd></div></dl></section>
       </aside>
     </div>

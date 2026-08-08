@@ -121,8 +121,9 @@ describe('Permission Service Integration (PostgreSQL)', () => {
       .set(adminHeaders())
       .expect(200);
 
-    expect(res.body.length).toBeGreaterThanOrEqual(1);
-    expect(res.body[0].actor_id).toBe(ACTOR_ID);
+    expect(res.body.items.length).toBeGreaterThanOrEqual(1);
+    expect(res.body.items[0].actor_id).toBe(ACTOR_ID);
+    expect(res.body.pagination).toMatchObject({ page: 1, page_size: 20 });
   });
 
   it('should allow a non-admin actor with a matching active grant', async () => {
@@ -140,6 +141,29 @@ describe('Permission Service Integration (PostgreSQL)', () => {
 
     expect(res.body.allowed).toBe(true);
     expect(res.body.reason_code).toBeNull();
+  });
+
+  it('should allow the document owner every document action without a separate grant', async () => {
+    const ownerId = randomUUID();
+    const res = await request(app.getHttpServer())
+      .post('/internal/permissions/check')
+      .send({
+        actor_id: ownerId,
+        actor_role: 'EMPLOYEE',
+        resource_type: 'DOCUMENT',
+        resource_id: randomUUID(),
+        action: 'DISPOSE',
+        owner_id: ownerId,
+        creator_id: randomUUID(),
+        correlation_id: randomUUID(),
+      })
+      .expect(200);
+
+    expect(res.body).toEqual({
+      allowed: true,
+      reason_code: null,
+      effective_expires_at: null,
+    });
   });
 
   it('should hard-deny an ADMIN for content-adjacent actions', async () => {

@@ -143,7 +143,11 @@ describe('document metadata authorization scope', () => {
 
   it('denies document metadata and version reads when PREVIEW is not granted', async () => {
     const service = {
-      getDocument: jest.fn(),
+      getDocument: jest.fn().mockResolvedValue({
+        id: '40000000-0000-4000-a000-000000000004',
+        owner_id: '20000000-0000-4000-8000-000000000002',
+        creator_id: '30000000-0000-4000-8000-000000000003',
+      }),
       getDocumentVersions: jest.fn(),
     };
     const permissionClient = {
@@ -173,7 +177,7 @@ describe('document metadata authorization scope', () => {
     await expect(
       controller.getVersions('40000000-0000-4000-a000-000000000004', employee),
     ).rejects.toBeInstanceOf(ForbiddenException);
-    expect(service.getDocument).not.toHaveBeenCalled();
+    expect(service.getDocument).toHaveBeenCalledTimes(2);
     expect(service.getDocumentVersions).not.toHaveBeenCalled();
   });
 
@@ -181,11 +185,19 @@ describe('document metadata authorization scope', () => {
     const documentId = '40000000-0000-4000-a000-000000000004';
     const service = {
       getDocument: jest.fn().mockResolvedValue({ id: documentId, title: 'shared document' }),
-      getDocumentVersions: jest
-        .fn()
-        .mockResolvedValue([
+      getDocumentVersions: jest.fn().mockResolvedValue({
+        items: [
           { id: '50000000-0000-4000-a000-000000000005', document_id: documentId, version: 1 },
-        ]),
+        ],
+        pagination: {
+          page: 1,
+          page_size: 20,
+          total: 1,
+          total_pages: 1,
+          has_next: false,
+          has_previous: false,
+        },
+      }),
     };
     const permissionClient = {
       check: jest.fn().mockResolvedValue({
@@ -210,7 +222,11 @@ describe('document metadata authorization scope', () => {
     await expect(controller.getDocument(documentId, employee)).resolves.toMatchObject({
       id: documentId,
     });
-    await expect(controller.getVersions(documentId, employee)).resolves.toHaveLength(1);
+    await expect(controller.getVersions(documentId, employee)).resolves.toEqual(
+      expect.objectContaining({
+        items: [expect.objectContaining({ document_id: documentId })],
+      }),
+    );
     expect(permissionClient.check).toHaveBeenCalledWith(
       expect.objectContaining({
         resource_id: documentId,
@@ -220,6 +236,51 @@ describe('document metadata authorization scope', () => {
     );
     expect(permissionClient.check.mock.calls).toHaveLength(2);
     expect(service.getDocument).toHaveBeenCalledWith(documentId);
-    expect(service.getDocumentVersions).toHaveBeenCalledWith(documentId);
+    expect(service.getDocumentVersions).toHaveBeenCalledWith(documentId, {
+      page: 1,
+      page_size: 20,
+    });
+  });
+
+  it('passes document ownership context so the creator receives implicit access', async () => {
+    const documentId = '40000000-0000-4000-a000-000000000004';
+    const employeeId = '10000000-0000-4000-8000-000000000001';
+    const service = {
+      getDocument: jest.fn().mockResolvedValue({
+        id: documentId,
+        title: 'owned document',
+        owner_id: employeeId,
+        creator_id: employeeId,
+      }),
+    };
+    const permissionClient = {
+      check: jest.fn().mockResolvedValue({
+        allowed: true,
+        reason_code: null,
+        effective_expires_at: null,
+      }),
+    };
+    const employee = {
+      userId: employeeId,
+      role: 'EMPLOYEE',
+      capabilities: [],
+      sessionId: '',
+    } as never;
+    const controller = new DocumentsController(
+      service as never,
+      permissionClient as never,
+      {} as never,
+      {} as never,
+      {} as never,
+    );
+
+    await controller.getDocument(documentId, employee);
+
+    expect(permissionClient.check).toHaveBeenCalledWith(
+      expect.objectContaining({
+        owner_id: employeeId,
+        creator_id: employeeId,
+      }),
+    );
   });
 });

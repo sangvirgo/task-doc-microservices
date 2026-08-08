@@ -1,5 +1,11 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import type { Prisma } from '@prisma/client-notification';
+import {
+  createPaginationMeta,
+  PaginatedResponse,
+  PaginationQuery,
+  toPrismaPagination,
+} from '@c17/contracts';
 
 import { NotificationPrismaService } from '../prisma/notification-prisma.service';
 
@@ -21,6 +27,8 @@ export interface NotificationPreferenceDto {
   email_enabled: boolean;
   in_app_enabled: boolean;
 }
+
+const DEFAULT_PAGINATION: PaginationQuery = { page: 1, page_size: 20 };
 
 @Injectable()
 export class NotificationsService {
@@ -54,15 +62,27 @@ export class NotificationsService {
     return this.toDto(notification);
   }
 
-  async listNotifications(recipient_id: string, unread_only?: boolean): Promise<NotificationDto[]> {
-    const notifications = await this.prisma.notification.findMany({
-      where: {
-        recipient_id,
-        ...(unread_only ? { read_at: null } : {}),
-      },
-      orderBy: { created_at: 'desc' },
-    });
-    return notifications.map((n) => this.toDto(n));
+  async listNotifications(
+    recipient_id: string,
+    unread_only?: boolean,
+    pagination: PaginationQuery = DEFAULT_PAGINATION,
+  ): Promise<PaginatedResponse<NotificationDto>> {
+    const where = {
+      recipient_id,
+      ...(unread_only ? { read_at: null } : {}),
+    };
+    const [total, notifications] = await Promise.all([
+      this.prisma.notification.count({ where }),
+      this.prisma.notification.findMany({
+        where,
+        orderBy: [{ created_at: 'desc' }, { id: 'desc' }],
+        ...toPrismaPagination(pagination),
+      }),
+    ]);
+    return {
+      items: notifications.map((n) => this.toDto(n)),
+      pagination: createPaginationMeta(pagination.page, pagination.page_size, total),
+    };
   }
 
   async markAsRead(id: string): Promise<NotificationDto> {

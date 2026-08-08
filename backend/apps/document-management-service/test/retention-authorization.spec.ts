@@ -26,8 +26,28 @@ describe('retention and disposal authorization', () => {
       {
         placeRetentionHold: jest.fn(),
         releaseRetentionHold: jest.fn(),
-        listRetentionHolds: jest.fn().mockResolvedValue([]),
-        listDisposalApprovals: jest.fn().mockResolvedValue([]),
+        listRetentionHolds: jest.fn().mockResolvedValue({
+          items: [],
+          pagination: {
+            page: 1,
+            page_size: 20,
+            total: 0,
+            total_pages: 0,
+            has_next: false,
+            has_previous: false,
+          },
+        }),
+        listDisposalApprovals: jest.fn().mockResolvedValue({
+          items: [],
+          pagination: {
+            page: 1,
+            page_size: 20,
+            total: 0,
+            total_pages: 0,
+            has_next: false,
+            has_previous: false,
+          },
+        }),
       } as never,
       { check: jest.fn() } as never,
       { record: jest.fn() } as never,
@@ -48,12 +68,20 @@ describe('retention and disposal authorization', () => {
     ) => Promise<unknown>;
 
     await expect(listHolds(undefined, undefined, admin)).rejects.toBeInstanceOf(ForbiddenException);
-    await expect(listHolds(undefined, undefined, employee)).resolves.toEqual([]);
-    expect(documentsServiceOf(controller).listRetentionHolds).toHaveBeenCalledWith({
-      document_id: undefined,
-      released: undefined,
-      placed_by: employee.userId,
-    });
+    await expect(listHolds(undefined, undefined, employee)).resolves.toEqual(
+      expect.objectContaining({ items: [] }),
+    );
+    expect(documentsServiceOf(controller).listRetentionHolds).toHaveBeenCalledWith(
+      {
+        document_id: undefined,
+        released: undefined,
+        placed_by: employee.userId,
+      },
+      {
+        page: 1,
+        page_size: 20,
+      },
+    );
   });
 
   it('does not let ADMIN release a hold and binds employee release to the caller', async () => {

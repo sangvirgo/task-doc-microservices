@@ -30,13 +30,16 @@ describe('PermissionsController grant authorization', () => {
       employeeRequest,
     );
 
-    expect(service.listGrants).toHaveBeenCalledWith({
-      actor_id: '10000000-0000-4000-8000-000000000001',
-      resource_type: undefined,
-      resource_id: undefined,
-      status: undefined,
-      task_id: undefined,
-    });
+    expect(service.listGrants).toHaveBeenCalledWith(
+      {
+        actor_id: '10000000-0000-4000-8000-000000000001',
+        resource_type: undefined,
+        resource_id: undefined,
+        status: undefined,
+        task_id: undefined,
+      },
+      { page: 1, page_size: 20 },
+    );
   });
 
   it('rejects an employee reading or revoking a foreign grant', async () => {

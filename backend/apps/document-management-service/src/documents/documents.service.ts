@@ -8,7 +8,14 @@ import {
 import type { Prisma } from '@prisma/client-document';
 import { randomUUID, createHash } from 'crypto';
 
-import { EventType, Producer } from '@c17/contracts';
+import {
+  createPaginationMeta,
+  EventType,
+  PaginatedResponse,
+  PaginationQuery,
+  Producer,
+  toPrismaPagination,
+} from '@c17/contracts';
 
 import { DocumentPrismaService } from '../prisma/document-prisma.service';
 
@@ -91,6 +98,25 @@ export interface DownloadTicketRecord {
   used_at: Date | null;
 }
 
+export interface PreviewSessionDto {
+  id: string;
+  document_id: string;
+  task_id: string | null;
+  version: number;
+  page_count: number;
+  mime_type: string;
+  expires_at: string;
+}
+
+export interface PreviewSessionRecord extends PreviewSessionDto {
+  actor_id: string;
+  security_preview_id: string;
+  revoked_at: Date | null;
+  page_requests: number;
+}
+
+const DEFAULT_PAGINATION: PaginationQuery = { page: 1, page_size: 20 };
+
 export interface TransferPackageDto {
   id: string;
   record_id: string;
@@ -131,17 +157,30 @@ export class DocumentsService {
     }
   }
 
-  async listTaskDocuments(taskId: string): Promise<TaskDocumentWithDocumentDto[]> {
-    const associations = await this.prisma.taskDocument.findMany({
-      where: { task_id: taskId },
-      include: { document: true },
-      orderBy: { attached_at: 'asc' },
-    });
+  async listTaskDocuments(
+    taskId: string,
+    pagination: PaginationQuery = DEFAULT_PAGINATION,
+  ): Promise<PaginatedResponse<TaskDocumentWithDocumentDto>> {
+    const where = { task_id: taskId };
+    const { skip, take } = toPrismaPagination(pagination);
+    const [total, associations] = await Promise.all([
+      this.prisma.taskDocument.count({ where }),
+      this.prisma.taskDocument.findMany({
+        where,
+        include: { document: true },
+        orderBy: [{ attached_at: 'asc' }, { id: 'asc' }],
+        skip,
+        take,
+      }),
+    ]);
 
-    return associations.map((association) => ({
-      association: this.taskDocumentToDto(association),
-      document: this.toDto(association.document),
-    }));
+    return {
+      items: associations.map((association) => ({
+        association: this.taskDocumentToDto(association),
+        document: this.toDto(association.document),
+      })),
+      pagination: createPaginationMeta(pagination.page, pagination.page_size, total),
+    };
   }
 
   async getTaskDocument(
@@ -238,13 +277,29 @@ export class DocumentsService {
     return this.toDto(document);
   }
 
-  async listDocuments(filters?: {
-    owner_id?: string;
-    creator_id?: string;
-    status?: string;
-  }): Promise<DocumentDto[]> {
-    const documents = await this.prisma.document.findMany({ where: filters });
-    return documents.map((d) => this.toDto(d));
+  async listDocuments(
+    filters?: {
+      owner_id?: string;
+      creator_id?: string;
+      status?: string;
+    },
+    pagination: PaginationQuery = DEFAULT_PAGINATION,
+  ): Promise<PaginatedResponse<DocumentDto>> {
+    const { skip, take } = toPrismaPagination(pagination);
+    const [total, documents] = await Promise.all([
+      this.prisma.document.count({ where: filters }),
+      this.prisma.document.findMany({
+        where: filters,
+        orderBy: [{ created_at: 'desc' }, { id: 'desc' }],
+        skip,
+        take,
+      }),
+    ]);
+
+    return {
+      items: documents.map((d) => this.toDto(d)),
+      pagination: createPaginationMeta(pagination.page, pagination.page_size, total),
+    };
   }
 
   async createUploadedDocument(data: {
@@ -370,15 +425,29 @@ export class DocumentsService {
     return this.versionToDto(documentVersion);
   }
 
-  async getDocumentVersions(documentId: string): Promise<DocumentVersionDto[]> {
+  async getDocumentVersions(
+    documentId: string,
+    pagination: PaginationQuery = DEFAULT_PAGINATION,
+  ): Promise<PaginatedResponse<DocumentVersionDto>> {
     const document = await this.prisma.document.findUnique({ where: { id: documentId } });
     if (!document) throw new NotFoundException('Document not found');
 
-    const versions = await this.prisma.documentVersion.findMany({
-      where: { document_id: documentId },
-      orderBy: { version: 'desc' },
-    });
-    return versions.map((v) => this.versionToDto(v));
+    const where = { document_id: documentId };
+    const { skip, take } = toPrismaPagination(pagination);
+    const [total, versions] = await Promise.all([
+      this.prisma.documentVersion.count({ where }),
+      this.prisma.documentVersion.findMany({
+        where,
+        orderBy: [{ version: 'desc' }, { id: 'desc' }],
+        skip,
+        take,
+      }),
+    ]);
+
+    return {
+      items: versions.map((v) => this.versionToDto(v)),
+      pagination: createPaginationMeta(pagination.page, pagination.page_size, total),
+    };
   }
 
   async getDocumentPreview(documentId: string): Promise<{
@@ -396,6 +465,86 @@ export class DocumentsService {
       security_level: document.security_level,
       document_type: document.document_type,
     };
+  }
+
+  async createPreviewSession(data: {
+    id: string;
+    document_id: string;
+    task_id?: string;
+    version: number;
+    actor_id: string;
+    security_preview_id: string;
+    page_count: number;
+    mime_type: string;
+    expires_at: Date;
+  }): Promise<PreviewSessionRecord> {
+    const session = await this.prisma.previewSession.create({
+      data: {
+        id: data.id,
+        document_id: data.document_id,
+        task_id: data.task_id,
+        version: data.version,
+        actor_id: data.actor_id,
+        security_preview_id: data.security_preview_id,
+        page_count: data.page_count,
+        mime_type: data.mime_type,
+        expires_at: data.expires_at,
+      },
+    });
+    return this.previewSessionToRecord(session);
+  }
+
+  async getPreviewSession(sessionId: string): Promise<PreviewSessionRecord> {
+    const session = await this.prisma.previewSession.findUnique({ where: { id: sessionId } });
+    if (!session) throw new NotFoundException('Preview session not found');
+    if (session.revoked_at || session.expires_at.getTime() <= Date.now()) {
+      throw new ForbiddenException('Preview session is expired or revoked');
+    }
+    return this.previewSessionToRecord(session);
+  }
+
+  async markPreviewPageRequested(data: {
+    session_id: string;
+    document_id: string;
+    version: number;
+    actor_id: string;
+    page: number;
+  }): Promise<void> {
+    const session = await this.getPreviewSession(data.session_id);
+    if (
+      session.document_id !== data.document_id ||
+      session.version !== data.version ||
+      session.actor_id !== data.actor_id
+    ) {
+      throw new ForbiddenException('Preview session does not belong to this request');
+    }
+    if (data.page > session.page_count) {
+      throw new NotFoundException('Preview page not found');
+    }
+
+    const updated = await this.prisma.previewSession.updateMany({
+      where: {
+        id: data.session_id,
+        document_id: data.document_id,
+        version: data.version,
+        actor_id: data.actor_id,
+        revoked_at: null,
+        expires_at: { gt: new Date() },
+        page_requests: { lt: 200 },
+      },
+      data: { page_requests: { increment: 1 }, last_used_at: new Date() },
+    });
+    if (updated.count !== 1) {
+      throw new ForbiddenException('Preview page request limit reached');
+    }
+  }
+
+  async revokePreviewSession(sessionId: string, actorId: string): Promise<void> {
+    const result = await this.prisma.previewSession.updateMany({
+      where: { id: sessionId, actor_id: actorId, revoked_at: null },
+      data: { revoked_at: new Date() },
+    });
+    if (result.count !== 1) throw new ForbiddenException('Preview session cannot be revoked');
   }
 
   async createDownloadTicket(data: {
@@ -479,12 +628,26 @@ export class DocumentsService {
     return this.recordToDto(record);
   }
 
-  async listRecords(filters?: { creator_id?: string; status?: string }): Promise<RecordDto[]> {
-    const records = await this.prisma.record.findMany({
-      where: filters,
-      include: { entries: true },
-    });
-    return records.map((r) => this.recordToDto(r));
+  async listRecords(
+    filters?: { creator_id?: string; status?: string },
+    pagination: PaginationQuery = DEFAULT_PAGINATION,
+  ): Promise<PaginatedResponse<RecordDto>> {
+    const { skip, take } = toPrismaPagination(pagination);
+    const [total, records] = await Promise.all([
+      this.prisma.record.count({ where: filters }),
+      this.prisma.record.findMany({
+        where: filters,
+        include: { entries: true },
+        orderBy: [{ created_at: 'desc' }, { id: 'desc' }],
+        skip,
+        take,
+      }),
+    ]);
+
+    return {
+      items: records.map((r) => this.recordToDto(r)),
+      pagination: createPaginationMeta(pagination.page, pagination.page_size, total),
+    };
   }
 
   async addDocumentToRecord(
@@ -730,16 +893,29 @@ export class DocumentsService {
     return this.transferPackageToDto(pkg);
   }
 
-  async listTransferPackages(filters?: {
-    record_id?: string;
-    status?: string;
-    submitter_id?: string;
-  }): Promise<TransferPackageDto[]> {
-    const packages = await this.prisma.transferPackage.findMany({
-      where: filters,
-      orderBy: { created_at: 'desc' },
-    });
-    return packages.map((p) => this.transferPackageToDto(p));
+  async listTransferPackages(
+    filters?: {
+      record_id?: string;
+      status?: string;
+      submitter_id?: string;
+    },
+    pagination: PaginationQuery = DEFAULT_PAGINATION,
+  ): Promise<PaginatedResponse<TransferPackageDto>> {
+    const { skip, take } = toPrismaPagination(pagination);
+    const [total, packages] = await Promise.all([
+      this.prisma.transferPackage.count({ where: filters }),
+      this.prisma.transferPackage.findMany({
+        where: filters,
+        orderBy: [{ created_at: 'desc' }, { id: 'desc' }],
+        skip,
+        take,
+      }),
+    ]);
+
+    return {
+      items: packages.map((p) => this.transferPackageToDto(p)),
+      pagination: createPaginationMeta(pagination.page, pagination.page_size, total),
+    };
   }
 
   private generateManifest(record: {
@@ -981,6 +1157,34 @@ export class DocumentsService {
       version: ticket.version,
       actor_id: ticket.actor_id,
       expires_at: ticket.expires_at.toISOString(),
+    };
+  }
+
+  private previewSessionToRecord(session: {
+    id: string;
+    document_id: string;
+    task_id: string | null;
+    version: number;
+    actor_id: string;
+    security_preview_id: string;
+    page_count: number;
+    mime_type: string;
+    expires_at: Date;
+    revoked_at: Date | null;
+    page_requests: number;
+  }): PreviewSessionRecord {
+    return {
+      id: session.id,
+      document_id: session.document_id,
+      task_id: session.task_id,
+      version: session.version,
+      actor_id: session.actor_id,
+      security_preview_id: session.security_preview_id,
+      page_count: session.page_count,
+      mime_type: session.mime_type,
+      expires_at: session.expires_at.toISOString(),
+      revoked_at: session.revoked_at,
+      page_requests: session.page_requests,
     };
   }
 
@@ -1268,12 +1472,15 @@ export class DocumentsService {
     };
   }
 
-  async listRetentionHolds(filters?: {
-    document_id?: string;
-    released?: boolean;
-    placed_by?: string;
-  }): Promise<
-    Array<{
+  async listRetentionHolds(
+    filters?: {
+      document_id?: string;
+      released?: boolean;
+      placed_by?: string;
+    },
+    pagination: PaginationQuery = DEFAULT_PAGINATION,
+  ): Promise<
+    PaginatedResponse<{
       id: string;
       document_id: string;
       reason: string;
@@ -1288,23 +1495,35 @@ export class DocumentsService {
     if (filters?.released === true) where.released_at = { not: null };
     if (filters?.released === false) where.released_at = null;
 
-    const holds = await this.prisma.retentionHold.findMany({
-      where,
-      orderBy: { placed_at: 'desc' },
-    });
+    const { skip, take } = toPrismaPagination(pagination);
+    const [total, holds] = await Promise.all([
+      this.prisma.retentionHold.count({ where }),
+      this.prisma.retentionHold.findMany({
+        where,
+        orderBy: [{ placed_at: 'desc' }, { id: 'desc' }],
+        skip,
+        take,
+      }),
+    ]);
 
-    return holds.map((h) => ({
-      id: h.id,
-      document_id: h.document_id,
-      reason: h.reason,
-      placed_by: h.placed_by,
-      placed_at: h.placed_at.toISOString(),
-      released_at: h.released_at?.toISOString() ?? null,
-    }));
+    return {
+      items: holds.map((h) => ({
+        id: h.id,
+        document_id: h.document_id,
+        reason: h.reason,
+        placed_by: h.placed_by,
+        placed_at: h.placed_at.toISOString(),
+        released_at: h.released_at?.toISOString() ?? null,
+      })),
+      pagination: createPaginationMeta(pagination.page, pagination.page_size, total),
+    };
   }
 
-  async listDisposalApprovals(filters?: { document_id?: string; approver_id?: string }): Promise<
-    Array<{
+  async listDisposalApprovals(
+    filters?: { document_id?: string; approver_id?: string },
+    pagination: PaginationQuery = DEFAULT_PAGINATION,
+  ): Promise<
+    PaginatedResponse<{
       id: string;
       document_id: string;
       approver_id: string;
@@ -1316,18 +1535,27 @@ export class DocumentsService {
     if (filters?.document_id) where.document_id = filters.document_id;
     if (filters?.approver_id) where.approver_id = filters.approver_id;
 
-    const approvals = await this.prisma.disposalApproval.findMany({
-      where,
-      orderBy: { approved_at: 'desc' },
-    });
+    const { skip, take } = toPrismaPagination(pagination);
+    const [total, approvals] = await Promise.all([
+      this.prisma.disposalApproval.count({ where }),
+      this.prisma.disposalApproval.findMany({
+        where,
+        orderBy: [{ approved_at: 'desc' }, { id: 'desc' }],
+        skip,
+        take,
+      }),
+    ]);
 
-    return approvals.map((a) => ({
-      id: a.id,
-      document_id: a.document_id,
-      approver_id: a.approver_id,
-      reason: a.reason,
-      approved_at: a.approved_at.toISOString(),
-    }));
+    return {
+      items: approvals.map((a) => ({
+        id: a.id,
+        document_id: a.document_id,
+        approver_id: a.approver_id,
+        reason: a.reason,
+        approved_at: a.approved_at.toISOString(),
+      })),
+      pagination: createPaginationMeta(pagination.page, pagination.page_size, total),
+    };
   }
 
   private async deleteObject(objectKey: string): Promise<void> {

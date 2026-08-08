@@ -29,6 +29,7 @@ import {
   type PermissionCheckResponse,
   permissionCheckRequestSchema,
   PermissionReasonCode,
+  paginationQuerySchema,
 } from '@c17/contracts';
 import { EVENT_PUBLISHER, type EventPublisher } from '@c17/messaging';
 
@@ -106,6 +107,8 @@ export class PermissionsController {
       resource_id: req.resource_id,
       action: req.action,
       task_id: req.task_id,
+      owner_id: req.owner_id,
+      creator_id: req.creator_id,
     });
 
     void this.eventPublisher
@@ -204,18 +207,25 @@ export class PermissionsController {
     @Query('status') status?: string,
     @Query('task_id') task_id?: string,
     @Req() req?: Request,
-  ): Promise<GrantDto[]> {
+    @Query('page') page?: string,
+    @Query('page_size') page_size?: string,
+  ): Promise<unknown> {
+    const pagination = paginationQuerySchema.safeParse({ page, page_size });
+    if (!pagination.success) throw new BadRequestException(pagination.error.issues);
     const caller = this.caller(req);
     if (caller?.role === 'EMPLOYEE' && actor_id && actor_id !== caller.userId) {
       throw new ForbiddenException('Employees may only list their own grants');
     }
-    return this.permissionService.listGrants({
-      actor_id: caller?.role === 'EMPLOYEE' ? caller.userId : actor_id,
-      resource_type,
-      resource_id,
-      status,
-      task_id,
-    });
+    return this.permissionService.listGrants(
+      {
+        actor_id: caller?.role === 'EMPLOYEE' ? caller.userId : actor_id,
+        resource_type,
+        resource_id,
+        status,
+        task_id,
+      },
+      pagination.data,
+    );
   }
 
   @Get('grants/:id')

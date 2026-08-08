@@ -90,13 +90,33 @@ describe('TaskDocumentsController', () => {
   });
 
   it('exposes list and detach routes under the same task-document boundary', async () => {
-    service.list.mockResolvedValue([{ document_id: DOCUMENT_ID }]);
+    service.list.mockResolvedValue({
+      items: [{ document_id: DOCUMENT_ID }],
+      pagination: {
+        page: 1,
+        page_size: 20,
+        total: 1,
+        total_pages: 1,
+        has_next: false,
+        has_previous: false,
+      },
+    });
 
     await request(app.getHttpServer())
       .get(`/tasks/${TASK_ID}/documents`)
       .set(authHeaders())
       .expect(200)
-      .expect([{ document_id: DOCUMENT_ID }]);
+      .expect({
+        items: [{ document_id: DOCUMENT_ID }],
+        pagination: {
+          page: 1,
+          page_size: 20,
+          total: 1,
+          total_pages: 1,
+          has_next: false,
+          has_previous: false,
+        },
+      });
 
     await request(app.getHttpServer())
       .delete(`/tasks/${TASK_ID}/documents/${DOCUMENT_ID}`)
@@ -106,6 +126,7 @@ describe('TaskDocumentsController', () => {
     expect(service.list).toHaveBeenCalledWith(
       TASK_ID,
       expect.objectContaining({ userId: EMPLOYEE_ID }),
+      { page: 1, page_size: 20 },
     );
     expect(service.detach).toHaveBeenCalledWith(
       TASK_ID,

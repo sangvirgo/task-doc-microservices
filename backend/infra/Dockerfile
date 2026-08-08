@@ -39,6 +39,7 @@ COPY --from=build /app/backend/dist ./dist
 COPY --from=build /app/backend/package.json ./package.json
 COPY --from=build /app/backend/prisma ./prisma
 USER root
+RUN apk add --no-cache libreoffice poppler-utils imagemagick fontconfig ttf-dejavu
 RUN cd /tmp && npm install prisma@6 && \
     for dir in /tmp/node_modules/*; do \
       name=$(basename "$dir"); \
