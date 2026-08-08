@@ -74,8 +74,7 @@ export class PreviewRenderer {
       maxDimension: options.maxDimension || DEFAULT_MAX_DIMENSION,
       timeoutMs: options.timeoutMs || DEFAULT_TIMEOUT_MS,
     };
-    this.commandRunner =
-      options.commandRunner || createCommandRunner(this.options.timeoutMs);
+    this.commandRunner = options.commandRunner || createCommandRunner(this.options.timeoutMs);
     this.imageProcessor =
       options.imageProcessor || new SharpPreviewImageProcessor(this.options.maxDimension);
   }
@@ -138,10 +137,13 @@ export class PreviewRenderer {
     for (let start = 0; start < Math.max(lines.length, 1); start += DEFAULT_TEXT_LINES_PER_PAGE) {
       const page = pages.length + 1;
       pages.push(
-        await this.imageProcessor.renderTextPage(lines.slice(start, start + DEFAULT_TEXT_LINES_PER_PAGE).join('\n'), {
-          ...watermark,
-          page,
-        }),
+        await this.imageProcessor.renderTextPage(
+          lines.slice(start, start + DEFAULT_TEXT_LINES_PER_PAGE).join('\n'),
+          {
+            ...watermark,
+            page,
+          },
+        ),
       );
     }
     return pages;
@@ -198,10 +200,10 @@ export class PreviewRenderer {
 
     return Promise.all(
       pageFiles.map(async (pageFile, index) =>
-        this.imageProcessor.watermarkPage(
-          await readFile(join(jobDir, pageFile)),
-          { ...watermark, page: index + 1 },
-        ),
+        this.imageProcessor.watermarkPage(await readFile(join(jobDir, pageFile)), {
+          ...watermark,
+          page: index + 1,
+        }),
       ),
     );
   }
@@ -229,7 +231,10 @@ class SharpPreviewImageProcessor implements PreviewImageProcessor {
     const width = metadata.width || 1200;
     const height = metadata.height || 1600;
     const overlay = Buffer.from(createWatermarkSvg(width, height, watermark));
-    return sharp(content).composite([{ input: overlay }]).png().toBuffer();
+    return sharp(content)
+      .composite([{ input: overlay }])
+      .png()
+      .toBuffer();
   }
 
   async renderTextPage(text: string, watermark: WatermarkInput): Promise<Buffer> {
@@ -257,7 +262,9 @@ function createWatermarkSvg(width: number, height: number, input: WatermarkInput
   const escapedText = escapeXml(watermark.text);
   const shortText = escapeXml(`${input.actorLabel} · PREVIEW ONLY`);
   const header = escapeXml(`${input.documentId} · v${input.version} · ${input.sessionId}`);
-  const footer = escapeXml(`${input.actorLabel} · ${input.renderedAt.toISOString()} · page ${input.page}`);
+  const footer = escapeXml(
+    `${input.actorLabel} · ${input.renderedAt.toISOString()} · page ${input.page}`,
+  );
   const rotation = watermark.layers.find((layer) => layer.kind === 'repeat')?.rotation || -20;
 
   return `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}">

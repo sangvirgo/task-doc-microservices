@@ -28,10 +28,7 @@ import {
 } from './document-signature.service';
 import { EnvKekProvider } from './kek-provider.service';
 import { MinioStorageService } from './minio-storage.service';
-import {
-  PreviewRenderer,
-  type PreviewRenderRequest,
-} from './preview/preview-renderer.service';
+import { PreviewRenderer, type PreviewRenderRequest } from './preview/preview-renderer.service';
 
 export interface EncryptionRecordDto {
   id: string;
@@ -108,7 +105,7 @@ export class SecurityPipelineService {
     private readonly storageService: MinioStorageService,
     private readonly kekProvider: EnvKekProvider,
     private readonly signatureService: DocumentSignatureService,
-    private readonly previewRenderer: PreviewRenderer,
+    private readonly previewRenderer: PreviewRenderer = new PreviewRenderer(),
   ) {}
 
   async processUploadStream(data: {
@@ -413,7 +410,7 @@ export class SecurityPipelineService {
     };
   }
 
-  async getPreviewPage(previewId: string, page: number): Promise<PreviewPageArtifact> {
+  getPreviewPage(previewId: string, page: number): PreviewPageArtifact {
     this.removeExpiredPreviews();
     const preview = this.previews.get(previewId);
     if (!preview) throw new ForbiddenException('Preview session is expired or revoked');
@@ -422,7 +419,7 @@ export class SecurityPipelineService {
     return { bytes: pageBytes, mime_type: 'image/png' };
   }
 
-  async revokePreview(previewId: string): Promise<void> {
+  revokePreview(previewId: string): void {
     this.previews.delete(previewId);
   }
 
