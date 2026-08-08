@@ -34,6 +34,30 @@ describe('central Gateway client', () => {
     await expect(gatewayClient.get('/tasks')).resolves.toEqual({ items: [] });
     expect(fetchMock.mock.calls[0][0]).toBe('/gateway/tasks');
   });
+
+  it('normalizes array and common Gateway list envelopes before UI rendering', async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(response([{ id: 'direct' }]))
+      .mockResolvedValueOnce(response({ items: [{ id: 'items' }] }))
+      .mockResolvedValueOnce(response({ data: [{ id: 'data' }] }));
+    vi.stubGlobal('fetch', fetchMock);
+    await expect(gatewayClient.getList<{ id: string }>('/direct')).resolves.toEqual([{ id: 'direct' }]);
+    await expect(gatewayClient.getList<{ id: string }>('/items')).resolves.toEqual([{ id: 'items' }]);
+    await expect(gatewayClient.getList<{ id: string }>('/data')).resolves.toEqual([{ id: 'data' }]);
+  });
+
+  it('turns a malformed list response into a handled Gateway error instead of a render crash', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(response({ message: 'not a list' })));
+    await expect(gatewayClient.getList('/users/directory')).rejects.toMatchObject({ status: 502 });
+  });
+  it('sends JSON Content-Type when redeeming a ticket and preserves the blob MIME type', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(new Blob(['pdf'], { type: 'application/pdf' }), { status: 200, headers: { 'content-type': 'application/pdf' } }));
+    vi.stubGlobal('fetch', fetchMock);
+    const blob = await gatewayClient.postBlob('/documents/doc-id/versions/1/redeem', { ticket_id: 'ticket-id' });
+    const headers = new Headers(fetchMock.mock.calls[0][1].headers);
+    expect(headers.get('content-type')).toBe('application/json');
+    expect(blob.type).toBe('application/pdf');
+  });
   it('sends the task context required by secure document download tickets', async () => {
     const fetchMock = vi.fn().mockResolvedValue(response({ id: 'ticket-id' }));
     vi.stubGlobal('fetch', fetchMock);

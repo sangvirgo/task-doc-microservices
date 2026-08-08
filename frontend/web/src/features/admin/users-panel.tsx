@@ -7,6 +7,15 @@ import { readSession } from '@/auth/session';
 import type { ManagedUser } from '@/types/admin';
 import { CAPABILITIES, type Capability } from '@/types/capability';
 import styles from './admin.module.css';
+import { SearchableSelect } from '@/components/searchable-select';
+
+const capabilityClass: Record<Capability, string> = {
+  ARCHIVE_SUBMIT: styles.capabilityTeal,
+  ARCHIVE_RECEIVE: styles.capabilityPurple,
+  DISPOSAL_APPROVE: styles.capabilityAmber,
+};
+
+const initials = (email: string) => email.split(/[.@_-]/).filter(Boolean).slice(0, 2).map(part => part[0]?.toUpperCase()).join('');
 
 export function UsersPanel() {
   const session = readSession();
@@ -21,75 +30,78 @@ export function UsersPanel() {
   useEffect(load, []);
 
   if (session?.role !== 'ADMIN') return <PermissionDeniedState />;
-  if (failed) return <ErrorState message="Users could not be loaded." onRetry={load} />;
+  if (failed) return <ErrorState message="Không thể tải danh mục người dùng." onRetry={load} />;
   if (!users) return <LoadingState />;
 
   const change = async (action: () => Promise<unknown>, message: string) => {
-    setStatus('Sending request…');
+    setStatus('Đang gửi yêu cầu…');
     try {
       await action();
       setStatus(message);
       load();
     } catch {
-      setStatus('The server did not accept that change.');
+      setStatus('Máy chủ không chấp nhận thay đổi này.');
     }
-  };
-
-  const create = async (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-    const form = new FormData(event.currentTarget);
-    await change(
-      () => adminApi.createUser({ id: String(form.get('id')), email: String(form.get('email')), role: String(form.get('role')) as ManagedUser['role'] }),
-      'User created from the server response.',
-    );
   };
 
   const grant = (event: FormEvent<HTMLFormElement>, userId: string) => {
     event.preventDefault();
-    const value = String(new FormData(event.currentTarget).get('capability'));
+    const form = event.currentTarget;
+    const value = String(new FormData(form).get('capability'));
     if (!CAPABILITIES.includes(value as Capability)) return;
-    void change(() => adminApi.grantCapability(userId, value as Capability), 'Capability granted from the server response.');
+    void change(() => adminApi.grantCapability(userId, value as Capability), 'Đã cấp quyền hệ thống.');
+    form.reset();
   };
 
-  return <section>
-    <h1>Users &amp; capabilities</h1>
-    <p className={styles.notice}>ADMIN-only presentation guard. The API must enforce the ADMIN role and validate capabilities at the server boundary.</p>
-    <div className={styles.grid}>
-      <section className={styles.panel}>
-        <h2>Create user</h2>
-        <form className={styles.form} onSubmit={create}>
-          <label>User ID (UUID)<input name="id" required /></label>
-          <label>Email<input name="email" type="email" required /></label>
-          <label>Role<select name="role"><option>EMPLOYEE</option><option>ADMIN</option></select></label>
-          <button>Create user</button>
-        </form>
-      </section>
-      <section className={styles.panel}>
-        <h2>Capability change</h2>
-        <p className={styles.muted}>Only EMPLOYEE accounts can receive one of the three system capabilities.</p>
-      </section>
-    </div>
-    {status && <p role="status">{status}</p>}
-    {users.length === 0 ? <EmptyState title="No users returned">No user records are available.</EmptyState> : <div className={styles.tableWrap}>
-      <table className={styles.table}>
-        <thead><tr><th>Email</th><th>Role</th><th>Account</th><th>Capabilities</th><th>Actions</th></tr></thead>
-        <tbody>{users.map(user => <tr key={user.id}>
-          <td>{user.email}</td>
-          <td>{user.role}</td>
-          <td>{user.locked_at ? 'Locked' : 'Active'}</td>
-          <td>
-            <div className={styles.chips}>{user.capabilities.map(cap => <span className={styles.chip} key={cap}>{cap} <button aria-label={`Revoke ${cap}`} onClick={() => change(() => adminApi.revokeCapability(user.id, cap), 'Capability revoked from the server response.')}>×</button></span>)}</div>
-            {user.role !== 'ADMIN' && <form className={styles.actions} onSubmit={event => grant(event, user.id)}>
-              <select name="capability" aria-label={`Capability for ${user.email}`} defaultValue="" required>
-                <option value="" disabled>Select capability</option>
-                {CAPABILITIES.map(cap => <option key={cap} value={cap}>{cap}</option>)}
-              </select>
-              <button>Add</button>
-            </form>}
-          </td>
-          <td><button onClick={() => change(() => user.locked_at ? adminApi.unlock(user.id) : adminApi.lock(user.id), user.locked_at ? 'User unlocked from the server response.' : 'User locked from the server response.')}>{user.locked_at ? 'Unlock' : 'Lock'}</button></td>
-        </tr>)}</tbody>
-      </table>
+  return <section className={styles.usersPage}>
+    <header className={styles.usersHeader}>
+      <div>
+        <h1>Người dùng &amp; quyền</h1>
+        <p>Quản lý trạng thái tài khoản và quyền hệ thống của nhân sự.</p>
+      </div>
+      <span className={styles.userCount}>{users.length} người dùng</span>
+    </header>
+    {status && <p className={styles.statusMessage} role="status">{status}</p>}
+    {users.length === 0 ? <EmptyState title="Chưa có người dùng">Máy chủ chưa trả về tài khoản nào.</EmptyState> : <div className={styles.userCards}>
+      {users.map(user => <article className={`${styles.userCard} ${user.locked_at ? styles.lockedCard : ''}`} key={user.id}>
+        <div className={styles.identityRow}>
+          <span className={styles.userAvatar} aria-hidden="true">{initials(user.email)}</span>
+          <div className={styles.userIdentity}>
+            <strong>{user.email}</strong>
+            <small>ID: {user.id}</small>
+          </div>
+          <span className={`${styles.accountState} ${user.locked_at ? styles.stateLocked : styles.stateActive}`}>
+            <span aria-hidden="true" />{user.locked_at ? 'Đã khóa' : 'Hoạt động'}
+          </span>
+        </div>
+        <div className={styles.cardMeta}>
+          <span className={styles.rolePill}>{user.role}</span>
+          <span>Tham gia {new Date(user.created_at).toLocaleDateString('vi-VN')}</span>
+        </div>
+        <div className={styles.capabilitySection}>
+          <div className={styles.capabilityHeading}><h2>Quyền hệ thống</h2><span>{user.capabilities.length}</span></div>
+          <div className={styles.chips}>
+            {user.capabilities.length === 0 && <span className={styles.noCapability}>Chưa được cấp quyền</span>}
+            {user.capabilities.map(cap => <span className={`${styles.capabilityChip} ${capabilityClass[cap]}`} key={cap}>
+              {cap}
+              <button type="button" aria-label={`Thu hồi ${cap}`} title={`Thu hồi ${cap}`} onClick={() => change(() => adminApi.revokeCapability(user.id, cap), 'Đã thu hồi quyền hệ thống.')}>×</button>
+            </span>)}
+          </div>
+          {user.role !== 'ADMIN' && <form className={styles.capabilityForm} onSubmit={event => grant(event, user.id)}>
+            <SearchableSelect name="capability" aria-label={`Quyền mới cho ${user.email}`} defaultValue="" required>
+              <option value="" disabled>Chọn quyền cần cấp</option>
+              {CAPABILITIES.filter(cap => !user.capabilities.includes(cap)).map(cap => <option key={cap} value={cap}>{cap}</option>)}
+            </SearchableSelect>
+            <button disabled={user.capabilities.length === CAPABILITIES.length}>+ Thêm</button>
+          </form>}
+        </div>
+        <footer className={styles.cardFooter}>
+          <span>{user.locked_at ? 'Tài khoản không thể đăng nhập' : 'Tài khoản đang được phép truy cập'}</span>
+          <button className={user.locked_at ? styles.unlockButton : styles.lockButton} onClick={() => change(() => user.locked_at ? adminApi.unlock(user.id) : adminApi.lock(user.id), user.locked_at ? 'Đã mở khóa tài khoản.' : 'Đã khóa tài khoản.')}>
+            {user.locked_at ? 'Mở khóa' : 'Khóa tài khoản'}
+          </button>
+        </footer>
+      </article>)}
     </div>}
   </section>;
 }
