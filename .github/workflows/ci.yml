@@ -85,7 +85,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          fetch-depth: 2
+          # The push event's BEFORE_SHA may be older than the immediate parent
+          # (for example after a batched push), so it must be available locally.
+          fetch-depth: 0
 
       - name: Set up Node.js
         uses: actions/setup-node@v4
