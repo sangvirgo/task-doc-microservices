@@ -75,9 +75,50 @@ jobs:
       - name: Validate Docker Compose
         run: docker compose --env-file .env.example config --quiet
 
-  build-backend-images:
+  changes:
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     needs: verify
+    runs-on: ubuntu-latest
+    outputs:
+      backend_apps: ${{ steps.affected.outputs.backend_apps }}
+      web_changed: ${{ steps.affected.outputs.web_changed }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: Classify affected images
+        id: affected
+        env:
+          BEFORE_SHA: ${{ github.event.before }}
+          CURRENT_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          changed_files=$(mktemp)
+          trap 'rm -f "$changed_files"' EXIT
+
+          if [[ "$BEFORE_SHA" =~ ^0{40}$ ]]; then
+            git diff-tree --no-commit-id --name-only -r "$CURRENT_SHA" > "$changed_files"
+          else
+            git diff --name-only "$BEFORE_SHA" "$CURRENT_SHA" > "$changed_files"
+          fi
+
+          node .github/scripts/affected-services.mjs --github-output "$GITHUB_OUTPUT" < "$changed_files"
+
+  build-backend-images:
+    needs:
+      - verify
+      - changes
+    if: >-
+      github.event_name == 'push' &&
+      github.ref == 'refs/heads/main' &&
+      needs.changes.result == 'success' &&
+      needs.changes.outputs.backend_apps != '[]'
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -85,17 +126,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        app:
-          - api-gateway
-          - authentication-identity-service
-          - user-role-management-service
-          - task-management-service
-          - document-management-service
-          - document-security-service
-          - permission-service
-          - audit-log-service
-          - notification-service
-          - security-monitoring-service
+        app: ${{ fromJSON(needs.changes.outputs.backend_apps) }}
     steps:
       - uses: actions/checkout@v4
 
@@ -124,8 +155,14 @@ jobs:
           cache-to: type=gha,mode=max,scope=${{ matrix.app }}
 
   build-web-image:
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    needs: verify
+    needs:
+      - verify
+      - changes
+    if: >-
+      github.event_name == 'push' &&
+      github.ref == 'refs/heads/main' &&
+      needs.changes.result == 'success' &&
+      needs.changes.outputs.web_changed == 'true'
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -160,8 +197,15 @@ jobs:
           cache-to: type=gha,mode=max,scope=web
 
   deploy-test:
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    if: >-
+      always() &&
+      github.event_name == 'push' &&
+      github.ref == 'refs/heads/main' &&
+      needs.changes.result == 'success' &&
+      (needs.build-backend-images.result == 'success' || needs.build-backend-images.result == 'skipped') &&
+      (needs.build-web-image.result == 'success' || needs.build-web-image.result == 'skipped')
     needs:
+      - changes
       - build-backend-images
       - build-web-image
     runs-on: ubuntu-latest
@@ -205,4 +249,4 @@ jobs:
           ssh "${ssh_opts[@]}" "$remote" "chmod 700 '$remote_dir' && chmod 700 '$remote_dir/infra' '$remote_dir/infra/postgres' && chmod 700 '$remote_dir/deploy.sh'"
 
           printf '%s' "$GHCR_TOKEN" | ssh "${ssh_opts[@]}" "$remote" "docker login ghcr.io --username '$GHCR_USERNAME' --password-stdin"
-          ssh "${ssh_opts[@]}" "$remote" "cd '$remote_dir' && IMAGE_PREFIX='ghcr.io/${{ github.repository }}' IMAGE_TAG='sha-${{ github.sha }}' ./deploy.sh"
+          ssh "${ssh_opts[@]}" "$remote" "cd '$remote_dir' && IMAGE_PREFIX='ghcr.io/${{ github.repository }}' IMAGE_TAG='latest' ./deploy.sh"

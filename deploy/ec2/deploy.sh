@@ -16,6 +16,8 @@ fi
 export IMAGE_PREFIX IMAGE_TAG
 
 # Pull and replace one application image at a time because the EC2 host has limited disk space.
+# CI advances only the `latest` tag for services whose source changed; unchanged services keep
+# their previous latest image. Immutable sha-* tags remain available for rollback.
 # Keeping old and new large backend layers during a parallel pull can exhaust containerd.
 services=(
   api-gateway
