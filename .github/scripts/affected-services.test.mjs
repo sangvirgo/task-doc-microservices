@@ -55,6 +55,23 @@ test("maps workspace dependency changes to every backend image and web", () => {
   });
 });
 
+test("maps CI workflow changes to every backend image and web", () => {
+  assert.deepEqual(classifyChangedFiles([".github/workflows/ci.yml"]), {
+    backendApps: ALL_BACKEND_APPS,
+    webChanged: true,
+  });
+});
+
+test("maps affected-service classifier changes to every backend image and web", () => {
+  assert.deepEqual(
+    classifyChangedFiles([".github/scripts/affected-services.mjs"]),
+    {
+      backendApps: ALL_BACKEND_APPS,
+      webChanged: true,
+    },
+  );
+});
+
 test("maps a web-only source change only to web", () => {
   assert.deepEqual(classifyChangedFiles(["frontend/web/src/app/page.tsx"]), {
     backendApps: [],
@@ -69,7 +86,6 @@ test("does not build images for documentation or deployment-only changes", () =>
       "docs/postman/C17-secure-preview.postman_collection.json",
       "docker-compose.yml",
       "deploy/ec2/deploy.sh",
-      ".github/workflows/ci.yml",
     ]),
     {
       backendApps: [],
