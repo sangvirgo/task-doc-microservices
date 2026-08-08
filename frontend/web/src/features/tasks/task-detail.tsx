@@ -6,30 +6,115 @@ import { adminApi } from '@/api/admin';
 import type { MemberOption } from '@/types/admin';
 import { ErrorState, LoadingState, PermissionDeniedState } from '@/components/common-states';
 import { GatewayError } from '@/lib/errors';
-import type { Activity, AncestorTaskSummary, Participant, Task, TaskComment, TaskStatus } from '@/types/task';
-import styles from './tasks.module.css';
+import { TaskDocuments } from './task-documents';
+import type { Activity, AncestorTaskSummary, Participant, Task, TaskComment } from '@/types/task';
+import styles from './task-detail.module.css';
+import { SearchableSelect } from '@/components/searchable-select';
 
 const isSummary = (value: Task | AncestorTaskSummary): value is AncestorTaskSummary => !('id' in value);
-const message = (error: unknown, fallback: string) => error instanceof GatewayError && error.status === 409 ? 'This task changed. Refresh and try again.' : fallback;
+const message = (error: unknown, fallback: string) => error instanceof GatewayError && error.status === 409 ? 'Công việc đã thay đổi. Tải lại và thử lại.' : fallback;
+const statusLabel = (value: string) => value.replaceAll('_', ' ');
+const initials = (value: string) => value.split(/[@ ._-]/).filter(Boolean).slice(0, 2).map(part => part[0]?.toUpperCase()).join('') || 'U';
 
 export function TaskDetail({ id }: { id: string }) {
-  const [task, setTask] = useState<Task | AncestorTaskSummary | null>(null); const [members, setMembers] = useState<MemberOption[]>([]); const [comments, setComments] = useState<TaskComment[]>([]); const [activity, setActivity] = useState<Activity[]>([]); const [participants, setParticipants] = useState<Participant[]>([]); const [error, setError] = useState<number>();
+  const [task, setTask] = useState<Task | AncestorTaskSummary | null>(null);
+  const [members, setMembers] = useState<MemberOption[]>([]);
+  const [comments, setComments] = useState<TaskComment[]>([]);
+  const [activity, setActivity] = useState<Activity[]>([]);
+  const [participants, setParticipants] = useState<Participant[]>([]);
+  const [error, setError] = useState<number>();
   const load = () => { setError(undefined); setTask(null); tasksApi.get(id).then(async result => { setTask(result); if (!isSummary(result)) { const [participantItems, activityItems, commentItems] = await Promise.all([tasksApi.participants(id), tasksApi.activity(id), tasksApi.comments(id)]); setParticipants(participantItems); setActivity(activityItems); setComments(commentItems); } }).catch((reason: unknown) => setError(reason instanceof GatewayError ? reason.status : 503)); };
-  useEffect(load, [id]); useEffect(() => { adminApi.directory().then(setMembers).catch(() => setMembers([])); }, []);
+  useEffect(load, [id]);
+  useEffect(() => {
+    let cancelled = false;
+    const refreshDirectory = () => { adminApi.directory().then(items => { if (!cancelled) setMembers(items); }).catch(() => undefined); };
+    refreshDirectory();
+    window.addEventListener('focus', refreshDirectory);
+    const timer = window.setInterval(refreshDirectory, 15_000);
+    return () => { cancelled = true; window.removeEventListener('focus', refreshDirectory); window.clearInterval(timer); };
+  }, []);
   if (error === 403) return <PermissionDeniedState />;
-  if (error) return <ErrorState message="Task details could not be loaded." onRetry={load} />;
+  if (error) return <ErrorState message="Không thể tải chi tiết công việc." onRetry={load} />;
   if (!task) return <LoadingState />;
-  if (isSummary(task)) return <section className={styles.detail}><h1>{task.title}</h1><p className={styles.summary}>Ancestor oversight: summary only. Comments, activity, participants and documents are unavailable.</p><dl><dt>Status</dt><dd>{task.status}</dd><dt>Assignee</dt><dd>{task.assignee ?? 'Unassigned'}</dd><dt>Deadline</dt><dd>{task.deadline ?? '—'}</dd><dt>Overdue</dt><dd>{task.is_overdue ? 'Yes' : 'No'}</dd><dt>Result</dt><dd>{task.completion_result ?? '—'}</dd></dl></section>;
+  if (isSummary(task)) return <section className={styles.summaryOnly}><h1>{task.title}</h1><p><strong>Ancestor oversight: summary only.</strong> Chỉ hiển thị tổng quan công việc tổ tiên. Bình luận, hoạt động, người tham gia và tài liệu không khả dụng.</p><dl><dt>Trạng thái</dt><dd>{task.status}</dd><dt>Người được giao</dt><dd>{task.assignee ?? 'Chưa giao'}</dd><dt>Deadline</dt><dd>{task.deadline ?? '—'}</dd><dt>Quá hạn</dt><dd>{task.is_overdue ? 'Có' : 'Không'}</dd><dt>Kết quả</dt><dd>{task.completion_result ?? '—'}</dd></dl></section>;
   return <DirectTask task={task} comments={comments} activity={activity} participants={participants} members={members} reload={load} />;
 }
 
 function DirectTask({ task, comments, activity, participants, members, reload }: { task: Task; comments: TaskComment[]; activity: Activity[]; participants: Participant[]; members: MemberOption[]; reload: () => void }) {
-  const [notice, setNotice] = useState(''); const act = async (work: () => Promise<unknown>, success: string, fallback: string) => { try { await work(); setNotice(success); reload(); } catch (error) { setNotice(message(error, fallback)); } };
-  const comment = (event: FormEvent<HTMLFormElement>) => { event.preventDefault(); const content = String(new FormData(event.currentTarget).get('content')); void act(() => tasksApi.comment(task.id, content), 'Comment added.', 'Comment could not be added.'); event.currentTarget.reset(); };
-  const assign = (event: FormEvent<HTMLFormElement>) => { event.preventDefault(); const assigneeId = String(new FormData(event.currentTarget).get('assignee_id')); void act(() => tasksApi.assign(task.id, assigneeId), 'Task assigned.', 'Task assignment was not accepted.'); };
-  const participant = (event: FormEvent<HTMLFormElement>) => { event.preventDefault(); const data = new FormData(event.currentTarget); void act(() => tasksApi.addParticipant(task.id, String(data.get('user_id')), String(data.get('role')) || undefined), 'Participant added.', 'Participant could not be added.'); };
-  const submit = (event: FormEvent<HTMLFormElement>) => { event.preventDefault(); const content = String(new FormData(event.currentTarget).get('content')); void act(() => tasksApi.submit(task.id, content), 'Result submitted for review.', 'Result could not be submitted.'); };
-  const review = (event: FormEvent<HTMLFormElement>) => { event.preventDefault(); const data = new FormData(event.currentTarget); void act(() => tasksApi.review(String(data.get('submission_id')), String(data.get('decision')) as 'APPROVED' | 'NEED_REVISION' | 'REJECTED', String(data.get('comment')) || undefined), 'Review recorded.', 'Review could not be recorded.'); };
-  const transitions: TaskStatus[] = ['IN_PROGRESS', 'CANCELLED'];
-  return <section className={styles.detail}><div className={styles.toolbar}><div><h1>{task.title}</h1><p>{task.description}</p></div><span className={styles.status}>{task.blocked ? 'BLOCKED' : task.status}</span></div>{notice && <p role="status">{notice}</p>}<dl><dt>Assignee</dt><dd>{members.find(member => member.id === task.assignee_id)?.email ?? (task.assignee_id ? 'Assigned employee' : 'Unassigned')}</dd><dt>Deadline</dt><dd>{task.deadline ?? '—'}</dd><dt>Condition</dt><dd>{task.is_overdue ? 'Overdue' : task.blocked ? 'Blocked' : 'On track'}</dd></dl><div className={styles.actions}>{transitions.includes('IN_PROGRESS') && (task.status === 'ASSIGNED' || task.status === 'NEED_REVISION') && <button onClick={() => void act(() => tasksApi.status(task.id, 'IN_PROGRESS'), 'Task updated.', 'Task update was not accepted.')}>Start work</button>}{!['APPROVED', 'REJECTED', 'CANCELLED'].includes(task.status) && <button className={styles.secondary} onClick={() => { if (confirm('Cancel this task?')) void act(() => tasksApi.status(task.id, 'CANCELLED'), 'Task cancelled.', 'Task update was not accepted.'); }}>Cancel task</button>}<button className={styles.secondary} onClick={() => { const reason = prompt('Why is this task blocked?'); if (reason) void act(() => tasksApi.block(task.id, reason), 'Task blocked.', 'Task could not be blocked.'); }}>{task.blocked ? 'Update block' : 'Block task'}</button>{task.blocked && <button className={styles.secondary} onClick={() => void act(() => tasksApi.unblock(task.id), 'Task unblocked.', 'Task could not be unblocked.')}>Unblock task</button>}</div><form className={styles.inlineForm} onSubmit={assign}><h2>Assign task</h2><label>Assignee<select name="assignee_id" required><option value="">Choose an employee</option>{members.map(member => <option key={member.id} value={member.id}>{member.email}</option>)}</select></label><button>Assign</button></form><form className={styles.inlineForm} onSubmit={participant}><h2>Add participant</h2><label>Participant<select name="user_id" required><option value="">Choose an employee</option>{members.map(member => <option key={member.id} value={member.id}>{member.email}</option>)}</select></label><label>Role (optional)<input name="role" /></label><button>Add participant</button></form><h2>Participants</h2><ul>{participants.map(item => <li key={item.id}>{members.find(member => member.id === item.user_id)?.email ?? 'Workspace member'} — {item.role}</li>)}</ul><form className={styles.inlineForm} onSubmit={submit}><h2>Submit result</h2><label>Result<textarea name="content" required /></label><button>Submit for review</button></form><form className={styles.inlineForm} onSubmit={review}><h2>Review submission</h2><label>Submission ID<input name="submission_id" required /></label><label>Decision<select name="decision"><option>APPROVED</option><option>NEED_REVISION</option><option>REJECTED</option></select></label><label>Comment (optional)<input name="comment" /></label><button>Record review</button></form><h2>Activity</h2><ol>{activity.map(item => <li key={item.id}>{item.summary} <small>{new Date(item.created_at).toLocaleString()}</small></li>)}</ol><h2>Comments</h2><ul>{comments.map(item => <li key={item.id}>{item.content}</li>)}</ul><form onSubmit={comment}><label htmlFor="comment">Add a comment</label><textarea id="comment" name="content" required /><button>Post comment</button></form></section>;
+  const [notice, setNotice] = useState('');
+  const [tab, setTab] = useState<'activity' | 'comments' | 'review'>('activity');
+  const [subtaskOpen, setSubtaskOpen] = useState(false);
+  const [creatingSubtask, setCreatingSubtask] = useState(false);
+  const act = async (work: () => Promise<unknown>, success: string, fallback: string) => { try { await work(); setNotice(success); reload(); } catch (error) { setNotice(message(error, fallback)); } };
+  const comment = (event: FormEvent<HTMLFormElement>) => { event.preventDefault(); const form = event.currentTarget; const content = String(new FormData(form).get('content')); void act(() => tasksApi.comment(task.id, content), 'Đã đăng bình luận.', 'Không thể đăng bình luận.'); form.reset(); };
+  const assign = (event: FormEvent<HTMLFormElement>) => { event.preventDefault(); const assigneeId = String(new FormData(event.currentTarget).get('assignee_id')); void act(() => tasksApi.assign(task.id, assigneeId), 'Đã cập nhật người được giao.', 'Không thể cập nhật người được giao.'); };
+  const participant = (event: FormEvent<HTMLFormElement>) => { event.preventDefault(); const form = event.currentTarget; const data = new FormData(form); void act(() => tasksApi.addParticipant(task.id, String(data.get('user_id')), String(data.get('role')) || undefined), 'Đã thêm người tham gia.', 'Không thể thêm người tham gia.'); form.reset(); };
+  const submit = (event: FormEvent<HTMLFormElement>) => { event.preventDefault(); const content = String(new FormData(event.currentTarget).get('content')); void act(() => tasksApi.submit(task.id, content), 'Đã nộp kết quả để duyệt.', 'Không thể nộp kết quả.'); };
+  const review = (event: FormEvent<HTMLFormElement>) => { event.preventDefault(); const data = new FormData(event.currentTarget); void act(() => tasksApi.review(String(data.get('submission_id')), String(data.get('decision')) as 'APPROVED' | 'NEED_REVISION' | 'REJECTED', String(data.get('comment')) || undefined), 'Đã ghi nhận phê duyệt.', 'Không thể ghi nhận phê duyệt.'); };
+  const createSubtask = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const form = event.currentTarget;
+    const data = new FormData(form);
+    const rawDeadline = String(data.get('deadline') ?? '');
+    setCreatingSubtask(true);
+    try {
+      await tasksApi.create({
+        title: String(data.get('title')),
+        description: String(data.get('description')) || undefined,
+        assignee_id: String(data.get('assignee_id')) || undefined,
+        deadline: rawDeadline ? new Date(rawDeadline).toISOString() : undefined,
+        parent_task_id: task.id,
+      });
+      form.reset();
+      setSubtaskOpen(false);
+      setNotice('Đã tạo sub-task trong công việc này.');
+    } catch {
+      setNotice('Không thể tạo sub-task. Kiểm tra thông tin và thử lại.');
+    } finally {
+      setCreatingSubtask(false);
+    }
+  };
+  const assignee = members.find(member => member.id === task.assignee_id);
+  const finalState = ['APPROVED', 'REJECTED', 'CANCELLED'].includes(task.status);
+
+  return <section className={styles.page}>
+    <div className={styles.breadcrumb}><span>Công việc</span><b>›</b><span>{task.id.slice(0, 8)}</span></div>
+    <div className={styles.layout}>
+      <div className={styles.mainColumn}>
+        <header className={styles.taskHeader}><h1>{task.title}</h1><p>{task.description || 'Chưa có mô tả cho công việc này.'}</p></header>
+        {notice && <p className={styles.notice} role="status">{notice}</p>}
+        <section className={styles.overviewCard}><h2>Tổng quan tiến độ</h2><div><article><span>Trạng thái</span><strong>{statusLabel(task.status)}</strong></article><article><span>Tiến độ</span><strong>{task.blocked ? 'Đang bị chặn' : task.is_overdue ? 'Quá hạn' : 'Đúng tiến độ'}</strong></article><article><span>Cập nhật</span><strong>{new Date(task.updated_at).toLocaleDateString('vi-VN')}</strong></article></div></section>
+        <TaskDocuments task={task} />
+        <section className={styles.collaboration}>
+          <div className={styles.tabs} role="tablist" aria-label="Nội dung công việc"><button className={tab === 'activity' ? styles.activeTab : ''} onClick={() => setTab('activity')} role="tab" aria-selected={tab === 'activity'}>Hoạt động <span>{activity.length}</span></button><button className={tab === 'comments' ? styles.activeTab : ''} onClick={() => setTab('comments')} role="tab" aria-selected={tab === 'comments'}>Bình luận <span>{comments.length}</span></button><button className={tab === 'review' ? styles.activeTab : ''} onClick={() => setTab('review')} role="tab" aria-selected={tab === 'review'}>Nộp &amp; phê duyệt</button></div>
+          {tab === 'activity' && <div className={styles.timeline}>{activity.length === 0 ? <p className={styles.emptyText}>Chưa có hoạt động.</p> : activity.map(item => <article key={item.id}><span className={styles.timelineAvatar}>HT</span><div><div><strong>{item.summary}</strong><time>{new Date(item.created_at).toLocaleString('vi-VN')}</time></div><small>{item.activity_type}</small></div></article>)}</div>}
+          {tab === 'comments' && <div className={styles.comments}>{comments.map(item => <article key={item.id}><span className={styles.commentAvatar}>NV</span><div><p>{item.content}</p><time>{new Date(item.created_at).toLocaleString('vi-VN')}</time></div></article>)}<form onSubmit={comment}><label htmlFor="comment">Thêm bình luận</label><textarea id="comment" name="content" required placeholder="Viết bình luận hoặc phản hồi…" /><div><button>Gửi bình luận</button></div></form></div>}
+          {tab === 'review' && <div className={styles.reviewGrid}><form className={styles.focusCard} onSubmit={submit}><h3>Nộp kết quả</h3><p>Gửi kết quả công việc để người phụ trách phê duyệt.</p><label>Kết quả<textarea name="content" required /></label><button>Nộp để duyệt</button></form><form className={styles.focusCard} onSubmit={review}><h3>Phê duyệt</h3><label>Submission ID<input name="submission_id" required /></label><label>Quyết định<SearchableSelect name="decision"><option>APPROVED</option><option>NEED_REVISION</option><option>REJECTED</option></SearchableSelect></label><label>Nhận xét <span>Tùy chọn</span><input name="comment" /></label><button>Ghi nhận</button></form></div>}
+        </section>
+      </div>
+
+      <aside className={styles.sideRail}>
+        <section className={styles.railCard}>
+          <div className={styles.railStatus}><span>Trạng thái</span><strong className={`${styles.statusBadge} ${styles[task.status.toLowerCase()]}`}>{task.blocked ? 'BLOCKED' : statusLabel(task.status)}</strong></div>
+          {(task.status === 'ASSIGNED' || task.status === 'NEED_REVISION') && <button className={styles.startButton} onClick={() => void act(() => tasksApi.status(task.id, 'IN_PROGRESS'), 'Đã bắt đầu công việc.', 'Không thể bắt đầu công việc.')}>Bắt đầu làm</button>}
+          <button className={styles.subtaskButton} type="button" aria-expanded={subtaskOpen} onClick={() => setSubtaskOpen(value => !value)}>＋ Tạo sub-task</button>
+          {subtaskOpen && <form className={styles.subtaskForm} onSubmit={createSubtask}>
+            <div className={styles.parentContext}><span>Task cha</span><strong>{task.title}</strong></div>
+            <label>Tiêu đề sub-task<input name="title" required autoFocus placeholder="Ví dụ: Kiểm tra phụ lục" /></label>
+            <label>Mô tả <span>Tùy chọn</span><textarea name="description" placeholder="Yêu cầu hoặc tiêu chí hoàn thành…" /></label>
+            <label>Người được giao<SearchableSelect name="assignee_id" defaultValue=""><option value="">Unassigned</option>{members.map(member => <option key={member.id} value={member.id}>{member.email}</option>)}</SearchableSelect></label>
+            <label>Hạn hoàn thành<input name="deadline" type="datetime-local" /></label>
+            <div className={styles.subtaskActions}><button type="button" disabled={creatingSubtask} onClick={() => setSubtaskOpen(false)}>Hủy</button><button type="submit" disabled={creatingSubtask}>{creatingSubtask ? 'Đang tạo…' : 'Tạo sub-task'}</button></div>
+          </form>}
+          <div className={styles.railBody}>
+            <div className={styles.metaBlock}><span>Người thực hiện</span><div className={styles.person}><i>{initials(assignee?.email || 'U')}</i><strong>{assignee?.email || 'Chưa giao'}</strong></div><form onSubmit={assign}><SearchableSelect name="assignee_id" aria-label="Chọn người thực hiện" defaultValue={task.assignee_id ?? ''} required><option value="">Chọn nhân viên</option>{members.map(member => <option key={member.id} value={member.id}>{member.email}</option>)}</SearchableSelect><button>Cập nhật</button></form></div>
+            <div className={styles.metaBlock}><span>Hạn hoàn thành</span><strong>◷ {task.deadline ? new Date(task.deadline).toLocaleString('vi-VN') : 'Chưa đặt'}</strong></div>
+            <div className={styles.metaBlock}><span>Người liên quan</span><div className={styles.participantChips}>{participants.map(item => { const member = members.find(option => option.id === item.user_id); return <span key={item.id} title={member?.email || item.user_id}>{initials(member?.email || item.user_id)}</span>; })}{participants.length === 0 && <small>Chưa có người tham gia</small>}</div><form className={styles.participantForm} onSubmit={participant}><SearchableSelect name="user_id" aria-label="Thêm người tham gia" required defaultValue=""><option value="" disabled>Thêm người tham gia</option>{members.map(member => <option key={member.id} value={member.id}>{member.email}</option>)}</SearchableSelect><input name="role" placeholder="Vai trò (tùy chọn)" /><button>+ Thêm</button></form></div>
+          </div>
+          <footer className={styles.railActions}>{!finalState && <button onClick={() => { if (confirm('Hủy công việc này?')) void act(() => tasksApi.status(task.id, 'CANCELLED'), 'Đã hủy công việc.', 'Không thể hủy công việc.'); }}>Hủy nhiệm vụ</button>}<button className={styles.dangerAction} onClick={() => { const reason = prompt('Lý do công việc bị chặn?'); if (reason) void act(() => tasksApi.block(task.id, reason), 'Đã đánh dấu bị chặn.', 'Không thể chặn công việc.'); }}>{task.blocked ? 'Cập nhật lý do chặn' : 'Báo cáo lỗi / Chặn'}</button>{task.blocked && <button onClick={() => void act(() => tasksApi.unblock(task.id), 'Đã bỏ chặn.', 'Không thể bỏ chặn.')}>Bỏ chặn</button>}</footer>
+        </section>
+        <p className={styles.taskId}>ID: {task.id} · Tạo {new Date(task.created_at).toLocaleDateString('vi-VN')}</p>
+      </aside>
+    </div>
+  </section>;
 }

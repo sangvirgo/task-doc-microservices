@@ -12,5 +12,7 @@ describe('AppShell role boundary', () => {
     expect(screen.getByText('Administrator')).toBeVisible();
     expect(screen.getByRole('link', { name: /overview/i })).toBeVisible();
     expect(screen.queryByText(/tasks|documents|comments/i)).not.toBeInTheDocument();
+    expect(screen.queryByText('Sản phẩm & vận hành')).not.toBeInTheDocument();
+    expect(screen.queryByRole('heading', { level: 1 })).not.toBeInTheDocument();
   });
 });

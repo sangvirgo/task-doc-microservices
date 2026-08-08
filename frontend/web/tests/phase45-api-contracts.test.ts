@@ -15,7 +15,7 @@ it('uses Gateway-only administration routes and excludes monitoring event writes
 });
 
 it('uses Gateway-only records and transfer-package custody routes', async () => {
-  writeSession({ access_token: token, refresh_token: 'refresh', expires_in_seconds: 1800 }); const fetchMock = vi.fn().mockImplementation(() => Promise.resolve(json({ id: 'x' }))); vi.stubGlobal('fetch', fetchMock);
+  writeSession({ access_token: token, refresh_token: 'refresh', expires_in_seconds: 1800 }); const fetchMock = vi.fn().mockImplementation((url: string, init?: RequestInit) => Promise.resolve(json((url === '/gateway/records' || url === '/gateway/transfer-packages') && !init?.method ? { items: [] } : { id: 'x' }))); vi.stubGlobal('fetch', fetchMock);
   await recordsApi.list(); await recordsApi.create('Record'); await recordsApi.addEntry('record-id', 'document-id', 'version-id'); await recordsApi.seal('record-id'); await recordsApi.packages(); await recordsApi.createPackage('record-id'); await recordsApi.reject('package-id', 'Incomplete');
   expect(fetchMock.mock.calls.map(call => call[0])).toEqual(['/gateway/records', '/gateway/records', '/gateway/records/record-id/entries', '/gateway/records/record-id/seal', '/gateway/transfer-packages', '/gateway/transfer-packages', '/gateway/transfer-packages/package-id/reject']);
 });

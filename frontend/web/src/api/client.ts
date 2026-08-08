@@ -27,8 +27,24 @@ async function refreshSession(refreshToken: string): Promise<TokenPair> {
   return refreshPromise;
 }
 
+function normalizeList<T>(payload: unknown): T[] {
+  if (Array.isArray(payload)) return payload as T[];
+  if (payload && typeof payload === 'object') {
+    const envelope = payload as Record<string, unknown>;
+    for (const key of ['items', 'data', 'results']) {
+      const candidate = envelope[key];
+      if (Array.isArray(candidate)) return candidate as T[];
+      if (candidate && typeof candidate === 'object') {
+        const nested = candidate as Record<string, unknown>;
+        if (Array.isArray(nested.items)) return nested.items as T[];
+      }
+    }
+  }
+  throw new GatewayError(502, 'Gateway returned an invalid list response.');
+}
 export const gatewayClient = {
   get: <T>(path: string, signal?: AbortSignal) => request<T>(path, { signal }),
+  getList: async <T>(path: string, signal?: AbortSignal) => normalizeList<T>(await request<unknown>(path, { signal })),
   post: <T>(path: string, body?: unknown) => request<T>(path, { method: 'POST', body: body === undefined ? undefined : JSON.stringify(body) }),
   put: <T>(path: string, body: unknown) => request<T>(path, { method: 'PUT', body: JSON.stringify(body) }),
   delete: <T>(path: string, body?: unknown) => request<T>(path, { method: 'DELETE', body: body === undefined ? undefined : JSON.stringify(body) }),
@@ -42,11 +58,13 @@ async function requestFormWithProgress<T>(path: string, body: FormData, onProgre
   const response = await new Promise<Response>((resolve, reject) => {
     const xhr = new XMLHttpRequest();
     xhr.open('POST', apiUrl(path));
+    xhr.timeout = 120_000;
     xhr.setRequestHeader('accept', 'application/json');
     xhr.setRequestHeader('x-correlation-id', createCorrelationId());
     if (session) xhr.setRequestHeader('authorization', `Bearer ${session.access_token}`);
     xhr.upload.onprogress = (event) => { if (event.lengthComputable) onProgress(Math.round((event.loaded / event.total) * 100)); };
     xhr.onerror = () => reject(new GatewayError(503, 'The service is temporarily unavailable.'));
+    xhr.ontimeout = () => reject(new GatewayError(503, 'Document upload timed out after 120 seconds.'));
     xhr.onload = () => resolve(new Response(xhr.responseText, { status: xhr.status, headers: { 'content-type': xhr.getResponseHeader('content-type') ?? 'application/json', 'x-correlation-id': xhr.getResponseHeader('x-correlation-id') ?? '' } }));
     xhr.send(body);
   });
@@ -59,7 +77,7 @@ async function requestFormWithProgress<T>(path: string, body: FormData, onProgre
 
 async function requestBlob(path: string, body: unknown): Promise<Blob> {
   const session = readSession();
-  const headers = new Headers({ 'x-correlation-id': createCorrelationId(), accept: 'application/octet-stream' });
+  const headers = new Headers({ 'x-correlation-id': createCorrelationId(), accept: 'application/octet-stream', 'content-type': 'application/json' });
   if (session) headers.set('authorization', `Bearer ${session.access_token}`);
   const response = await fetch(apiUrl(path), { method: 'POST', headers, body: JSON.stringify(body) });
   if (response.status === 401 && session) {
