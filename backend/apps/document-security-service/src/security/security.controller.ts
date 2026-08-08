@@ -180,17 +180,17 @@ export class SecurityController {
 
   @Get('preview/:previewId/pages/:page')
   @ApiOperation({ summary: 'Return one internally prepared, watermarked preview page' })
-  async getPreviewPage(
+  getPreviewPage(
     @Param('previewId') previewId: string,
     @Param('page') page: string,
     @Res() res: Response,
-  ): Promise<void> {
+  ): void {
     const parsedPage = parseInt(page, 10);
     if (isNaN(parsedPage) || parsedPage < 1) {
       throw new BadRequestException('Invalid preview page number');
     }
 
-    const artifact = await this.securityService.getPreviewPage(previewId, parsedPage);
+    const artifact = this.securityService.getPreviewPage(previewId, parsedPage);
     res.setHeader('content-type', artifact.mime_type);
     res.setHeader('cache-control', 'private, no-store');
     res.setHeader('pragma', 'no-cache');
@@ -201,8 +201,8 @@ export class SecurityController {
   @Post('preview/:previewId/revoke')
   @HttpCode(HttpStatus.NO_CONTENT)
   @ApiOperation({ summary: 'Revoke an internal preview handle' })
-  async revokePreview(@Param('previewId') previewId: string): Promise<void> {
-    await this.securityService.revokePreview(previewId);
+  revokePreview(@Param('previewId') previewId: string): void {
+    this.securityService.revokePreview(previewId);
   }
 
   @Get('records')

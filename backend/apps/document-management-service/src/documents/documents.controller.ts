@@ -602,6 +602,11 @@ export class DocumentsController {
     if (!securityPreview) {
       throw new ServiceUnavailableException('Document preview renderer is unavailable');
     }
+    const previewExpiresAt = new Date(securityPreview.expires_at);
+    if (Number.isNaN(previewExpiresAt.getTime()) || previewExpiresAt.getTime() <= Date.now()) {
+      await this.securityClient.revokePreview(securityPreview.preview_id);
+      throw new ServiceUnavailableException('Document preview renderer returned an invalid expiry');
+    }
 
     const downloadDecision = await this.checkDocumentPermission(
       documentId,
@@ -618,7 +623,7 @@ export class DocumentsController {
       security_preview_id: securityPreview.preview_id,
       page_count: securityPreview.page_count,
       mime_type: securityPreview.mime_type,
-      expires_at: new Date(securityPreview.expires_at),
+      expires_at: previewExpiresAt,
     });
 
     await this.auditClient.record({
@@ -654,7 +659,8 @@ export class DocumentsController {
     if (!user) throw new ForbiddenException('Authentication required');
     const versionNum = parseInt(version, 10);
     const pageNum = parseInt(page, 10);
-    if (isNaN(versionNum) || versionNum < 1) throw new BadRequestException('Invalid version number');
+    if (isNaN(versionNum) || versionNum < 1)
+      throw new BadRequestException('Invalid version number');
     if (isNaN(pageNum) || pageNum < 1) throw new BadRequestException('Invalid preview page number');
 
     const session = await this.documentsService.getPreviewSession(sessionId);
@@ -710,7 +716,8 @@ export class DocumentsController {
   ): Promise<void> {
     if (!user) throw new ForbiddenException('Authentication required');
     const versionNum = parseInt(version, 10);
-    if (isNaN(versionNum) || versionNum < 1) throw new BadRequestException('Invalid version number');
+    if (isNaN(versionNum) || versionNum < 1)
+      throw new BadRequestException('Invalid version number');
     const session = await this.documentsService.getPreviewSession(sessionId);
     if (
       session.document_id !== documentId ||

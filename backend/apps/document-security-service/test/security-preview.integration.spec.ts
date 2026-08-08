@@ -10,7 +10,7 @@ describe('Security preview boundary', () => {
         mime_type: 'image/png',
         expires_at: '2026-08-08T10:05:00.000Z',
       }),
-      getPreviewPage: jest.fn().mockResolvedValue({
+      getPreviewPage: jest.fn().mockReturnValue({
         bytes: Buffer.from('watermarked-image'),
         mime_type: 'image/png',
       }),
@@ -35,11 +35,7 @@ describe('Security preview boundary', () => {
       expires_at: '2026-08-08T10:05:00.000Z',
     });
 
-    await controller.getPreviewPage(
-      '00000000-0000-4000-8000-000000000001',
-      '1',
-      response as never,
-    );
+    controller.getPreviewPage('00000000-0000-4000-8000-000000000001', '1', response as never);
 
     expect(response.setHeader).toHaveBeenCalledWith('content-type', 'image/png');
     expect(response.setHeader).toHaveBeenCalledWith('cache-control', 'private, no-store');

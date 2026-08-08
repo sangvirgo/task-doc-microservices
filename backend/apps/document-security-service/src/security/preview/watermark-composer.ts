@@ -1,8 +1,4 @@
-import type {
-  WatermarkComposition,
-  WatermarkInput,
-  WatermarkLayer,
-} from './preview.types';
+import type { WatermarkComposition, WatermarkInput, WatermarkLayer } from './preview.types';
 
 export function composeWatermark(input: WatermarkInput): WatermarkComposition {
   const timestamp = input.renderedAt.toISOString();

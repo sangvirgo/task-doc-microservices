@@ -32,6 +32,10 @@ function requestUrl(input: string | URL | Request): string {
   return typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url;
 }
 
+function parseBody(body: RequestInit['body'] | null | undefined): Record<string, unknown> {
+  return typeof body === 'string' ? (JSON.parse(body) as Record<string, unknown>) : {};
+}
+
 describe('Document preview integration (PostgreSQL)', () => {
   let app: INestApplication;
   let prisma: DocumentPrismaService;
@@ -43,34 +47,40 @@ describe('Document preview integration (PostgreSQL)', () => {
 
   beforeAll(async () => {
     process.env.MESSAGING_IN_MEMORY = 'true';
-    fetchMock = jest.fn(async (input: string | URL | Request, init?: RequestInit) => {
+    fetchMock = jest.fn((input: string | URL | Request, init?: RequestInit) => {
       const url = requestUrl(input);
       if (url.endsWith('/internal/permissions/check')) {
-        const body = JSON.parse(String(init?.body || '{}')) as { action?: string };
+        const body = parseBody(init?.body) as { action?: string };
         const allowed = body.action === 'PREVIEW' ? previewAllowed : downloadAllowed;
-        return jsonResponse(200, {
-          allowed,
-          reason_code: allowed ? null : 'MISSING_CAPABILITY',
-          effective_expires_at: allowed ? '2026-08-08T12:00:00.000Z' : null,
-        });
+        return Promise.resolve(
+          jsonResponse(200, {
+            allowed,
+            reason_code: allowed ? null : 'MISSING_CAPABILITY',
+            effective_expires_at: allowed ? '2026-08-08T12:00:00.000Z' : null,
+          }),
+        );
       }
       if (url.endsWith('/audit/events')) {
-        auditEvents.push(JSON.parse(String(init?.body || '{}')) as { event_type?: string });
-        return jsonResponse(201, { ok: true });
+        auditEvents.push(parseBody(init?.body));
+        return Promise.resolve(jsonResponse(201, { ok: true }));
       }
       if (url.endsWith('/preview/prepare')) {
-        return jsonResponse(201, {
-          preview_id: PREVIEW_ID,
-          page_count: 1,
-          mime_type: 'image/png',
-          expires_at: previewExpiresAt,
-        });
+        return Promise.resolve(
+          jsonResponse(201, {
+            preview_id: PREVIEW_ID,
+            page_count: 1,
+            mime_type: 'image/png',
+            expires_at: previewExpiresAt,
+          }),
+        );
       }
       if (url.includes('/security/preview/') && url.endsWith('/pages/1')) {
-        return new Response(PAGE_BYTES, { status: 200, headers: { 'content-type': 'image/png' } });
+        return Promise.resolve(
+          new Response(PAGE_BYTES, { status: 200, headers: { 'content-type': 'image/png' } }),
+        );
       }
       if (url.includes('/security/preview/') && url.endsWith('/revoke')) {
-        return new Response(null, { status: 204 });
+        return Promise.resolve(new Response(null, { status: 204 }));
       }
       throw new Error(`Unexpected fetch URL: ${url}`);
     });
