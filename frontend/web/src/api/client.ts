@@ -46,6 +46,7 @@ export const gatewayClient = {
   get: <T>(path: string, signal?: AbortSignal) => request<T>(path, { signal }),
   getList: async <T>(path: string, signal?: AbortSignal) => normalizeList<T>(await request<unknown>(path, { signal })),
   post: <T>(path: string, body?: unknown) => request<T>(path, { method: 'POST', body: body === undefined ? undefined : JSON.stringify(body) }),
+  patch: <T>(path: string, body: unknown) => request<T>(path, { method: 'PATCH', body: JSON.stringify(body) }),
   put: <T>(path: string, body: unknown) => request<T>(path, { method: 'PUT', body: JSON.stringify(body) }),
   delete: <T>(path: string, body?: unknown) => request<T>(path, { method: 'DELETE', body: body === undefined ? undefined : JSON.stringify(body) }),
   postForm: <T>(path: string, body: FormData, signal?: AbortSignal) => request<T>(path, { method: 'POST', body, signal }),

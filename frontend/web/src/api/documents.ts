@@ -7,6 +7,7 @@ export const documentsApi = {
   versions: (id: string) => gatewayClient.getList<DocumentVersion>(`/documents/${encodeURIComponent(id)}/versions`),
   taskDocuments: (taskId: string) => gatewayClient.getList<TaskDocument>(`/tasks/${encodeURIComponent(taskId)}/documents`),
   attachToTask: (taskId: string, documentId: string, grants: Array<{ actor_id: string; permissions: string[]; expires_at: string }>) => gatewayClient.post<DocumentUploadResult>(`/tasks/${encodeURIComponent(taskId)}/documents`, { document_id: documentId, grants }),
+  detachFromTask: (taskId: string, documentId: string) => gatewayClient.delete<void>(`/tasks/${encodeURIComponent(taskId)}/documents/${encodeURIComponent(documentId)}`),
   upload: (data: FormData, onProgress: (percent: number) => void) => gatewayClient.postFormWithProgress<DocumentUploadResult>('/documents/upload', data, onProgress),
   preview: (id: string) => gatewayClient.get<{ id: string; title: string; security_level: string; document_type: string }>(`/documents/${encodeURIComponent(id)}/preview`),
   ticket: (id: string, version: number, taskId: string) => gatewayClient.post<DownloadTicket>(`/documents/${encodeURIComponent(id)}/download-ticket`, { task_id: taskId, version }),

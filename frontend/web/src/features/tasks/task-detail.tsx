@@ -2,6 +2,7 @@
 /* eslint-disable react-hooks/set-state-in-effect */
 import { FormEvent, useEffect, useState } from 'react';
 import { tasksApi } from '@/api/tasks';
+import { documentsApi } from '@/api/documents';
 import { readSession } from '@/auth/session';
 import { adminApi } from '@/api/admin';
 import type { MemberOption } from '@/types/admin';
@@ -9,7 +10,7 @@ import { ErrorState, LoadingState, PermissionDeniedState } from '@/components/co
 import { GatewayError } from '@/lib/errors';
 import { TaskDocuments } from './task-documents';
 import { TaskChildren } from './task-children';
-import type { Activity, AncestorTaskSummary, Participant, Task, TaskComment } from '@/types/task';
+import type { Activity, AncestorTaskSummary, Participant, Task, TaskComment, TaskSubmission } from '@/types/task';
 import styles from './task-detail.module.css';
 import { SearchableSelect } from '@/components/searchable-select';
 
@@ -24,8 +25,9 @@ export function TaskDetail({ id }: { id: string }) {
   const [comments, setComments] = useState<TaskComment[]>([]);
   const [activity, setActivity] = useState<Activity[]>([]);
   const [participants, setParticipants] = useState<Participant[]>([]);
+  const [submissions, setSubmissions] = useState<TaskSubmission[]>([]);
   const [error, setError] = useState<number>();
-  const load = () => { setError(undefined); setTask(null); tasksApi.get(id).then(async result => { setTask(result); if (!isSummary(result)) { const [participantItems, activityItems, commentItems] = await Promise.all([tasksApi.participants(id), tasksApi.activity(id), tasksApi.comments(id)]); setParticipants(participantItems); setActivity(activityItems); setComments(commentItems); } }).catch((reason: unknown) => setError(reason instanceof GatewayError ? reason.status : 503)); };
+  const load = () => { setError(undefined); setTask(null); tasksApi.get(id).then(async result => { setTask(result); if (!isSummary(result)) { const [participantItems, activityItems, commentItems] = await Promise.all([tasksApi.participants(id), tasksApi.activity(id), tasksApi.comments(id)]); setParticipants(participantItems); setActivity(activityItems); setComments(commentItems); if (tasksApi.submissions) tasksApi.submissions(id).then(setSubmissions).catch(() => setSubmissions([])); } }).catch((reason: unknown) => setError(reason instanceof GatewayError ? reason.status : 503)); };
   useEffect(load, [id]);
   useEffect(() => {
     let cancelled = false;
@@ -39,20 +41,21 @@ export function TaskDetail({ id }: { id: string }) {
   if (error) return <ErrorState message="Không thể tải chi tiết công việc." onRetry={load} />;
   if (!task) return <LoadingState />;
   if (isSummary(task)) return <section className={styles.summaryOnly}><h1>{task.title}</h1><p><strong>Ancestor oversight: summary only.</strong> Chỉ hiển thị tổng quan công việc tổ tiên. Bình luận, hoạt động, người tham gia và tài liệu không khả dụng.</p><dl><dt>Trạng thái</dt><dd>{task.status}</dd><dt>Người được giao</dt><dd>{task.assignee ?? 'Chưa giao'}</dd><dt>Deadline</dt><dd>{task.deadline ?? '—'}</dd><dt>Quá hạn</dt><dd>{task.is_overdue ? 'Có' : 'Không'}</dd><dt>Kết quả</dt><dd>{task.completion_result ?? '—'}</dd></dl></section>;
-  return <DirectTask task={task} comments={comments} activity={activity} participants={participants} members={members} reload={load} />;
+  return <DirectTask task={task} comments={comments} activity={activity} participants={participants} submissions={submissions} members={members} reload={load} />;
 }
 
-function DirectTask({ task, comments, activity, participants, members, reload }: { task: Task; comments: TaskComment[]; activity: Activity[]; participants: Participant[]; members: MemberOption[]; reload: () => void }) {
+function DirectTask({ task, comments, activity, participants, submissions, members, reload }: { task: Task; comments: TaskComment[]; activity: Activity[]; participants: Participant[]; submissions: TaskSubmission[]; members: MemberOption[]; reload: () => void }) {
   const [notice, setNotice] = useState('');
   const [tab, setTab] = useState<'activity' | 'comments' | 'review'>('activity');
   const [subtaskOpen, setSubtaskOpen] = useState(false);
   const [creatingSubtask, setCreatingSubtask] = useState(false);
+  const [subtaskFiles, setSubtaskFiles] = useState<File[]>([]);
   const act = async (work: () => Promise<unknown>, success: string, fallback: string) => { try { await work(); setNotice(success); reload(); } catch (error) { setNotice(message(error, fallback)); } };
   const comment = (event: FormEvent<HTMLFormElement>) => { event.preventDefault(); const form = event.currentTarget; const content = String(new FormData(form).get('content')); void act(() => tasksApi.comment(task.id, content), 'Đã đăng bình luận.', 'Không thể đăng bình luận.'); form.reset(); };
   const assign = (event: FormEvent<HTMLFormElement>) => { event.preventDefault(); const assigneeId = String(new FormData(event.currentTarget).get('assignee_id')); void act(() => tasksApi.assign(task.id, assigneeId), 'Đã cập nhật người được giao.', 'Không thể cập nhật người được giao.'); };
   const participant = (event: FormEvent<HTMLFormElement>) => { event.preventDefault(); const form = event.currentTarget; const data = new FormData(form); void act(() => tasksApi.addParticipant(task.id, String(data.get('user_id')), String(data.get('role')) || undefined), 'Đã thêm người tham gia.', 'Không thể thêm người tham gia.'); form.reset(); };
   const submit = (event: FormEvent<HTMLFormElement>) => { event.preventDefault(); const content = String(new FormData(event.currentTarget).get('content')); void act(() => tasksApi.submit(task.id, content), 'Đã nộp kết quả để duyệt.', 'Không thể nộp kết quả.'); };
-  const review = (event: FormEvent<HTMLFormElement>) => { event.preventDefault(); const data = new FormData(event.currentTarget); void act(() => tasksApi.review(String(data.get('submission_id')), String(data.get('decision')) as 'APPROVED' | 'NEED_REVISION' | 'REJECTED', String(data.get('comment')) || undefined), 'Đã ghi nhận phê duyệt.', 'Không thể ghi nhận phê duyệt.'); };
+  const review = (event: FormEvent<HTMLFormElement>) => { event.preventDefault(); const data = new FormData(event.currentTarget); void act(() => tasksApi.review(task.id, String(data.get('submission_id')), String(data.get('decision')) as 'APPROVED' | 'NEED_REVISION' | 'REJECTED', String(data.get('comment')) || undefined), 'Đã ghi nhận phê duyệt.', 'Không thể ghi nhận phê duyệt.'); };
   const createSubtask = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     const form = event.currentTarget;
@@ -60,14 +63,31 @@ function DirectTask({ task, comments, activity, participants, members, reload }:
     const rawDeadline = String(data.get('deadline') ?? '');
     setCreatingSubtask(true);
     try {
-      await tasksApi.create({
+      const createdSubtask = await tasksApi.create({
         title: String(data.get('title')),
         description: String(data.get('description')) || undefined,
         assignee_id: String(data.get('assignee_id')) || undefined,
         deadline: rawDeadline ? new Date(rawDeadline).toISOString() : undefined,
         parent_task_id: task.id,
       });
+      const session = readSession();
+      if (subtaskFiles.length > 0 && session?.userId) {
+        const actors = Array.from(new Set([session.userId, String(data.get('assignee_id')) || undefined].filter((value): value is string => Boolean(value))));
+        const grants = actors.map(actor_id => ({ actor_id, permissions: ['PREVIEW', 'DOWNLOAD'], expires_at: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString() }));
+        for (const file of subtaskFiles) {
+          const uploadData = new FormData();
+          uploadData.set('file', file);
+          uploadData.set('title', file.name.replace(/\.[^.]+$/, '') || file.name);
+          uploadData.set('document_type', file.name.split('.').pop()?.toUpperCase() || file.type || 'FILE');
+          uploadData.set('security_level', String(data.get('security_level') || 'INTERNAL'));
+          uploadData.set('declared_state_secret', 'false');
+          uploadData.set('task_id', createdSubtask.id);
+          uploadData.set('grants', JSON.stringify(grants));
+          await documentsApi.upload(uploadData, percent => setNotice('Uploading sub-task document… ' + percent + '%'));
+        }
+      }
       form.reset();
+      setSubtaskFiles([]);
       setSubtaskOpen(false);
       setNotice('Đã tạo sub-task trong công việc này.');
     } catch {
@@ -78,6 +98,10 @@ function DirectTask({ task, comments, activity, participants, members, reload }:
   };
   const assignee = members.find(member => member.id === task.assignee_id);
   const currentUserId = readSession()?.userId;
+  const isCreator = currentUserId === task.creator_id;
+  const isAssignee = currentUserId === task.assignee_id;
+  const canReview = currentUserId === (task.reviewer_id ?? task.creator_id);
+  const canSubmit = isAssignee;
   const assignableMembers = currentUserId ? members.filter(member => member.id !== currentUserId) : members;
   const finalState = ['APPROVED', 'REJECTED', 'CANCELLED'].includes(task.status);
 
@@ -91,30 +115,30 @@ function DirectTask({ task, comments, activity, participants, members, reload }:
         <TaskDocuments task={task} />
         <TaskChildren parentId={task.id} />
         <section className={styles.collaboration}>
-          <div className={styles.tabs} role="tablist" aria-label="Nội dung công việc"><button className={tab === 'activity' ? styles.activeTab : ''} onClick={() => setTab('activity')} role="tab" aria-selected={tab === 'activity'}>Hoạt động <span>{activity.length}</span></button><button className={tab === 'comments' ? styles.activeTab : ''} onClick={() => setTab('comments')} role="tab" aria-selected={tab === 'comments'}>Bình luận <span>{comments.length}</span></button><button className={tab === 'review' ? styles.activeTab : ''} onClick={() => setTab('review')} role="tab" aria-selected={tab === 'review'}>Nộp &amp; phê duyệt</button></div>
+          <div className={styles.tabs} role="tablist" aria-label="Nội dung công việc"><button className={tab === 'activity' ? styles.activeTab : ''} onClick={() => setTab('activity')} role="tab" aria-selected={tab === 'activity'}>Hoạt động <span>{activity.length}</span></button><button className={tab === 'comments' ? styles.activeTab : ''} onClick={() => setTab('comments')} role="tab" aria-selected={tab === 'comments'}>Bình luận <span>{comments.length}</span></button><button className={`${tab === 'review' ? styles.activeTab : ''} ${!canSubmit && !canReview ? styles.hidden : ''}`} onClick={() => setTab('review')} role="tab" aria-selected={tab === 'review'}>{canSubmit && canReview ? 'Nộp & phê duyệt' : canSubmit ? 'Nộp kết quả' : 'Phê duyệt'}</button></div>
           {tab === 'activity' && <div className={styles.timeline}>{activity.length === 0 ? <p className={styles.emptyText}>Chưa có hoạt động.</p> : activity.map(item => <article key={item.id}><span className={styles.timelineAvatar}>HT</span><div><div><strong>{item.summary}</strong><time>{new Date(item.created_at).toLocaleString('vi-VN')}</time></div><small>{item.activity_type}</small></div></article>)}</div>}
           {tab === 'comments' && <div className={styles.comments}>{comments.map(item => <article key={item.id}><span className={styles.commentAvatar}>NV</span><div><p>{item.content}</p><time>{new Date(item.created_at).toLocaleString('vi-VN')}</time></div></article>)}<form onSubmit={comment}><label htmlFor="comment">Thêm bình luận</label><textarea id="comment" name="content" required placeholder="Viết bình luận hoặc phản hồi…" /><div><button>Gửi bình luận</button></div></form></div>}
-          {tab === 'review' && <div className={styles.reviewGrid}><form className={styles.focusCard} onSubmit={submit}><h3>Nộp kết quả</h3><p>Gửi kết quả công việc để người phụ trách phê duyệt.</p><label>Kết quả<textarea name="content" required /></label><button>Nộp để duyệt</button></form><form className={styles.focusCard} onSubmit={review}><h3>Phê duyệt</h3><label>Submission ID<input name="submission_id" required /></label><label>Quyết định<SearchableSelect name="decision"><option>APPROVED</option><option>NEED_REVISION</option><option>REJECTED</option></SearchableSelect></label><label>Nhận xét <span>Tùy chọn</span><input name="comment" /></label><button>Ghi nhận</button></form></div>}
+          {tab === 'review' && <div className={styles.reviewGrid}><form className={`${styles.focusCard} ${!canSubmit ? styles.hidden : ""}`} onSubmit={submit}><h3>Nộp kết quả</h3><p>Gửi kết quả công việc để người phụ trách phê duyệt.</p><label>Kết quả<textarea name="content" required /></label><button>Nộp để duyệt</button></form><form className={`${styles.focusCard} ${!canReview ? styles.hidden : ""}`} onSubmit={review}><h3>Phê duyệt</h3><label>Submission<SearchableSelect name="submission_id" required defaultValue=""><option value="" disabled>Choose a submission</option>{submissions.map(item => <option key={item.id} value={item.id}>{new Date(item.created_at).toLocaleString("vi-VN")} · {item.status}</option>)}</SearchableSelect></label>{submissions.length === 0 && <small className={styles.inlineHint}>No submissions available.</small>}<label>Quyết định<SearchableSelect name="decision"><option>APPROVED</option><option>NEED_REVISION</option><option>REJECTED</option></SearchableSelect></label><label>Nhận xét <span>Tùy chọn</span><input name="comment" /></label><button>Ghi nhận</button></form></div>}
         </section>
       </div>
 
       <aside className={styles.sideRail}>
         <section className={styles.railCard}>
           <div className={styles.railStatus}><span>Trạng thái</span><strong className={`${styles.statusBadge} ${styles[task.status.toLowerCase()]}`}>{task.blocked ? 'BLOCKED' : statusLabel(task.status)}</strong></div>
-          {(task.status === 'ASSIGNED' || task.status === 'NEED_REVISION') && <button className={styles.startButton} onClick={() => void act(() => tasksApi.status(task.id, 'IN_PROGRESS'), 'Đã bắt đầu công việc.', 'Không thể bắt đầu công việc.')}>Bắt đầu làm</button>}
+          {isAssignee && (task.status === 'ASSIGNED' || task.status === 'NEED_REVISION') && <button className={styles.startButton} onClick={() => void act(() => tasksApi.status(task.id, 'IN_PROGRESS'), 'Đã bắt đầu công việc.', 'Không thể bắt đầu công việc.')}>Bắt đầu làm</button>}
           <button className={styles.subtaskButton} type="button" aria-expanded={subtaskOpen} onClick={() => setSubtaskOpen(value => !value)}>＋ Tạo sub-task</button>
           {subtaskOpen && <form className={styles.subtaskForm} onSubmit={createSubtask}>
             <div className={styles.parentContext}><span>Task cha</span><strong>{task.title}</strong></div>
             <label>Tiêu đề sub-task<input name="title" required autoFocus placeholder="Ví dụ: Kiểm tra phụ lục" /></label>
             <label>Mô tả <span>Tùy chọn</span><textarea name="description" placeholder="Yêu cầu hoặc tiêu chí hoàn thành…" /></label>
             <label>Người được giao<SearchableSelect name="assignee_id" defaultValue=""><option value="">Unassigned</option>{assignableMembers.map(member => <option key={member.id} value={member.id}>{member.email}</option>)}</SearchableSelect></label>
-            <label>Hạn hoàn thành<input name="deadline" type="datetime-local" /></label>
+            <label>Hạn hoàn thành<input name="deadline" type="datetime-local" /></label><label>Task documents<input name="subtask_files" type="file" multiple onChange={event => setSubtaskFiles(Array.from(event.currentTarget.files ?? []))} /></label>{subtaskFiles.length > 0 && <small className={styles.fileHint}>{subtaskFiles.length} file(s) will be attached to this sub-task.</small>}<label>Security level<SearchableSelect name="security_level" defaultValue="INTERNAL"><option>PUBLIC</option><option>INTERNAL</option><option>CONFIDENTIAL</option><option>RESTRICTED</option></SearchableSelect></label>
             <div className={styles.subtaskActions}><button type="button" disabled={creatingSubtask} onClick={() => setSubtaskOpen(false)}>Hủy</button><button type="submit" disabled={creatingSubtask}>{creatingSubtask ? 'Đang tạo…' : 'Tạo sub-task'}</button></div>
           </form>}
           <div className={styles.railBody}>
-            <div className={styles.metaBlock}><span>Người thực hiện</span><div className={styles.person}><i>{initials(assignee?.email || 'U')}</i><strong>{assignee?.email || 'Chưa giao'}</strong></div><form onSubmit={assign}><SearchableSelect name="assignee_id" aria-label="Chọn người thực hiện" defaultValue={task.assignee_id ?? ''} required><option value="">Chọn nhân viên</option>{assignableMembers.map(member => <option key={member.id} value={member.id}>{member.email}</option>)}</SearchableSelect><button>Cập nhật</button></form></div>
+            <div className={styles.metaBlock}><span>Người thực hiện</span><div className={styles.person}><i>{initials(assignee?.email || 'U')}</i><strong>{assignee?.email || 'Chưa giao'}</strong></div><form className={!isCreator ? styles.hidden : undefined} onSubmit={assign}><SearchableSelect name="assignee_id" aria-label="Chọn người thực hiện" defaultValue={task.assignee_id ?? ''} required><option value="">Chọn nhân viên</option>{assignableMembers.map(member => <option key={member.id} value={member.id}>{member.email}</option>)}</SearchableSelect><button>Cập nhật</button></form></div>
             <div className={styles.metaBlock}><span>Hạn hoàn thành</span><strong>◷ {task.deadline ? new Date(task.deadline).toLocaleString('vi-VN') : 'Chưa đặt'}</strong></div>
-            <div className={styles.metaBlock}><span>Người liên quan</span><div className={styles.participantChips}>{participants.map(item => { const member = members.find(option => option.id === item.user_id); return <span key={item.id} title={member?.email || item.user_id}>{initials(member?.email || item.user_id)}</span>; })}{participants.length === 0 && <small>Chưa có người tham gia</small>}</div><form className={styles.participantForm} onSubmit={participant}><SearchableSelect name="user_id" aria-label="Thêm người tham gia" required defaultValue=""><option value="" disabled>Thêm người tham gia</option>{members.map(member => <option key={member.id} value={member.id}>{member.email}</option>)}</SearchableSelect><input name="role" placeholder="Vai trò (tùy chọn)" /><button>+ Thêm</button></form></div>
+            <div className={styles.metaBlock}><span>Người liên quan</span><div className={styles.participantChips}>{participants.map(item => { const member = members.find(option => option.id === item.user_id); return <span key={item.id} title={member?.email || item.user_id}>{initials(member?.email || item.user_id)}</span>; })}{participants.length === 0 && <small>Chưa có người tham gia</small>}</div><form className={`${styles.participantForm} ${!isCreator ? styles.hidden : ""}`} onSubmit={participant}><SearchableSelect name="user_id" aria-label="Thêm người tham gia" required defaultValue=""><option value="" disabled>Thêm người tham gia</option>{members.map(member => <option key={member.id} value={member.id}>{member.email}</option>)}</SearchableSelect><input name="role" placeholder="Vai trò (tùy chọn)" /><button>+ Thêm</button></form></div>
           </div>
           <footer className={styles.railActions}>{!finalState && <button onClick={() => { if (confirm('Hủy công việc này?')) void act(() => tasksApi.status(task.id, 'CANCELLED'), 'Đã hủy công việc.', 'Không thể hủy công việc.'); }}>Hủy nhiệm vụ</button>}<button className={styles.dangerAction} onClick={() => { const reason = prompt('Lý do công việc bị chặn?'); if (reason) void act(() => tasksApi.block(task.id, reason), 'Đã đánh dấu bị chặn.', 'Không thể chặn công việc.'); }}>{task.blocked ? 'Cập nhật lý do chặn' : 'Báo cáo lỗi / Chặn'}</button>{task.blocked && <button onClick={() => void act(() => tasksApi.unblock(task.id), 'Đã bỏ chặn.', 'Không thể bỏ chặn.')}>Bỏ chặn</button>}</footer>
         </section>
