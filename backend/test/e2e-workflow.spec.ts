@@ -102,7 +102,7 @@ describe('E2E core workflow', () => {
 
   describe('2. Task management', () => {
     it('creates a task via API gateway', async () => {
-      const res = await post<{ id: string; title: string }>(
+      const res = await post<{ id: string; title: string; reviewer_id: string | null }>(
         `${GW}/api/tasks`,
         { title: 'E2E test task', description: 'Created by e2e workflow test' },
         accessToken,
@@ -111,7 +111,18 @@ describe('E2E core workflow', () => {
       expect(res.status).toBe(201);
       expect(res.body).toHaveProperty('id');
       expect(res.body.title).toBe('E2E test task');
+      expect(res.body.reviewer_id).toBe(EMP_ID);
       taskId = res.body.id as string;
+    });
+
+    it('rejects assigning the same employee as both assignee and reviewer', async () => {
+      const res = await post(
+        `${GW}/api/tasks`,
+        { title: 'E2E invalid self-review', assignee_id: EMP_ID, reviewer_id: EMP_ID },
+        accessToken,
+      );
+
+      expect(res.status).toBe(400);
     });
 
     it('lists tasks and finds the created task', async () => {

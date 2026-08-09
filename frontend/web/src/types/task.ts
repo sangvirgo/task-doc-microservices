@@ -9,4 +9,4 @@ export interface TaskCommentResult { id: string; created_at: string; }
 export interface TaskSubmissionResult { id: string; status: string; created_at: string; }
 export interface TaskReviewResult { id: string; status: string; }
 export interface TaskSubmission { id: string; task_id: string; author_id: string; content: string; status: string; reviewer_id: string | null; review_comment: string | null; reviewed_at: string | null; created_at: string; }
-export interface CreateTaskInput { title: string; description?: string; assignee_id?: string; parent_task_id?: string; deadline?: string; }
+export interface CreateTaskInput { title: string; description?: string; assignee_id?: string; reviewer_id?: string | null; parent_task_id?: string; deadline?: string; }

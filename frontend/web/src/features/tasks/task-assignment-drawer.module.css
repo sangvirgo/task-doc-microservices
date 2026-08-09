@@ -1,0 +1,26 @@
+.backdrop { position: fixed; inset: 0; z-index: 30; display: flex; justify-content: flex-end; background: rgb(15 23 42 / 38%); }
+.drawer { width: min(100%, 560px); height: 100%; overflow-y: auto; background: #fff; box-shadow: -12px 0 36px rgb(15 23 42 / 18%); }
+.header { position: sticky; top: 0; z-index: 1; display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; padding: 24px 28px 20px; border-bottom: 1px solid #e2e8f0; background: #fff; }
+.eyebrow { color: #64748b; font-size: 12px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; }
+.header h2 { margin: 6px 0 0; color: #0f172a; font-size: 24px; line-height: 1.2; }
+.closeButton { border: 0; background: transparent; color: #64748b; cursor: pointer; font-size: 28px; line-height: 1; }
+.form { display: grid; gap: 18px; padding: 24px 28px 28px; }
+.form label { display: grid; gap: 7px; color: #334155; font-size: 13px; font-weight: 700; }
+.form label span { color: #94a3b8; font-size: 12px; font-weight: 500; }
+.form label strong { color: #dc2626; }
+.form input, .form textarea { width: 100%; box-sizing: border-box; border: 1px solid #cbd5e1; border-radius: 8px; padding: 10px 12px; color: #0f172a; font: inherit; font-weight: 400; }
+.form textarea { resize: vertical; }
+.form input:focus, .form textarea:focus { outline: 3px solid rgb(37 99 235 / 18%); border-color: #2563eb; }
+.fieldGrid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+.parentContext { display: grid; gap: 4px; border-radius: 8px; padding: 12px; background: #f8fafc; color: #475569; }
+.parentContext span { font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; }
+.parentContext strong { color: #0f172a; }
+.conflict, .error { margin: -8px 0 0; border-radius: 8px; padding: 10px 12px; font-size: 13px; }
+.conflict { color: #991b1b; background: #fef2f2; }
+.error { color: #9a3412; background: #fff7ed; }
+.helper { margin: -4px 0 0; color: #64748b; font-size: 13px; line-height: 1.5; }
+.footer { position: sticky; bottom: 0; display: flex; justify-content: flex-end; gap: 10px; margin: 0 -28px -28px; padding: 16px 28px; border-top: 1px solid #e2e8f0; background: rgb(255 255 255 / 96%); }
+.footer button { border: 1px solid #cbd5e1; border-radius: 8px; padding: 10px 16px; background: #fff; color: #334155; cursor: pointer; font: inherit; font-weight: 700; }
+.footer button[type="submit"] { border-color: #2563eb; background: #2563eb; color: #fff; }
+.footer button:disabled { cursor: not-allowed; opacity: .6; }
+@media (max-width: 620px) { .header, .form { padding-left: 18px; padding-right: 18px; } .fieldGrid { grid-template-columns: 1fr; } .footer { margin-left: -18px; margin-right: -18px; padding-left: 18px; padding-right: 18px; } }

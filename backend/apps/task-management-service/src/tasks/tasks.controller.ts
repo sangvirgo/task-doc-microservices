@@ -51,6 +51,7 @@ const createTaskSchema = z.object({
   title: z.string().min(1),
   description: z.string().optional(),
   assignee_id: z.string().uuid().optional(),
+  reviewer_id: z.string().uuid().nullable().optional(),
   parent_task_id: z.string().uuid().optional(),
   deadline: z.string().datetime().optional(),
 });
@@ -198,6 +199,9 @@ export class TasksController {
     if (parsed.data.assignee_id) {
       await this.userRoleClient.assertEmployee(parsed.data.assignee_id);
     }
+    if (parsed.data.reviewer_id) {
+      await this.userRoleClient.assertEmployee(parsed.data.reviewer_id);
+    }
 
     return this.tasksService
       .createTask({
@@ -205,6 +209,7 @@ export class TasksController {
         description: parsed.data.description,
         creator_id: user.userId,
         assignee_id: parsed.data.assignee_id,
+        reviewer_id: parsed.data.reviewer_id,
         parent_task_id: parsed.data.parent_task_id,
         deadline: parsed.data.deadline ? new Date(parsed.data.deadline) : undefined,
         correlation_id: getCorrelationId() ?? randomUUID(),

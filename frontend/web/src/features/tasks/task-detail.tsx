@@ -2,7 +2,6 @@
 /* eslint-disable react-hooks/set-state-in-effect */
 import { FormEvent, useEffect, useState } from 'react';
 import { tasksApi } from '@/api/tasks';
-import { documentsApi } from '@/api/documents';
 import { readSession } from '@/auth/session';
 import { adminApi } from '@/api/admin';
 import type { MemberOption } from '@/types/admin';
@@ -10,9 +9,10 @@ import { ErrorState, LoadingState, PermissionDeniedState } from '@/components/co
 import { GatewayError } from '@/lib/errors';
 import { TaskDocuments } from './task-documents';
 import { TaskChildren } from './task-children';
-import type { Activity, AncestorTaskSummary, Participant, Task, TaskComment, TaskSubmission } from '@/types/task';
+import type { Activity, AncestorTaskSummary, CreateTaskInput, Participant, Task, TaskComment, TaskSubmission } from '@/types/task';
 import styles from './task-detail.module.css';
 import { SearchableSelect } from '@/components/searchable-select';
+import { TaskAssignmentDrawer } from './task-assignment-drawer';
 
 const isSummary = (value: Task | AncestorTaskSummary): value is AncestorTaskSummary => !('id' in value);
 const message = (error: unknown, fallback: string) => error instanceof GatewayError && error.status === 409 ? 'Công việc đã thay đổi. Tải lại và thử lại.' : fallback;
@@ -49,49 +49,22 @@ function DirectTask({ task, comments, activity, participants, submissions, membe
   const [tab, setTab] = useState<'activity' | 'comments' | 'review'>('activity');
   const [subtaskOpen, setSubtaskOpen] = useState(false);
   const [creatingSubtask, setCreatingSubtask] = useState(false);
-  const [subtaskFiles, setSubtaskFiles] = useState<File[]>([]);
+  const [subtaskError, setSubtaskError] = useState('');
   const act = async (work: () => Promise<unknown>, success: string, fallback: string) => { try { await work(); setNotice(success); reload(); } catch (error) { setNotice(message(error, fallback)); } };
   const comment = (event: FormEvent<HTMLFormElement>) => { event.preventDefault(); const form = event.currentTarget; const content = String(new FormData(form).get('content')); void act(() => tasksApi.comment(task.id, content), 'Đã đăng bình luận.', 'Không thể đăng bình luận.'); form.reset(); };
   const assign = (event: FormEvent<HTMLFormElement>) => { event.preventDefault(); const assigneeId = String(new FormData(event.currentTarget).get('assignee_id')); void act(() => tasksApi.assign(task.id, assigneeId), 'Đã cập nhật người được giao.', 'Không thể cập nhật người được giao.'); };
   const participant = (event: FormEvent<HTMLFormElement>) => { event.preventDefault(); const form = event.currentTarget; const data = new FormData(form); void act(() => tasksApi.addParticipant(task.id, String(data.get('user_id')), String(data.get('role')) || undefined), 'Đã thêm người tham gia.', 'Không thể thêm người tham gia.'); form.reset(); };
   const submit = (event: FormEvent<HTMLFormElement>) => { event.preventDefault(); const content = String(new FormData(event.currentTarget).get('content')); void act(() => tasksApi.submit(task.id, content), 'Đã nộp kết quả để duyệt.', 'Không thể nộp kết quả.'); };
   const review = (event: FormEvent<HTMLFormElement>) => { event.preventDefault(); const data = new FormData(event.currentTarget); void act(() => tasksApi.review(task.id, String(data.get('submission_id')), String(data.get('decision')) as 'APPROVED' | 'NEED_REVISION' | 'REJECTED', String(data.get('comment')) || undefined), 'Đã ghi nhận phê duyệt.', 'Không thể ghi nhận phê duyệt.'); };
-  const createSubtask = async (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-    const form = event.currentTarget;
-    const data = new FormData(form);
-    const rawDeadline = String(data.get('deadline') ?? '');
+  const createSubtask = async (input: CreateTaskInput) => {
+    setSubtaskError('');
     setCreatingSubtask(true);
     try {
-      const createdSubtask = await tasksApi.create({
-        title: String(data.get('title')),
-        description: String(data.get('description')) || undefined,
-        assignee_id: String(data.get('assignee_id')) || undefined,
-        deadline: rawDeadline ? new Date(rawDeadline).toISOString() : undefined,
-        parent_task_id: task.id,
-      });
-      const session = readSession();
-      if (subtaskFiles.length > 0 && session?.userId) {
-        const actors = Array.from(new Set([session.userId, String(data.get('assignee_id')) || undefined].filter((value): value is string => Boolean(value))));
-        const grants = actors.map(actor_id => ({ actor_id, permissions: ['PREVIEW', 'DOWNLOAD'], expires_at: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString() }));
-        for (const file of subtaskFiles) {
-          const uploadData = new FormData();
-          uploadData.set('file', file);
-          uploadData.set('title', file.name.replace(/\.[^.]+$/, '') || file.name);
-          uploadData.set('document_type', file.name.split('.').pop()?.toUpperCase() || file.type || 'FILE');
-          uploadData.set('security_level', String(data.get('security_level') || 'INTERNAL'));
-          uploadData.set('declared_state_secret', 'false');
-          uploadData.set('task_id', createdSubtask.id);
-          uploadData.set('grants', JSON.stringify(grants));
-          await documentsApi.upload(uploadData, percent => setNotice('Uploading sub-task document… ' + percent + '%'));
-        }
-      }
-      form.reset();
-      setSubtaskFiles([]);
+      await tasksApi.create({ ...input, parent_task_id: task.id });
       setSubtaskOpen(false);
       setNotice('Đã tạo sub-task trong công việc này.');
     } catch {
-      setNotice('Không thể tạo sub-task. Kiểm tra thông tin và thử lại.');
+      setSubtaskError('Không thể tạo sub-task. Kiểm tra thông tin và thử lại.');
     } finally {
       setCreatingSubtask(false);
     }
@@ -102,6 +75,7 @@ function DirectTask({ task, comments, activity, participants, submissions, membe
   const isAssignee = currentUserId === task.assignee_id;
   const canReview = currentUserId === (task.reviewer_id ?? task.creator_id);
   const canSubmit = isAssignee;
+  const canCreateSubtask = isAssignee;
   const assignableMembers = currentUserId ? members.filter(member => member.id !== currentUserId) : members;
   const finalState = ['APPROVED', 'REJECTED', 'CANCELLED'].includes(task.status);
 
@@ -126,15 +100,9 @@ function DirectTask({ task, comments, activity, participants, submissions, membe
         <section className={styles.railCard}>
           <div className={styles.railStatus}><span>Trạng thái</span><strong className={`${styles.statusBadge} ${styles[task.status.toLowerCase()]}`}>{task.blocked ? 'BLOCKED' : statusLabel(task.status)}</strong></div>
           {isAssignee && (task.status === 'ASSIGNED' || task.status === 'NEED_REVISION') && <button className={styles.startButton} onClick={() => void act(() => tasksApi.status(task.id, 'IN_PROGRESS'), 'Đã bắt đầu công việc.', 'Không thể bắt đầu công việc.')}>Bắt đầu làm</button>}
-          <button className={styles.subtaskButton} type="button" aria-expanded={subtaskOpen} onClick={() => setSubtaskOpen(value => !value)}>＋ Tạo sub-task</button>
-          {subtaskOpen && <form className={styles.subtaskForm} onSubmit={createSubtask}>
-            <div className={styles.parentContext}><span>Task cha</span><strong>{task.title}</strong></div>
-            <label>Tiêu đề sub-task<input name="title" required autoFocus placeholder="Ví dụ: Kiểm tra phụ lục" /></label>
-            <label>Mô tả <span>Tùy chọn</span><textarea name="description" placeholder="Yêu cầu hoặc tiêu chí hoàn thành…" /></label>
-            <label>Người được giao<SearchableSelect name="assignee_id" defaultValue=""><option value="">Unassigned</option>{assignableMembers.map(member => <option key={member.id} value={member.id}>{member.email}</option>)}</SearchableSelect></label>
-            <label>Hạn hoàn thành<input name="deadline" type="datetime-local" /></label><label>Task documents<input name="subtask_files" type="file" multiple onChange={event => setSubtaskFiles(Array.from(event.currentTarget.files ?? []))} /></label>{subtaskFiles.length > 0 && <small className={styles.fileHint}>{subtaskFiles.length} file(s) will be attached to this sub-task.</small>}<label>Security level<SearchableSelect name="security_level" defaultValue="INTERNAL"><option>PUBLIC</option><option>INTERNAL</option><option>CONFIDENTIAL</option><option>RESTRICTED</option></SearchableSelect></label>
-            <div className={styles.subtaskActions}><button type="button" disabled={creatingSubtask} onClick={() => setSubtaskOpen(false)}>Hủy</button><button type="submit" disabled={creatingSubtask}>{creatingSubtask ? 'Đang tạo…' : 'Tạo sub-task'}</button></div>
-          </form>}
+          <button className={styles.subtaskButton} type="button" disabled={!canCreateSubtask} aria-expanded={subtaskOpen} onClick={() => { setSubtaskError(''); setSubtaskOpen(value => !value); }}>＋ Tạo sub-task</button>
+          {!canCreateSubtask && <p className={styles.inlineHint}>Chỉ người được giao task cha mới có thể tạo sub-task.</p>}
+          {subtaskOpen && <TaskAssignmentDrawer currentUserId={currentUserId ?? ''} members={members} parentTask={{ id: task.id, title: task.title }} submitting={creatingSubtask} error={subtaskError} onSubmit={createSubtask} onClose={() => setSubtaskOpen(false)} />}
           <div className={styles.railBody}>
             <div className={styles.metaBlock}><span>Người thực hiện</span><div className={styles.person}><i>{initials(assignee?.email || 'U')}</i><strong>{assignee?.email || 'Chưa giao'}</strong></div><form className={!isCreator ? styles.hidden : undefined} onSubmit={assign}><SearchableSelect name="assignee_id" aria-label="Chọn người thực hiện" defaultValue={task.assignee_id ?? ''} required><option value="">Chọn nhân viên</option>{assignableMembers.map(member => <option key={member.id} value={member.id}>{member.email}</option>)}</SearchableSelect><button>Cập nhật</button></form></div>
             <div className={styles.metaBlock}><span>Hạn hoàn thành</span><strong>◷ {task.deadline ? new Date(task.deadline).toLocaleString('vi-VN') : 'Chưa đặt'}</strong></div>

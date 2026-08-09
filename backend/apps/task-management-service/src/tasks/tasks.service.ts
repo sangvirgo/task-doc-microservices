@@ -185,6 +185,7 @@ export class TasksService {
     description?: string;
     creator_id: string;
     assignee_id?: string;
+    reviewer_id?: string | null;
     parent_task_id?: string;
     deadline?: Date;
     correlation_id?: string;
@@ -196,6 +197,9 @@ export class TasksService {
       }
     }
 
+    const reviewerId = data.reviewer_id ?? data.creator_id;
+    this.assertDistinctAssigneeAndReviewer(data.assignee_id, reviewerId);
+
     const initialStatus: TaskStatus = data.assignee_id ? 'ASSIGNED' : 'CREATED';
     const task = await this.prisma.$transaction(async (tx) => {
       const created = await tx.task.create({
@@ -203,7 +207,7 @@ export class TasksService {
           title: data.title,
           description: data.description || null,
           creator_id: data.creator_id,
-          reviewer_id: data.creator_id,
+          reviewer_id: reviewerId,
           assignee_id: data.assignee_id || null,
           parent_task_id: data.parent_task_id || null,
           deadline: data.deadline || null,
@@ -227,6 +231,18 @@ export class TasksService {
             task_id: created.id,
             user_id: data.assignee_id,
             role: 'ASSIGNEE',
+          },
+        });
+      }
+
+      if (reviewerId !== data.creator_id) {
+        await tx.taskParticipant.upsert({
+          where: { task_id_user_id: { task_id: created.id, user_id: reviewerId } },
+          update: { role: 'REVIEWER' },
+          create: {
+            task_id: created.id,
+            user_id: reviewerId,
+            role: 'REVIEWER',
           },
         });
       }
@@ -385,6 +401,7 @@ export class TasksService {
   async assignReviewer(id: string, reviewer_id: string, assigned_by: string): Promise<TaskDto> {
     const task = await this.requireTask(id);
     this.assertCreator(task, assigned_by);
+    this.assertDistinctAssigneeAndReviewer(task.assignee_id, reviewer_id);
 
     const updated = await this.prisma.$transaction(async (tx) => {
       const nextTask = await tx.task.update({ where: { id }, data: { reviewer_id } });
@@ -459,6 +476,7 @@ export class TasksService {
   async assignTask(id: string, assignee_id: string, assigned_by: string): Promise<TaskDto> {
     const task = await this.requireTask(id);
     this.assertCreator(task, assigned_by);
+    this.assertDistinctAssigneeAndReviewer(assignee_id, task.reviewer_id ?? task.creator_id);
     this.assertNotBlocked(task);
     this.assertNotTerminal(task.status);
 
@@ -1096,6 +1114,15 @@ export class TasksService {
   private assertCreator(task: { creator_id: string }, user_id: string): void {
     if (task.creator_id !== user_id) {
       throw new ForbiddenException('Only the task creator may perform this action');
+    }
+  }
+
+  private assertDistinctAssigneeAndReviewer(
+    assigneeId: string | null | undefined,
+    reviewerId: string | null | undefined,
+  ): void {
+    if (assigneeId && reviewerId && assigneeId === reviewerId) {
+      throw new BadRequestException('The assignee and reviewer must be different users');
     }
   }
 

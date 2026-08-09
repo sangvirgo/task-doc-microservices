@@ -175,6 +175,7 @@ describe('Task authorization integration (PostgreSQL)', () => {
   async function seedTask(options?: {
     creatorId?: string;
     assigneeId?: string | null;
+    reviewerId?: string | null;
     explicitParticipantId?: string;
     parentTaskId?: string | null;
     status?: string;
@@ -190,6 +191,7 @@ describe('Task authorization integration (PostgreSQL)', () => {
         status: options?.status ?? 'IN_PROGRESS',
         creator_id: options?.creatorId ?? EMPLOYEE_ID,
         assignee_id: options?.assigneeId ?? SECOND_EMPLOYEE_ID,
+        reviewer_id: options?.reviewerId ?? null,
         parent_task_id: options?.parentTaskId ?? null,
         deadline: options?.deadline ?? null,
         blocked: options?.blocked ?? false,
@@ -248,6 +250,52 @@ describe('Task authorization integration (PostgreSQL)', () => {
       .send({ title: 'Allowed employee task' });
 
     expect(res.status).toBe(201);
+    expect(res.body.status).toBe('CREATED');
+    expect(res.body.reviewer_id).toBe(EMPLOYEE_ID);
+  });
+
+  it('creates a task with an explicit reviewer and adds that reviewer as a participant', async () => {
+    const res = await request(app.getHttpServer())
+      .post('/tasks')
+      .set(authHeaders(EMPLOYEE_ID, 'EMPLOYEE'))
+      .send({
+        title: 'Explicit reviewer task',
+        assignee_id: SECOND_EMPLOYEE_ID,
+        reviewer_id: THIRD_EMPLOYEE_ID,
+      });
+
+    expect(res.status).toBe(201);
+    expect(res.body).toEqual(
+      expect.objectContaining({
+        status: 'ASSIGNED',
+        assignee_id: SECOND_EMPLOYEE_ID,
+        reviewer_id: THIRD_EMPLOYEE_ID,
+      }),
+    );
+
+    const participants = await request(app.getHttpServer())
+      .get(`/tasks/${res.body.id}/participants`)
+      .set(authHeaders(EMPLOYEE_ID, 'EMPLOYEE'));
+    expect(participants.status).toBe(200);
+    expect(participants.body.items).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ user_id: THIRD_EMPLOYEE_ID, role: 'REVIEWER' }),
+      ]),
+    );
+  });
+
+  it('rejects a task whose assignee and reviewer are the same user', async () => {
+    const res = await request(app.getHttpServer())
+      .post('/tasks')
+      .set(authHeaders(EMPLOYEE_ID, 'EMPLOYEE'))
+      .send({
+        title: 'Self review must be rejected',
+        assignee_id: SECOND_EMPLOYEE_ID,
+        reviewer_id: SECOND_EMPLOYEE_ID,
+      });
+
+    expect(res.status).toBe(400);
+    expect(res.body.message).toContain('assignee and reviewer');
   });
 
   it('denies non-participant task detail view', async () => {
@@ -351,6 +399,28 @@ describe('Task authorization integration (PostgreSQL)', () => {
       .set(authHeaders(THIRD_EMPLOYEE_ID, 'EMPLOYEE'));
     expect(detail.status).toBe(200);
     expect(detail.body.reviewer_id).toBe(THIRD_EMPLOYEE_ID);
+  });
+
+  it('rejects changing the reviewer to the current assignee', async () => {
+    const taskId = await seedTask({ reviewerId: EMPLOYEE_ID });
+
+    const res = await request(app.getHttpServer())
+      .put(`/tasks/${taskId}/reviewer`)
+      .set(authHeaders(EMPLOYEE_ID, 'EMPLOYEE'))
+      .send({ reviewer_id: SECOND_EMPLOYEE_ID });
+
+    expect(res.status).toBe(400);
+  });
+
+  it('rejects changing the assignee to the current reviewer', async () => {
+    const taskId = await seedTask({ reviewerId: THIRD_EMPLOYEE_ID });
+
+    const res = await request(app.getHttpServer())
+      .post(`/tasks/${taskId}/assign`)
+      .set(authHeaders(EMPLOYEE_ID, 'EMPLOYEE'))
+      .send({ assignee_id: THIRD_EMPLOYEE_ID });
+
+    expect(res.status).toBe(400);
   });
 
   it('returns completion metrics from direct child task approvals', async () => {

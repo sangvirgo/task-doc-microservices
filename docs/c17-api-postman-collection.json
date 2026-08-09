@@ -1034,7 +1034,7 @@
                 "tasks"
               ]
             },
-            "description": "The seeded task creator creates a task. The response ID is saved to {{taskId}}. Status starts as CREATED; it must be assigned before work can start."
+            "description": "The seeded task creator creates a task. The response ID is saved to {{taskId}}. Without reviewer_id, the creator is persisted as the default reviewer. Status starts as CREATED; it must be assigned before work can start."
           },
           "event": [
             {
@@ -1048,6 +1048,7 @@
                   "  pm.expect(res.id).to.be.a('string');",
                   "  pm.expect(res.status).to.eql('CREATED');",
                   "  pm.expect(res.creator_id).to.eql(pm.collectionVariables.get('empId'));",
+                  "  pm.expect(res.reviewer_id).to.eql(pm.collectionVariables.get('empId'));",
                   "  pm.collectionVariables.set('taskId', res.id);",
                   "});"
                 ]
@@ -1622,6 +1623,7 @@
                       "  pm.expect(res.status).to.eql('ASSIGNED');",
                       "  pm.expect(res.creator_id).to.eql(pm.collectionVariables.get('empId'));",
                       "  pm.expect(res.assignee_id).to.eql(pm.collectionVariables.get('assigneeId'));",
+                      "  pm.expect(res.reviewer_id).to.eql(pm.collectionVariables.get('empId'));",
                       "  pm.expect(res.parent_task_id).to.eql(null);",
                       "  pm.collectionVariables.set('hierarchyParentTaskId', res.id);",
                       "});"
@@ -1716,6 +1718,7 @@
                       "  pm.expect(res.id).to.be.a('string');",
                       "  pm.expect(res.creator_id).to.eql(pm.collectionVariables.get('assigneeId'));",
                       "  pm.expect(res.assignee_id).to.eql(pm.collectionVariables.get('archivistId'));",
+                      "  pm.expect(res.reviewer_id).to.eql(pm.collectionVariables.get('assigneeId'));",
                       "  pm.expect(res.parent_task_id).to.eql(pm.collectionVariables.get('hierarchyParentTaskId'));",
                       "  pm.expect(res.status).to.eql('ASSIGNED');",
                       "  pm.collectionVariables.set('hierarchyChildOneTaskId', res.id);",
@@ -1767,6 +1770,7 @@
                       "  pm.expect(res.id).to.be.a('string');",
                       "  pm.expect(res.creator_id).to.eql(pm.collectionVariables.get('assigneeId'));",
                       "  pm.expect(res.assignee_id).to.eql(pm.collectionVariables.get('archivistId'));",
+                      "  pm.expect(res.reviewer_id).to.eql(pm.collectionVariables.get('assigneeId'));",
                       "  pm.expect(res.parent_task_id).to.eql(pm.collectionVariables.get('hierarchyParentTaskId'));",
                       "  pm.expect(res.status).to.eql('ASSIGNED');",
                       "  pm.collectionVariables.set('hierarchyChildTwoTaskId', res.id);",

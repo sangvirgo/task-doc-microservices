@@ -51,7 +51,7 @@ describe('Task outbox relay integration (PostgreSQL)', () => {
     const task = await tasksService.createTask({
       title: 'Outbox-backed task',
       creator_id: creatorId,
-      assignee_id: creatorId,
+      assignee_id: randomUUID(),
       deadline: new Date('2026-07-30T09:00:00.000Z'),
       correlation_id: correlationId,
     });

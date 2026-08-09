@@ -1,4 +1,4 @@
-import { ForbiddenException } from '@nestjs/common';
+import { BadRequestException, ForbiddenException } from '@nestjs/common';
 
 import { TasksService } from '../src/tasks/tasks.service';
 
@@ -69,6 +69,24 @@ function makeService() {
 }
 
 describe('TasksService review and metadata rules', () => {
+  it('rejects assigning the current reviewer as the assignee', async () => {
+    const { service, prisma } = makeService();
+
+    await expect(service.assignTask(TASK_ID, CREATOR_ID, CREATOR_ID)).rejects.toBeInstanceOf(
+      BadRequestException,
+    );
+    expect(prisma.$transaction).not.toHaveBeenCalled();
+  });
+
+  it('rejects assigning the current assignee as the reviewer', async () => {
+    const { service, prisma } = makeService();
+
+    await expect(service.assignReviewer(TASK_ID, ASSIGNEE_ID, CREATOR_ID)).rejects.toBeInstanceOf(
+      BadRequestException,
+    );
+    expect(prisma.$transaction).not.toHaveBeenCalled();
+  });
+
   it('rejects metadata updates by anyone except the creator', async () => {
     const { service, prisma } = makeService();
 
