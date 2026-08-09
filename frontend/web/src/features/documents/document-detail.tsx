@@ -100,14 +100,14 @@ export function DocumentDetail({ id, taskId }: { id: string; taskId?: string }) 
 
   const latestVersion = useMemo(() => versions.find(item => item.version === document?.current_version) ?? versions.at(-1), [document?.current_version, versions]);
   const activePermissions = permissionsByTask[activeTaskId] ?? [];
-  const canDownload = Boolean(activeTaskId) && activePermissions.includes('DOWNLOAD') && previewCapabilities?.download !== false;
+  const canPreview = Boolean(activeTaskId) && activePermissions.includes('PREVIEW'); const canDownload = Boolean(activeTaskId) && activePermissions.includes('DOWNLOAD') && previewCapabilities?.download !== false;
 
   const closePreview = () => {
     setPreviewVersion(undefined);
     setPreviewCapabilities(undefined);
   };
 
-  const openPreview = (version: number) => {
+  const openPreview = (version: number) => { if (!canPreview) { setStatus('Bạn không có quyền PREVIEW trong task đang chọn.'); return; }
     setPreviewCapabilities(undefined);
     setPreviewVersion(version);
     setStatus('Đang chuẩn bị các trang xem trước có watermark…');
@@ -148,14 +148,14 @@ export function DocumentDetail({ id, taskId }: { id: string; taskId?: string }) 
     <header className={styles.documentHero}>
       <div className={styles.documentHeroIcon}>▧</div>
       <div className={styles.documentHeroCopy}><span className={styles.documentEyebrow}>Secure document · v{document.current_version}</span><h1>{document.title}</h1><div className={styles.documentChips}><span>{document.document_type}</span><span className={styles[`level${document.security_level}`]}>{document.security_level}</span><span className={styles.statusChip}>{document.status}</span></div></div>
-      <div className={styles.heroActions}><button type="button" disabled={!latestVersion || Boolean(busy)} onClick={() => latestVersion && openPreview(latestVersion.version)}>◉ Xem trước</button><button type="button" disabled={!latestVersion || contextsLoading || !canDownload || Boolean(busy)} onClick={() => latestVersion && void download(latestVersion)}>⇩ Tải bản mới nhất</button></div>
+      <div className={styles.heroActions}>{canPreview && <button type="button" disabled={!latestVersion || !canPreview || Boolean(busy)} onClick={() => latestVersion && openPreview(latestVersion.version)}>◉ Xem trước</button>}<button type="button" disabled={contextsLoading || !canDownload || Boolean(busy)} title={!canDownload ? 'Bạn không có quyền DOWNLOAD' : undefined} onClick={() => latestVersion && void download(latestVersion)}>Tải bản mới nhất</button></div>
     </header>
 
     <div className={styles.documentDetailGrid}>
       <main className={styles.documentMainColumn}>
-        {previewVersion ? <DocumentPreview documentId={id} version={previewVersion} taskId={activeTaskId || undefined} onClose={closePreview} onCapabilitiesChange={setPreviewCapabilities} /> : <section className={styles.previewEmpty}><span>◎</span><h2>Xem trước tài liệu an toàn</h2><p>Nội dung được backend render thành từng trang có watermark. Luồng PREVIEW không tạo download ticket và không gửi file gốc.</p><button type="button" disabled={!latestVersion || Boolean(busy)} onClick={() => latestVersion && openPreview(latestVersion.version)}>Xem trước an toàn</button></section>}
+        {previewVersion ? <DocumentPreview documentId={id} version={previewVersion} taskId={activeTaskId || undefined} onClose={closePreview} onCapabilitiesChange={setPreviewCapabilities} /> : <section className={styles.previewEmpty}><span>◎</span><h2>Xem trước tài liệu an toàn</h2><p>Nội dung được backend render thành từng trang có watermark. Luồng PREVIEW không tạo download ticket và không gửi file gốc.</p>{canPreview && <button type="button" disabled={!latestVersion || !canPreview || Boolean(busy)} onClick={() => latestVersion && openPreview(latestVersion.version)}>Xem trước an toàn</button>}</section>}
 
-        <section className={styles.versionPanel}><div className={styles.panelHeading}><div><span>Lịch sử tài liệu</span><h2>Các phiên bản</h2></div><strong>{versions.length} phiên bản</strong></div><div className={styles.versionTableWrap}><table><thead><tr><th>Phiên bản</th><th>MIME type</th><th>Kích thước</th><th>Hành động</th></tr></thead><tbody>{versions.map(version => <tr key={version.id}><td><span className={styles.versionBadge}>v{version.version}</span>{version.version === document.current_version && <small>Mới nhất</small>}</td><td>{version.mime_type}</td><td>{version.file_size.toLocaleString()} bytes</td><td><div className={styles.rowActions}><button type="button" disabled={Boolean(busy)} onClick={() => openPreview(version.version)}>Xem trước</button><button type="button" disabled={contextsLoading || !canDownload || Boolean(busy)} onClick={() => void download(version)}>{busy === `download-${version.id}` ? 'Đang tải…' : 'Tải xuống'}</button></div></td></tr>)}</tbody></table></div></section>
+        <section className={styles.versionPanel}><div className={styles.panelHeading}><div><span>Lịch sử tài liệu</span><h2>Các phiên bản</h2></div><strong>{versions.length} phiên bản</strong></div><div className={styles.versionTableWrap}><table><thead><tr><th>Phiên bản</th><th>MIME type</th><th>Kích thước</th><th>Hành động</th></tr></thead><tbody>{versions.map(version => <tr key={version.id}><td><span className={styles.versionBadge}>v{version.version}</span>{version.version === document.current_version && <small>Mới nhất</small>}</td><td>{version.mime_type}</td><td>{version.file_size.toLocaleString()} bytes</td><td><div className={styles.rowActions}>{canPreview && <button type="button" disabled={!canPreview || Boolean(busy)} onClick={() => openPreview(version.version)}>Xem trước</button>}<button type="button" disabled={contextsLoading || !canDownload || Boolean(busy)} title={!canDownload ? 'Bạn không có quyền DOWNLOAD' : undefined} onClick={() => void download(version)}>{busy === 'download-' + version.id ? 'Đang tải…' : 'Tải xuống'}</button></div></td></tr>)}</tbody></table></div></section>
       </main>
 
       <aside className={styles.documentSideColumn}>

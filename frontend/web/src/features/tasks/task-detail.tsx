@@ -7,6 +7,7 @@ import type { MemberOption } from '@/types/admin';
 import { ErrorState, LoadingState, PermissionDeniedState } from '@/components/common-states';
 import { GatewayError } from '@/lib/errors';
 import { TaskDocuments } from './task-documents';
+import { TaskChildren } from './task-children';
 import type { Activity, AncestorTaskSummary, Participant, Task, TaskComment } from '@/types/task';
 import styles from './task-detail.module.css';
 import { SearchableSelect } from '@/components/searchable-select';
@@ -85,6 +86,7 @@ function DirectTask({ task, comments, activity, participants, members, reload }:
         {notice && <p className={styles.notice} role="status">{notice}</p>}
         <section className={styles.overviewCard}><h2>Tổng quan tiến độ</h2><div><article><span>Trạng thái</span><strong>{statusLabel(task.status)}</strong></article><article><span>Tiến độ</span><strong>{task.blocked ? 'Đang bị chặn' : task.is_overdue ? 'Quá hạn' : 'Đúng tiến độ'}</strong></article><article><span>Cập nhật</span><strong>{new Date(task.updated_at).toLocaleDateString('vi-VN')}</strong></article></div></section>
         <TaskDocuments task={task} />
+        <TaskChildren parentId={task.id} />
         <section className={styles.collaboration}>
           <div className={styles.tabs} role="tablist" aria-label="Nội dung công việc"><button className={tab === 'activity' ? styles.activeTab : ''} onClick={() => setTab('activity')} role="tab" aria-selected={tab === 'activity'}>Hoạt động <span>{activity.length}</span></button><button className={tab === 'comments' ? styles.activeTab : ''} onClick={() => setTab('comments')} role="tab" aria-selected={tab === 'comments'}>Bình luận <span>{comments.length}</span></button><button className={tab === 'review' ? styles.activeTab : ''} onClick={() => setTab('review')} role="tab" aria-selected={tab === 'review'}>Nộp &amp; phê duyệt</button></div>
           {tab === 'activity' && <div className={styles.timeline}>{activity.length === 0 ? <p className={styles.emptyText}>Chưa có hoạt động.</p> : activity.map(item => <article key={item.id}><span className={styles.timelineAvatar}>HT</span><div><div><strong>{item.summary}</strong><time>{new Date(item.created_at).toLocaleString('vi-VN')}</time></div><small>{item.activity_type}</small></div></article>)}</div>}

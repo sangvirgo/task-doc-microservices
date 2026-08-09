@@ -27,4 +27,4 @@
 .previewPage{position:relative;max-width:100%;margin:0;background:#fff;box-shadow:0 4px 18px rgb(0 0 0 / 30%)}
 .previewPage img{display:block;max-width:100%;height:auto;user-select:none}
 .previewPage figcaption{padding:.35rem;text-align:center;background:#7f1d1d;color:#fff;font-size:.62rem;font-weight:700;letter-spacing:.04em}
-@media(max-width:767px){.previewHeader{flex-direction:column}.previewHeader button{align-self:flex-end}}
+@media(max-width:767px){.previewHeader{flex-direction:column}.previewHeader button{align-self:flex-end}}.permissionHint{color:#6b778c;font-size:.62rem;font-weight:700}

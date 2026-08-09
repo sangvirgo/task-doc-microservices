@@ -3,6 +3,7 @@ import type { Activity, AncestorTaskSummary, CreateTaskInput, Participant, Task,
 
 export const tasksApi = {
   list: (filters: Record<string, string> = {}) => gatewayClient.getList<Task>(`/tasks${Object.keys(filters).length ? `?${new URLSearchParams(filters)}` : ''}`),
+  children: (parentTaskId: string) => gatewayClient.getList<Task>(`/tasks?parent_task_id=${encodeURIComponent(parentTaskId)}`),
   get: (id: string) => gatewayClient.get<Task | AncestorTaskSummary>(`/tasks/${encodeURIComponent(id)}`),
   create: (input: CreateTaskInput) => gatewayClient.post<Task>('/tasks', input),
   assign: (id: string, assignee_id: string) => gatewayClient.post<Task>(`/tasks/${encodeURIComponent(id)}/assign`, { assignee_id }),

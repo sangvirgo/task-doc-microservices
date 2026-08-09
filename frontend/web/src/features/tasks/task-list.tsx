@@ -12,6 +12,7 @@ import { EmptyState, ErrorState, LoadingState } from '@/components/common-states
 import type { Task, TaskStatus } from '@/types/task';
 import styles from './tasks.module.css';
 import { SearchableSelect } from '@/components/searchable-select';
+import { RecursiveSubtaskEditor, createBlankSubtask, type SubtaskDraft } from './recursive-subtask-editor';
 
 const filters: TaskStatus[] = ['CREATED', 'ASSIGNED', 'IN_PROGRESS', 'WAITING_REVIEW', 'APPROVED', 'NEED_REVISION', 'REJECTED', 'CANCELLED'];
 const boardColumns: TaskStatus[] = ['CREATED', 'ASSIGNED', 'IN_PROGRESS', 'WAITING_REVIEW', 'APPROVED'];
@@ -21,7 +22,6 @@ const initials = (value: string) => value.split(/[@ ._-]/).filter(Boolean).slice
 const dueLabel = (value: string | null) => value ? new Date(value).toLocaleDateString(undefined, { month: 'short', day: 'numeric' }) : 'Chưa có hạn';
 const documentType = (file: File) => file.name.split('.').pop()?.toUpperCase() || file.type || 'FILE';
 const documentTitle = (file: File) => file.name.replace(/\.[^.]+$/, '') || file.name;
-interface SubtaskDraft { key: number; title: string; assignee_id: string; deadline: string; }
 
 export function TaskList() {
   const [items, setItems] = useState<Task[] | null>(null);
@@ -100,24 +100,28 @@ export function TaskList() {
     }
 
     const subtaskFailures: string[] = [];
-    for (let index = 0; index < subtasks.length; index += 1) {
-      const subtask = subtasks[index];
-      setNotice(`Đang tạo sub-task ${index + 1}/${subtasks.length}: ${subtask.title}`);
-      try {
-        await tasksApi.create({
-          title: subtask.title.trim(),
-          assignee_id: subtask.assignee_id || undefined,
-          deadline: subtask.deadline ? new Date(subtask.deadline).toISOString() : undefined,
-          parent_task_id: created.id,
-        });
-      } catch {
-        subtaskFailures.push(subtask.title);
-      }
-    }
-
-    const expiresAt = rawExpiry ? new Date(rawExpiry).toISOString() : '';
-    const documentGrants = actorIds.map(actor_id => ({ actor_id, permissions, expires_at: expiresAt }));
     const uploadFailures: string[] = [];
+    const createSubtaskTree = async (draft: SubtaskDraft, parentId: string, label: string): Promise<void> => {
+      setNotice('Đang tạo ' + label + ': ' + draft.title);
+      let createdSubtask: Task;
+      try {
+        createdSubtask = await tasksApi.create({ title: draft.title.trim(), assignee_id: draft.assignee_id || undefined, deadline: draft.deadline ? new Date(draft.deadline).toISOString() : undefined, parent_task_id: parentId });
+      } catch { subtaskFailures.push(draft.title); return; }
+      const actors = Array.from(new Set([readSession()?.userId, draft.assignee_id].filter((value): value is string => Boolean(value))));
+      const uploaderId = readSession()?.userId; const grants = draft.expires_at ? actors.map(actor_id => ({ actor_id, permissions: actor_id === uploaderId ? Array.from(new Set([...draft.permissions, 'PREVIEW', 'DOWNLOAD'])) : draft.permissions, expires_at: new Date(draft.expires_at).toISOString() })) : [];
+      for (const file of draft.files) {
+        const uploadData = new FormData();
+        uploadData.set('file', file); uploadData.set('title', documentTitle(file)); uploadData.set('document_type', documentType(file)); uploadData.set('security_level', draft.security_level); uploadData.set('declared_state_secret', 'false'); uploadData.set('task_id', createdSubtask.id); uploadData.set('grants', JSON.stringify(grants));
+        try {
+          const result = await documentsApi.upload(uploadData, percent => setNotice('Đang tải tài liệu của ' + draft.title + ': ' + percent + '%'));
+          if (!result.association || result.association.task_id !== createdSubtask.id) await documentsApi.attachToTask(createdSubtask.id, result.document.id, grants);
+        } catch (reason) { const detail = reason instanceof GatewayError ? reason.status + ': ' + reason.message : 'lỗi kết nối'; uploadFailures.push(file.name + ' (' + detail + ')'); }
+      }
+      for (let index = 0; index < draft.children.length; index += 1) await createSubtaskTree(draft.children[index], createdSubtask.id, label + '.' + (index + 1));
+    };
+    for (let index = 0; index < subtasks.length; index += 1) await createSubtaskTree(subtasks[index], created.id, 'sub-task ' + (index + 1));
+    const expiresAt = rawExpiry ? new Date(rawExpiry).toISOString() : '';
+    const uploaderId = readSession()?.userId; const documentGrants = actorIds.map(actor_id => ({ actor_id, permissions: actor_id === uploaderId ? Array.from(new Set([...permissions, 'PREVIEW', 'DOWNLOAD'])) : permissions, expires_at: expiresAt }));
     for (let index = 0; index < files.length; index += 1) {
       const file = files[index];
       const uploadData = new FormData();
@@ -190,7 +194,7 @@ export function TaskList() {
 
     {composerOpen && <div className={styles.createDrawerBackdrop} role="presentation" onMouseDown={event => { if (!uploading && event.target === event.currentTarget) setComposerOpen(false); }}><section className={styles.createDrawer} role="dialog" aria-modal="true" aria-labelledby="create-task-title"><div className={styles.drawerHeader}><div><span className={styles.modalEyebrow}>Task command center</span><h2 id="create-task-title">Tạo công việc mới</h2><p>Tạo công việc trước, sau đó gắn các tài liệu bằng task_id vừa nhận.</p></div><button className={styles.closeButton} type="button" disabled={uploading} onClick={() => setComposerOpen(false)} aria-label="Đóng">×</button></div><form onSubmit={create}>
       <section className={styles.drawerSection}><h3>Thông tin công việc</h3><label>Tiêu đề công việc<input name="title" autoFocus required placeholder="Ví dụ: Rà soát phụ lục 2" /></label><label>Mô tả chi tiết <span className={styles.optional}>Tùy chọn</span><textarea name="description" placeholder="Yêu cầu, hướng dẫn hoặc tiêu chí hoàn thành..." /></label><div className={styles.formGrid}><label>Người được giao<SearchableSelect name="assignee_id" required={files.length > 0}><option value="">Unassigned</option>{members.map(member => <option key={member.id} value={member.id}>{member.email}</option>)}</SearchableSelect></label><label>Hạn hoàn thành<input name="deadline" type="datetime-local" /></label></div></section>
-      <section className={`${styles.drawerSection} ${styles.subtaskSection}`}><div className={styles.sectionTitle}><div><h3>Sub-task</h3><p>Tạo các công việc con cùng lúc với task cha, giống luồng LarkSuite.</p></div><span>{subtasks.length} task con</span></div><button className={styles.addSubtaskButton} type="button" onClick={() => setSubtasks(current => [...current, { key: (current.at(-1)?.key ?? 0) + 1, title: '', assignee_id: '', deadline: '' }])}>＋ Thêm sub-task</button>{subtasks.length === 0 ? <div className={styles.subtaskEmpty}><span>↳</span><p>Chưa có task con. Bạn có thể tạo sau từ trang chi tiết task cha.</p></div> : <div className={styles.subtaskDrafts}>{subtasks.map((subtask, index) => <article className={styles.subtaskDraft} key={subtask.key}><div className={styles.subtaskNumber}>{index + 1}</div><div className={styles.subtaskFields}><label>Tiêu đề sub-task<input required value={subtask.title} placeholder="Ví dụ: Kiểm tra phụ lục" onChange={event => setSubtasks(current => current.map(item => item.key === subtask.key ? { ...item, title: event.target.value } : item))} /></label><div className={styles.formGrid}><label>Người được giao<SearchableSelect value={subtask.assignee_id} onChange={event => setSubtasks(current => current.map(item => item.key === subtask.key ? { ...item, assignee_id: event.target.value } : item))}><option value="">Unassigned</option>{members.map(member => <option key={member.id} value={member.id}>{member.email}</option>)}</SearchableSelect></label><label>Hạn hoàn thành<input type="datetime-local" value={subtask.deadline} onChange={event => setSubtasks(current => current.map(item => item.key === subtask.key ? { ...item, deadline: event.target.value } : item))} /></label></div></div><button className={styles.removeSubtaskButton} type="button" aria-label={`Xóa sub-task ${index + 1}`} onClick={() => setSubtasks(current => current.filter(item => item.key !== subtask.key))}>×</button></article>)}</div>}</section>      <section className={styles.drawerSection}><div className={styles.sectionTitle}><div><h3>Tài liệu đính kèm</h3><p>Tùy chọn · chọn nhiều tệp, tối đa 25 MB mỗi tệp.</p></div><span>{files.length} tệp</span></div><label className={styles.multiDropzone}><input type="file" multiple onChange={event => { const selected = Array.from(event.currentTarget.files ?? []); event.currentTarget.value = ''; addFiles(selected); }} /><span className={styles.uploadGlyph}>⇧</span><strong>Kéo thả hoặc chọn nhiều tài liệu</strong><small>PDF, Word, Excel, ảnh hoặc văn bản</small></label>{files.length > 0 && <ul className={styles.selectedFiles}>{files.map((file, index) => <li key={`${file.name}-${file.lastModified}`}><span className={styles.fileIcon}>▧</span><span><strong>{file.name}</strong><small>{Math.ceil(file.size / 1024)} KB</small></span><button type="button" aria-label={`Xóa ${file.name}`} onClick={() => setFiles(current => current.filter((_, itemIndex) => itemIndex !== index))}>×</button></li>)}</ul>}<div className={styles.formGrid}><label>Mức bảo mật<SearchableSelect name="security_level" defaultValue="INTERNAL"><option>PUBLIC</option><option>INTERNAL</option><option>CONFIDENTIAL</option><option>RESTRICTED</option></SearchableSelect></label><label>Hết hạn truy cập<input name="expires_at" type="datetime-local" required={files.length > 0} /></label></div><div className={styles.grantBox}><div><strong>Người nhận quyền</strong><span>Người tạo và người được giao (actor_id)</span></div><fieldset><legend>Quyền truy cập</legend>{grantPermissions.map(permission => <label key={permission}><input type="checkbox" name="permissions" value={permission} defaultChecked={permission !== 'SHARE'} /> {permission}</label>)}</fieldset></div></section>
+      <section className={`${styles.drawerSection} ${styles.subtaskSection}`}><div className={styles.sectionTitle}><div><h3>Sub-task</h3><p>Tạo các công việc con cùng lúc với task cha, giống luồng LarkSuite.</p></div><span>{subtasks.length} task con</span></div><button className={styles.addSubtaskButton} type="button" onClick={() => setSubtasks(current => [...current, createBlankSubtask(Date.now() + Math.random())])}>＋ Thêm sub-task</button>{subtasks.length === 0 ? <div className={styles.subtaskEmpty}><span>↳</span><p>Chưa có task con. Bạn có thể tạo sau từ trang chi tiết task cha.</p></div> : <RecursiveSubtaskEditor value={subtasks} onChange={setSubtasks} members={members} />}</section>      <section className={styles.drawerSection}><div className={styles.sectionTitle}><div><h3>Tài liệu đính kèm</h3><p>Tùy chọn · chọn nhiều tệp, tối đa 25 MB mỗi tệp.</p></div><span>{files.length} tệp</span></div><label className={styles.multiDropzone}><input type="file" multiple onChange={event => { const selected = Array.from(event.currentTarget.files ?? []); event.currentTarget.value = ''; addFiles(selected); }} /><span className={styles.uploadGlyph}>⇧</span><strong>Kéo thả hoặc chọn nhiều tài liệu</strong><small>PDF, Word, Excel, ảnh hoặc văn bản</small></label>{files.length > 0 && <ul className={styles.selectedFiles}>{files.map((file, index) => <li key={`${file.name}-${file.lastModified}`}><span className={styles.fileIcon}>▧</span><span><strong>{file.name}</strong><small>{Math.ceil(file.size / 1024)} KB</small></span><button type="button" aria-label={`Xóa ${file.name}`} onClick={() => setFiles(current => current.filter((_, itemIndex) => itemIndex !== index))}>×</button></li>)}</ul>}<div className={styles.formGrid}><label>Mức bảo mật<SearchableSelect name="security_level" defaultValue="INTERNAL"><option>PUBLIC</option><option>INTERNAL</option><option>CONFIDENTIAL</option><option>RESTRICTED</option></SearchableSelect></label><label>Hết hạn truy cập<input name="expires_at" type="datetime-local" required={files.length > 0} /></label></div><div className={styles.grantBox}><div><strong>Người nhận quyền</strong><span>Người tạo và người được giao (actor_id)</span></div><fieldset><legend>Quyền truy cập</legend>{grantPermissions.map(permission => <label key={permission}><input type="checkbox" name="permissions" value={permission} defaultChecked={permission !== 'SHARE'} /> {permission}</label>)}</fieldset></div></section>
       <div className={styles.drawerFooter}><span>{uploading ? notice || 'Đang xử lý…' : `Sẽ tạo 1 task cha${subtasks.length ? ` + ${subtasks.length} sub-task` : ''}${files.length ? ` + ${files.length} tài liệu` : ''}.`}</span><div><button className={styles.cancelButton} type="button" disabled={uploading} onClick={() => setComposerOpen(false)}>Hủy</button><button className={styles.primaryButton} type="submit" disabled={uploading}>{uploading ? 'Đang xử lý…' : files.length > 0 ? `Tạo & tải ${files.length} tệp` : 'Tạo công việc'} <span>→</span></button></div></div>
     </form></section></div>}
   </section>;
