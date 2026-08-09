@@ -2,6 +2,7 @@
 /* eslint-disable react-hooks/set-state-in-effect */
 import { FormEvent, useEffect, useState } from 'react';
 import { tasksApi } from '@/api/tasks';
+import { readSession } from '@/auth/session';
 import { adminApi } from '@/api/admin';
 import type { MemberOption } from '@/types/admin';
 import { ErrorState, LoadingState, PermissionDeniedState } from '@/components/common-states';
@@ -76,6 +77,8 @@ function DirectTask({ task, comments, activity, participants, members, reload }:
     }
   };
   const assignee = members.find(member => member.id === task.assignee_id);
+  const currentUserId = readSession()?.userId;
+  const assignableMembers = currentUserId ? members.filter(member => member.id !== currentUserId) : members;
   const finalState = ['APPROVED', 'REJECTED', 'CANCELLED'].includes(task.status);
 
   return <section className={styles.page}>
@@ -104,12 +107,12 @@ function DirectTask({ task, comments, activity, participants, members, reload }:
             <div className={styles.parentContext}><span>Task cha</span><strong>{task.title}</strong></div>
             <label>Tiêu đề sub-task<input name="title" required autoFocus placeholder="Ví dụ: Kiểm tra phụ lục" /></label>
             <label>Mô tả <span>Tùy chọn</span><textarea name="description" placeholder="Yêu cầu hoặc tiêu chí hoàn thành…" /></label>
-            <label>Người được giao<SearchableSelect name="assignee_id" defaultValue=""><option value="">Unassigned</option>{members.map(member => <option key={member.id} value={member.id}>{member.email}</option>)}</SearchableSelect></label>
+            <label>Người được giao<SearchableSelect name="assignee_id" defaultValue=""><option value="">Unassigned</option>{assignableMembers.map(member => <option key={member.id} value={member.id}>{member.email}</option>)}</SearchableSelect></label>
             <label>Hạn hoàn thành<input name="deadline" type="datetime-local" /></label>
             <div className={styles.subtaskActions}><button type="button" disabled={creatingSubtask} onClick={() => setSubtaskOpen(false)}>Hủy</button><button type="submit" disabled={creatingSubtask}>{creatingSubtask ? 'Đang tạo…' : 'Tạo sub-task'}</button></div>
           </form>}
           <div className={styles.railBody}>
-            <div className={styles.metaBlock}><span>Người thực hiện</span><div className={styles.person}><i>{initials(assignee?.email || 'U')}</i><strong>{assignee?.email || 'Chưa giao'}</strong></div><form onSubmit={assign}><SearchableSelect name="assignee_id" aria-label="Chọn người thực hiện" defaultValue={task.assignee_id ?? ''} required><option value="">Chọn nhân viên</option>{members.map(member => <option key={member.id} value={member.id}>{member.email}</option>)}</SearchableSelect><button>Cập nhật</button></form></div>
+            <div className={styles.metaBlock}><span>Người thực hiện</span><div className={styles.person}><i>{initials(assignee?.email || 'U')}</i><strong>{assignee?.email || 'Chưa giao'}</strong></div><form onSubmit={assign}><SearchableSelect name="assignee_id" aria-label="Chọn người thực hiện" defaultValue={task.assignee_id ?? ''} required><option value="">Chọn nhân viên</option>{assignableMembers.map(member => <option key={member.id} value={member.id}>{member.email}</option>)}</SearchableSelect><button>Cập nhật</button></form></div>
             <div className={styles.metaBlock}><span>Hạn hoàn thành</span><strong>◷ {task.deadline ? new Date(task.deadline).toLocaleString('vi-VN') : 'Chưa đặt'}</strong></div>
             <div className={styles.metaBlock}><span>Người liên quan</span><div className={styles.participantChips}>{participants.map(item => { const member = members.find(option => option.id === item.user_id); return <span key={item.id} title={member?.email || item.user_id}>{initials(member?.email || item.user_id)}</span>; })}{participants.length === 0 && <small>Chưa có người tham gia</small>}</div><form className={styles.participantForm} onSubmit={participant}><SearchableSelect name="user_id" aria-label="Thêm người tham gia" required defaultValue=""><option value="" disabled>Thêm người tham gia</option>{members.map(member => <option key={member.id} value={member.id}>{member.email}</option>)}</SearchableSelect><input name="role" placeholder="Vai trò (tùy chọn)" /><button>+ Thêm</button></form></div>
           </div>
