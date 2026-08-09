@@ -9,6 +9,7 @@ import type { Capability, SystemRole } from '@c17/contracts';
  */
 export interface AuthContext {
   readonly userId: string;
+  readonly email?: string;
   readonly role: SystemRole;
   readonly capabilities: readonly Capability[];
   readonly sessionId: string;

@@ -221,9 +221,10 @@ export class GatewayController {
 
       // Forward authenticated user context as internal headers
       const user = (req as unknown as Record<string, unknown>)['user'] as
-        { userId: string; role: string; capabilities: string[] } | undefined;
+        { userId: string; email?: string; role: string; capabilities: string[] } | undefined;
       if (user) {
         headers['x-user-id'] = user.userId;
+        if (user.email) headers['x-user-email'] = user.email;
         headers['x-user-role'] = user.role;
         headers['x-user-capabilities'] = JSON.stringify(user.capabilities);
       }

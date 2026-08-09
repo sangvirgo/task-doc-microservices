@@ -2,7 +2,7 @@ import type { WatermarkComposition, WatermarkInput, WatermarkLayer } from './pre
 
 export function composeWatermark(input: WatermarkInput): WatermarkComposition {
   const timestamp = input.renderedAt.toISOString();
-  const text = `PREVIEW ONLY — NO DOWNLOAD | ${input.actorLabel} | ${input.documentId} | v${input.version} | ${timestamp} | ${input.sessionId} | page ${input.page}`;
+  const text = `PREVIEW ONLY — NO DOWNLOAD | ${input.actorLabel} | VIEWED AT: ${timestamp} | ${input.documentId} | v${input.version} | ${input.sessionId} | page ${input.page}`;
   const seed = hash(`${input.sessionId}:${input.documentId}:${input.version}:${input.page}`);
   const rotation = ((seed % 11) - 5) * 1.5;
 
@@ -27,7 +27,7 @@ export function composeWatermark(input: WatermarkInput): WatermarkComposition {
     },
     {
       kind: 'footer',
-      text: `${input.actorLabel} · ${timestamp} · page ${input.page}`,
+      text: `${input.actorLabel} · VIEWED AT: ${timestamp} · page ${input.page}`,
       opacity: 0.72,
       rotation: 0,
     },
