@@ -310,6 +310,107 @@ export class PermissionService {
     return grants.length;
   }
 
+  async listTaskDocumentGrants(
+    task_id: string,
+    resource_id: string,
+    pagination: PaginationQuery = DEFAULT_PAGINATION,
+  ): Promise<PaginatedResponse<GrantDto>> {
+    if (!(await this.taskDocumentClient.exists(task_id, resource_id))) {
+      throw new BadRequestException('A grant requires a valid task-document association');
+    }
+    return this.listGrants(
+      { task_id, resource_type: ResourceType.DOCUMENT, resource_id },
+      pagination,
+    );
+  }
+
+  async updateTaskDocumentGrant(data: {
+    grant_id: string;
+    task_id: string;
+    resource_id: string;
+    permissions?: string[];
+    expires_at?: Date;
+    caller_id: string;
+  }): Promise<GrantDto> {
+    const grant = await this.prisma.grant.findUnique({ where: { id: data.grant_id } });
+    if (!grant) throw new NotFoundException('Grant not found');
+    this.assertTaskDocumentGrant(grant, data.task_id, data.resource_id);
+    if (grant.grantor_id !== data.caller_id) {
+      throw new ForbiddenException('Only the grantor may update this grant');
+    }
+    if (grant.status !== 'ACTIVE' || grant.revoked_at) {
+      throw new BadRequestException('Only an ACTIVE grant may be updated');
+    }
+    if (!(await this.taskDocumentClient.exists(data.task_id, data.resource_id))) {
+      throw new BadRequestException('A grant requires a valid task-document association');
+    }
+
+    const nextPermissions = data.permissions ?? grant.permissions;
+    this.assertKnownPermissions(nextPermissions);
+    if (data.expires_at && data.expires_at.getTime() <= Date.now()) {
+      throw new BadRequestException('Grant expiration must be in the future');
+    }
+
+    const children = await this.prisma.grant.findMany({
+      where: { parent_grant_id: data.grant_id },
+      select: { id: true, permissions: true },
+    });
+    for (const child of children) {
+      if (child.permissions.some((permission) => !nextPermissions.includes(permission))) {
+        throw new BadRequestException(
+          'Grant permissions cannot be reduced below a delegated child',
+        );
+      }
+    }
+
+    const taskContext = await this.taskContextClient.getContext(data.task_id);
+    const parent = grant.parent_grant_id
+      ? await this.prisma.grant.findUnique({ where: { id: grant.parent_grant_id } })
+      : null;
+    if (parent) {
+      this.assertPermissionSubset(nextPermissions, parent.permissions);
+    }
+    const taskDeadline = taskContext.task.deadline
+      ? new Date(taskContext.task.deadline)
+      : undefined;
+    const nextExpiresAt = data.expires_at ?? grant.expires_at;
+    const effectiveExpiresAt = earliestDate(
+      nextExpiresAt,
+      taskDeadline,
+      parent?.effective_expires_at,
+    );
+    if (effectiveExpiresAt.getTime() <= Date.now()) {
+      throw new BadRequestException('Grant is already expired under the task or parent grant');
+    }
+
+    const updated = await this.prisma.grant.update({
+      where: { id: data.grant_id },
+      data: {
+        permissions: nextPermissions,
+        expires_at: nextExpiresAt,
+        effective_expires_at: effectiveExpiresAt,
+      },
+    });
+    await this.shortenDescendantExpiries(data.grant_id, effectiveExpiresAt);
+    return this.toDto(updated);
+  }
+
+  async revokeTaskDocumentGrant(data: {
+    grant_id: string;
+    task_id: string;
+    resource_id: string;
+    reason: string;
+    caller_id: string;
+  }): Promise<GrantDto> {
+    const grant = await this.prisma.grant.findUnique({ where: { id: data.grant_id } });
+    if (!grant) throw new NotFoundException('Grant not found');
+    this.assertTaskDocumentGrant(grant, data.task_id, data.resource_id);
+    if (grant.grantor_id !== data.caller_id) {
+      throw new ForbiddenException('Only the grantor may revoke this grant');
+    }
+    return this.revokeGrant(data.grant_id, data.reason);
+  }
+
   async revokeGrant(grant_id: string, revocation_reason?: string): Promise<GrantDto> {
     const grant = await this.prisma.grant.findUnique({ where: { id: grant_id } });
     if (!grant) throw new NotFoundException('Grant not found');
@@ -445,6 +546,44 @@ export class PermissionService {
   private assertKnownPermissions(permissions: string[]): void {
     if (permissions.some((permission) => !isPermissionAction(permission))) {
       throw new BadRequestException('Grant contains an invalid permission action');
+    }
+  }
+
+  private assertTaskDocumentGrant(
+    grant: { resource_type: string; resource_id: string; task_id: string },
+    taskId: string,
+    resourceId: string,
+  ): void {
+    if (
+      grant.resource_type !== ResourceType.DOCUMENT ||
+      grant.resource_id !== resourceId ||
+      grant.task_id !== taskId
+    ) {
+      throw new NotFoundException('Task-document grant not found');
+    }
+  }
+
+  private async shortenDescendantExpiries(
+    grantId: string,
+    effectiveExpiresAt: Date,
+  ): Promise<void> {
+    const pending = [grantId];
+    while (pending.length > 0) {
+      const parentId = pending.shift();
+      if (!parentId) continue;
+      const children = await this.prisma.grant.findMany({
+        where: { parent_grant_id: parentId },
+        select: { id: true, effective_expires_at: true },
+      });
+      for (const child of children) {
+        if (child.effective_expires_at.getTime() > effectiveExpiresAt.getTime()) {
+          await this.prisma.grant.update({
+            where: { id: child.id },
+            data: { effective_expires_at: effectiveExpiresAt },
+          });
+        }
+        pending.push(child.id);
+      }
     }
   }
 

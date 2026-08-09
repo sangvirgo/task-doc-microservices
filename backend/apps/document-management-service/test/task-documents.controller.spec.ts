@@ -26,6 +26,9 @@ describe('TaskDocumentsController', () => {
     attach: jest.fn(),
     list: jest.fn(),
     addGrant: jest.fn(),
+    listGrants: jest.fn(),
+    updateGrant: jest.fn(),
+    revokeGrant: jest.fn(),
     detach: jest.fn(),
   };
 
@@ -132,6 +135,58 @@ describe('TaskDocumentsController', () => {
       TASK_ID,
       DOCUMENT_ID,
       expect.objectContaining({ userId: EMPLOYEE_ID }),
+    );
+  });
+
+  it('exposes per-grant list, update, and revoke routes', async () => {
+    service.listGrants.mockResolvedValue({
+      items: [],
+      pagination: {
+        page: 1,
+        page_size: 20,
+        total: 0,
+        total_pages: 0,
+        has_next: false,
+        has_previous: false,
+      },
+    });
+    service.updateGrant.mockResolvedValue({ id: 'grant-1', status: 'ACTIVE' });
+    service.revokeGrant.mockResolvedValue({ id: 'grant-1', status: 'REVOKED' });
+
+    await request(app.getHttpServer())
+      .get(`/tasks/${TASK_ID}/documents/${DOCUMENT_ID}/grants`)
+      .set(authHeaders())
+      .expect(200);
+    await request(app.getHttpServer())
+      .patch(`/tasks/${TASK_ID}/documents/${DOCUMENT_ID}/grants/grant-1`)
+      .set(authHeaders())
+      .send({ permissions: ['PREVIEW'], expires_at: EXPIRY })
+      .expect(200);
+    await request(app.getHttpServer())
+      .delete(`/tasks/${TASK_ID}/documents/${DOCUMENT_ID}/grants/grant-1`)
+      .set(authHeaders())
+      .send({ reason: 'No longer needed' })
+      .expect(200);
+
+    expect(service.listGrants).toHaveBeenCalledWith(
+      TASK_ID,
+      DOCUMENT_ID,
+      expect.objectContaining({ userId: EMPLOYEE_ID }),
+      { page: 1, page_size: 20 },
+    );
+    expect(service.updateGrant).toHaveBeenCalledWith(
+      TASK_ID,
+      DOCUMENT_ID,
+      'grant-1',
+      { permissions: ['PREVIEW'], expires_at: EXPIRY },
+      expect.objectContaining({ userId: EMPLOYEE_ID }),
+    );
+    expect(service.revokeGrant).toHaveBeenCalledWith(
+      TASK_ID,
+      DOCUMENT_ID,
+      'grant-1',
+      expect.objectContaining({ userId: EMPLOYEE_ID }),
+      'No longer needed',
     );
   });
 });

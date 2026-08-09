@@ -9,6 +9,7 @@ import {
   HttpStatus,
   Param,
   Post,
+  Patch,
   Query,
 } from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
@@ -34,6 +35,18 @@ const attachSchema = z
     grants: z.array(grantSchema).min(1),
   })
   .strict();
+
+const grantUpdateSchema = z
+  .object({
+    permissions: z.array(z.string()).min(1).optional(),
+    expires_at: z.string().datetime().optional(),
+  })
+  .strict()
+  .refine((value) => value.permissions !== undefined || value.expires_at !== undefined, {
+    message: 'At least one grant field must be changed',
+  });
+
+const grantRevokeSchema = z.object({ reason: z.string().min(1).optional() }).strict();
 
 function parsePagination(page?: string, page_size?: string): PaginationQuery {
   const parsed = paginationQuerySchema.safeParse({ page, page_size });
@@ -104,6 +117,65 @@ export class TaskDocumentsController {
     @CurrentUser() user?: AuthContext,
   ): Promise<void> {
     await this.taskDocumentsService.detach(taskId, documentId, this.requireUser(user));
+  }
+
+  @Get(':taskId/documents/:documentId/grants')
+  @ApiOperation({ summary: 'List grants for one task-document association' })
+  async listGrants(
+    @Param('taskId') taskId: string,
+    @Param('documentId') documentId: string,
+    @CurrentUser() user?: AuthContext,
+    @Query('page') page?: string,
+    @Query('page_size') page_size?: string,
+  ) {
+    return this.taskDocumentsService.listGrants(
+      taskId,
+      documentId,
+      this.requireUser(user),
+      parsePagination(page, page_size),
+    );
+  }
+
+  @Patch(':taskId/documents/:documentId/grants/:grantId')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Update one task-document grant' })
+  async updateGrant(
+    @Param('taskId') taskId: string,
+    @Param('documentId') documentId: string,
+    @Param('grantId') grantId: string,
+    @Body() body: unknown,
+    @CurrentUser() user?: AuthContext,
+  ) {
+    const parsed = grantUpdateSchema.safeParse(body);
+    if (!parsed.success) throw new BadRequestException(parsed.error.issues);
+    return this.taskDocumentsService.updateGrant(
+      taskId,
+      documentId,
+      grantId,
+      parsed.data,
+      this.requireUser(user),
+    );
+  }
+
+  @Delete(':taskId/documents/:documentId/grants/:grantId')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Revoke one task-document grant' })
+  async revokeGrant(
+    @Param('taskId') taskId: string,
+    @Param('documentId') documentId: string,
+    @Param('grantId') grantId: string,
+    @Body() body: unknown,
+    @CurrentUser() user?: AuthContext,
+  ) {
+    const parsed = grantRevokeSchema.safeParse(body ?? {});
+    if (!parsed.success) throw new BadRequestException(parsed.error.issues);
+    return this.taskDocumentsService.revokeGrant(
+      taskId,
+      documentId,
+      grantId,
+      this.requireUser(user),
+      parsed.data.reason,
+    );
   }
 
   private requireUser(user?: AuthContext): AuthContext {

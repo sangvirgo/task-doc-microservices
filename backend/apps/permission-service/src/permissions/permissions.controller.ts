@@ -9,6 +9,7 @@ import {
   Inject,
   Optional,
   Param,
+  Patch,
   Delete,
   Query,
   ForbiddenException,
@@ -68,6 +69,28 @@ const taskDocumentGrantSchema = z
   .strict();
 
 const revokeTaskDocumentGrantsSchema = z
+  .object({
+    task_id: z.string().uuid(),
+    resource_type: z.literal('DOCUMENT'),
+    resource_id: z.string().uuid(),
+    reason: z.string().min(1),
+  })
+  .strict();
+
+const taskDocumentGrantUpdateSchema = z
+  .object({
+    task_id: z.string().uuid(),
+    resource_type: z.literal('DOCUMENT'),
+    resource_id: z.string().uuid(),
+    permissions: z.array(z.string()).min(1).optional(),
+    expires_at: z.string().datetime().optional(),
+  })
+  .strict()
+  .refine((value) => value.permissions !== undefined || value.expires_at !== undefined, {
+    message: 'At least one grant field must be changed',
+  });
+
+const taskDocumentGrantRevokeSchema = z
   .object({
     task_id: z.string().uuid(),
     resource_type: z.literal('DOCUMENT'),
@@ -141,7 +164,9 @@ export class PermissionsController {
     if (!parsed.success) throw new BadRequestException(parsed.error.issues);
 
     const caller = this.caller(req);
-    if (!caller) throw new ForbiddenException('Trusted caller context is required');
+    if (!caller || caller.role === 'ADMIN') {
+      throw new ForbiddenException('Trusted employee context is required');
+    }
     if (caller.role === 'ADMIN') {
       throw new ForbiddenException('ADMIN cannot create document content grants');
     }
@@ -169,6 +194,78 @@ export class PermissionsController {
       parsed.data.reason,
     );
     return { revoked };
+  }
+
+  @Get('internal/grants/task-document')
+  @ApiOperation({ summary: 'List grants for one task-document association' })
+  async listTaskDocumentGrants(
+    @Query('task_id') task_id: string,
+    @Query('resource_id') resource_id: string,
+    @Query('page') page?: string,
+    @Query('page_size') page_size?: string,
+    @Req() req?: Request,
+  ): Promise<unknown> {
+    const caller = this.caller(req);
+    if (!caller || caller.role === 'ADMIN') {
+      throw new ForbiddenException('Trusted employee context is required');
+    }
+    const parsed = z
+      .object({ task_id: z.string().uuid(), resource_id: z.string().uuid() })
+      .safeParse({ task_id, resource_id });
+    if (!parsed.success) throw new BadRequestException(parsed.error.issues);
+    const pagination = paginationQuerySchema.safeParse({ page, page_size });
+    if (!pagination.success) throw new BadRequestException(pagination.error.issues);
+    return this.permissionService.listTaskDocumentGrants(
+      parsed.data.task_id,
+      parsed.data.resource_id,
+      pagination.data,
+    );
+  }
+
+  @Patch('internal/grants/task-document/:id')
+  @ApiOperation({ summary: 'Update one task-document grant' })
+  async updateTaskDocumentGrant(
+    @Param('id') id: string,
+    @Body() body: unknown,
+    @Req() req: Request,
+  ): Promise<GrantDto> {
+    const parsed = taskDocumentGrantUpdateSchema.safeParse(body);
+    if (!parsed.success) throw new BadRequestException(parsed.error.issues);
+    const caller = this.caller(req);
+    if (!caller || caller.role === 'ADMIN') {
+      throw new ForbiddenException('Trusted employee context is required');
+    }
+    return this.permissionService.updateTaskDocumentGrant({
+      grant_id: id,
+      task_id: parsed.data.task_id,
+      resource_id: parsed.data.resource_id,
+      permissions: parsed.data.permissions,
+      expires_at: parsed.data.expires_at ? new Date(parsed.data.expires_at) : undefined,
+      caller_id: caller.userId,
+    });
+  }
+
+  @Delete('internal/grants/task-document/:id')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Revoke one task-document grant' })
+  async revokeTaskDocumentGrant(
+    @Param('id') id: string,
+    @Body() body: unknown,
+    @Req() req: Request,
+  ): Promise<GrantDto> {
+    const parsed = taskDocumentGrantRevokeSchema.safeParse(body);
+    if (!parsed.success) throw new BadRequestException(parsed.error.issues);
+    const caller = this.caller(req);
+    if (!caller || caller.role === 'ADMIN') {
+      throw new ForbiddenException('Trusted employee context is required');
+    }
+    return this.permissionService.revokeTaskDocumentGrant({
+      grant_id: id,
+      task_id: parsed.data.task_id,
+      resource_id: parsed.data.resource_id,
+      reason: parsed.data.reason,
+      caller_id: caller.userId,
+    });
   }
 
   @Post('grants')

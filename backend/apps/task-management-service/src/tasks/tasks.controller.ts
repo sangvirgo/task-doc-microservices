@@ -7,7 +7,9 @@ import {
   HttpCode,
   HttpStatus,
   Param,
+  Patch,
   Post,
+  Put,
   Query,
 } from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
@@ -23,7 +25,13 @@ import {
 } from '@c17/contracts';
 import { getCorrelationId } from '@c17/observability';
 
-import { AncestorTaskSummaryDto, TasksService, TaskDto, TaskContextDto } from './tasks.service';
+import {
+  AncestorTaskSummaryDto,
+  TasksService,
+  TaskDto,
+  TaskContextDto,
+  TaskSubmissionDto,
+} from './tasks.service';
 import { PermissionClient } from '../permissions/permission.client';
 import { AuditClient } from '../audit/audit.client';
 import { UserRoleClient } from '../users/user-role.client';
@@ -51,6 +59,16 @@ const updateStatusSchema = z.object({
   status: lifecycleStatusSchema,
   reason: z.string().optional(),
 });
+
+const updateTaskSchema = z
+  .object({
+    title: z.string().min(1).optional(),
+    description: z.string().nullable().optional(),
+    deadline: z.string().datetime().nullable().optional(),
+  })
+  .strict();
+
+const reviewerSchema = z.object({ reviewer_id: z.string().uuid() }).strict();
 
 const assignSchema = z.object({
   assignee_id: z.string().uuid(),
@@ -201,6 +219,51 @@ export class TasksController {
         });
         return task;
       });
+  }
+
+  @Patch(':id')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Edit task metadata; creator only' })
+  async updateTask(
+    @Param('id') taskId: string,
+    @Body() body: z.infer<typeof updateTaskSchema>,
+    @CurrentUser() user?: AuthContext,
+  ): Promise<TaskDto> {
+    if (!user) throw new ForbiddenException('Authentication required');
+    const parsed = updateTaskSchema.safeParse(body);
+    if (!parsed.success) throw new BadRequestException(parsed.error.issues);
+    await this.assertPermission(user, PermissionAction.TASK_MODIFY, taskId);
+    return this.tasksService.updateTaskMetadata(
+      taskId,
+      user.userId,
+      {
+        title: parsed.data.title,
+        description: parsed.data.description,
+        deadline:
+          parsed.data.deadline === undefined
+            ? undefined
+            : parsed.data.deadline === null
+              ? null
+              : new Date(parsed.data.deadline),
+      },
+      getCorrelationId() ?? randomUUID(),
+    );
+  }
+
+  @Put(':id/reviewer')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Assign the explicit task reviewer; creator only' })
+  async assignReviewer(
+    @Param('id') taskId: string,
+    @Body() body: z.infer<typeof reviewerSchema>,
+    @CurrentUser() user?: AuthContext,
+  ): Promise<TaskDto> {
+    if (!user) throw new ForbiddenException('Authentication required');
+    const parsed = reviewerSchema.safeParse(body);
+    if (!parsed.success) throw new BadRequestException(parsed.error.issues);
+    await this.assertPermission(user, PermissionAction.TASK_MODIFY, taskId);
+    await this.userRoleClient.assertEmployee(parsed.data.reviewer_id);
+    return this.tasksService.assignReviewer(taskId, parsed.data.reviewer_id, user.userId);
   }
 
   @Post(':id/status')
@@ -401,6 +464,54 @@ export class TasksController {
       user.userId,
       decision,
       parsed.data.comment,
+    );
+  }
+
+  @Get(':id/submissions')
+  @ApiOperation({ summary: 'List task submissions for the submitter or reviewer' })
+  async getSubmissions(
+    @Param('id') taskId: string,
+    @CurrentUser() user?: AuthContext,
+    @Query('page') page?: string,
+    @Query('page_size') page_size?: string,
+  ) {
+    if (!user) throw new ForbiddenException('Authentication required');
+    await this.assertPermission(user, PermissionAction.TASK_VIEW, taskId);
+    return this.tasksService.getSubmissions(taskId, user.userId, parsePagination(page, page_size));
+  }
+
+  @Get(':id/submissions/:submission_id')
+  @ApiOperation({ summary: 'Get one task submission for the submitter or reviewer' })
+  async getSubmission(
+    @Param('id') taskId: string,
+    @Param('submission_id') submissionId: string,
+    @CurrentUser() user?: AuthContext,
+  ): Promise<TaskSubmissionDto> {
+    if (!user) throw new ForbiddenException('Authentication required');
+    await this.assertPermission(user, PermissionAction.TASK_VIEW, taskId);
+    return this.tasksService.getSubmission(taskId, submissionId, user.userId);
+  }
+
+  @Post(':id/submissions/:submission_id/review')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Review one submission belonging to the task' })
+  async reviewTaskSubmission(
+    @Param('id') taskId: string,
+    @Param('submission_id') submissionId: string,
+    @Body() body: z.infer<typeof reviewSchema>,
+    @CurrentUser() user?: AuthContext,
+  ) {
+    if (!user) throw new ForbiddenException('Authentication required');
+    const parsed = reviewSchema.safeParse(body);
+    if (!parsed.success) throw new BadRequestException(parsed.error.issues);
+    await this.assertPermission(user, PermissionAction.TASK_REVIEW, taskId);
+    const decision = parsed.data.decision ?? (parsed.data.approved ? 'APPROVED' : 'REJECTED');
+    return this.tasksService.reviewSubmission(
+      submissionId,
+      user.userId,
+      decision,
+      parsed.data.comment,
+      taskId,
     );
   }
 

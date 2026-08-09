@@ -31,6 +31,14 @@ export class NotificationEventsConsumer implements OnModuleInit, OnApplicationSh
         process.env.RABBITMQ_URL || 'amqp://guest:guest@localhost:5672',
         logger,
       ),
+      new AmqpEventConsumer(
+        process.env.RABBITMQ_URL || 'amqp://guest:guest@localhost:5672',
+        logger,
+      ),
+      new AmqpEventConsumer(
+        process.env.RABBITMQ_URL || 'amqp://guest:guest@localhost:5672',
+        logger,
+      ),
     ];
   }
 
@@ -164,6 +172,78 @@ export class NotificationEventsConsumer implements OnModuleInit, OnApplicationSh
               typeof event.payload.effective_expires_at === 'string'
                 ? event.payload.effective_expires_at
                 : null,
+          },
+        });
+      },
+    );
+
+    this.consumers[4].subscribe(
+      {
+        consumer: 'notification-service',
+        concern: 'task-submitted',
+        queue: queueName('notification-service', 'task-submitted'),
+        routingKey: EventType.TASK_SUBMITTED,
+        retryDelayMs: 1_000,
+        maxAttempts: 3,
+      },
+      async (event) => {
+        await this.createNotificationsForEvent({
+          eventId: event.event_id,
+          eventType: event.event_type,
+          resourceId: event.resource_id,
+          recipientId:
+            typeof event.payload.reviewer_id === 'string' ? event.payload.reviewer_id : null,
+          channels: { inApp: true, email: false },
+          notificationType: 'TASK_SUBMITTED_FOR_REVIEW',
+          title: 'Task submission needs review',
+          body:
+            typeof event.payload.title === 'string'
+              ? `A submission for task "${event.payload.title}" is ready for your review.`
+              : 'A task submission is ready for your review.',
+          metadata: {
+            task_id: typeof event.payload.task_id === 'string' ? event.payload.task_id : null,
+            submission_id:
+              typeof event.payload.submission_id === 'string'
+                ? event.payload.submission_id
+                : event.resource_id,
+            correlation_id: event.correlation_id,
+          },
+        });
+      },
+    );
+
+    this.consumers[5].subscribe(
+      {
+        consumer: 'notification-service',
+        concern: 'task-reviewed',
+        queue: queueName('notification-service', 'task-reviewed'),
+        routingKey: EventType.TASK_REVIEWED,
+        retryDelayMs: 1_000,
+        maxAttempts: 3,
+      },
+      async (event) => {
+        const decision =
+          typeof event.payload.decision === 'string' ? event.payload.decision : 'REVIEWED';
+        await this.createNotificationsForEvent({
+          eventId: event.event_id,
+          eventType: event.event_type,
+          resourceId: event.resource_id,
+          recipientId: typeof event.payload.author_id === 'string' ? event.payload.author_id : null,
+          channels: { inApp: true, email: false },
+          notificationType: 'TASK_REVIEWED',
+          title: `Task submission ${decision.toLowerCase().replace('_', ' ')}`,
+          body:
+            typeof event.payload.title === 'string'
+              ? `Your submission for task "${event.payload.title}" was ${decision.toLowerCase().replace('_', ' ')}.`
+              : `Your task submission was ${decision.toLowerCase().replace('_', ' ')}.`,
+          metadata: {
+            task_id: typeof event.payload.task_id === 'string' ? event.payload.task_id : null,
+            submission_id:
+              typeof event.payload.submission_id === 'string'
+                ? event.payload.submission_id
+                : event.resource_id,
+            decision,
+            correlation_id: event.correlation_id,
           },
         });
       },

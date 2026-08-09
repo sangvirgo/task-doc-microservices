@@ -122,6 +122,77 @@ describe('Notification event consumer integration (PostgreSQL + RabbitMQ)', () =
     expect(notifications).toHaveLength(1);
   });
 
+  it('notifies the configured reviewer when a task submission is created', async () => {
+    const reviewerId = randomUUID();
+    const taskId = randomUUID();
+    const submissionId = randomUUID();
+    const envelope = buildEventEnvelope({
+      event_id: randomUUID(),
+      event_type: EventType.TASK_SUBMITTED,
+      occurred_at: '2026-08-09T10:00:00.000Z',
+      producer: 'task-management-service',
+      correlation_id: randomUUID(),
+      actor_id: randomUUID(),
+      resource_type: 'TASK_SUBMISSION',
+      resource_id: submissionId,
+      payload: {
+        task_id: taskId,
+        submission_id: submissionId,
+        reviewer_id: reviewerId,
+        title: 'Child task review',
+      },
+    });
+
+    publishEnvelope(channel, envelope);
+    await waitFor(async () => {
+      return (await prisma.notification.count({ where: { recipient_id: reviewerId } })) === 1;
+    });
+
+    await expect(
+      prisma.notification.findFirst({ where: { recipient_id: reviewerId } }),
+    ).resolves.toEqual(
+      expect.objectContaining({
+        type: 'TASK_SUBMITTED_FOR_REVIEW',
+        body: expect.stringContaining('Child task review'),
+      }),
+    );
+  });
+
+  it('notifies the submitter with the review decision without leaking review content', async () => {
+    const authorId = randomUUID();
+    const reviewComment = 'Internal reviewer note must not be published';
+    const envelope = buildEventEnvelope({
+      event_id: randomUUID(),
+      event_type: EventType.TASK_REVIEWED,
+      occurred_at: '2026-08-09T10:05:00.000Z',
+      producer: 'task-management-service',
+      correlation_id: randomUUID(),
+      actor_id: randomUUID(),
+      resource_type: 'TASK_SUBMISSION',
+      resource_id: randomUUID(),
+      payload: {
+        task_id: randomUUID(),
+        submission_id: randomUUID(),
+        author_id: authorId,
+        decision: 'NEED_REVISION',
+        title: 'Child task review',
+        review_comment: reviewComment,
+      },
+    });
+
+    publishEnvelope(channel, envelope);
+    await waitFor(async () => {
+      return (await prisma.notification.count({ where: { recipient_id: authorId } })) === 1;
+    });
+
+    const notification = await prisma.notification.findFirstOrThrow({
+      where: { recipient_id: authorId },
+    });
+    expect(notification.type).toBe('TASK_REVIEWED');
+    expect(notification.body).toContain('need revision');
+    expect(notification.body).not.toContain(reviewComment);
+  });
+
   it('consumes security.alert.created and persists one notification when only in-app is enabled', async () => {
     const actorId = randomUUID();
     await prisma.notificationPreference.create({
