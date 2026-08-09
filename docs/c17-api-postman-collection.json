@@ -1,7 +1,7 @@
 {
   "info": {
     "name": "C17 Task & Document Platform — Full API Collection",
-    "description": "Complete Postman collection for the C17 Task & Document Platform.\n\nBASE URL: http://localhost:3000 (API Gateway)\nAll external requests go through the Gateway with /api/ prefix.\n\nAuthentication:\n- Login as employee: employee@c17.local / Employee123!\n- Login as admin: admin@c17.local / Admin123!\n- All authenticated endpoints require Bearer token from login response.\n\nDynamic Data:\n- Timestamps use {{currentTimestamp}} variable (auto-generated).\n- UUIDs use pre-request scripts to generate unique IDs.\n- Save tokens/IDs via Tests scripts for chaining requests.\n\nRecommended document test flow:\n1. Authentication — run 1.1, 1.3, and 1.3.1.\n2. Task Management — run 3.1 and 3.4.\n3. Document Management — run the 4.x folders in order.\n4. Audit Log, Records & Transfer, Retention & Disposal, Notifications, Security Monitoring, and Health are sections 5–10.",
+    "description": "Complete Postman collection for the C17 Task & Document Platform.\n\nBASE URL: http://localhost:3000 (API Gateway)\nAll external requests go through the Gateway with /api/ prefix.\n\nAuthentication:\n- Login as employee: employee@c17.local / Employee123!\n- Login as admin: admin@c17.local / Admin123!\n- All authenticated endpoints require Bearer token from login response.\n\nDynamic Data:\n- Timestamps use {{currentTimestamp}} variable (auto-generated).\n- UUIDs use pre-request scripts to generate unique IDs.\n- Save tokens/IDs via Tests scripts for chaining requests.\n\nRecommended document test flow:\n1. Authentication — run 1.1, 1.3, and 1.3.1.\n2. Task Management — run 3.1 → 3.4 → 3.4.1 → 3.4.2 → 3.5 → 3.6 → 3.6.1 → 3.6.2 → 3.7.\n3. Document Management — run the 4.x folders in order. Use 4.3.10 and 4.3.11 to inspect/update one task-document grant; 4.3.12 is an alternative revoke-one flow and should be skipped before secure download.\n4. Audit Log, Records & Transfer, Retention & Disposal, Notifications, Security Monitoring, and Health are sections 5–10.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "variable": [
@@ -1004,7 +1004,7 @@
     },
     {
       "name": "3. Task Management",
-      "description": "Multi-user task flow: creator creates/assigns/reviews; dynamic assignee starts/submits. Run 3.1 → 3.4 → 3.5 → 3.6 → 3.7 in order.",
+      "description": "Multi-user task flow: creator creates/assigns/edits and assigns an explicit reviewer; dynamic assignee starts/submits; reviewer lists and reviews submissions. Run 3.1 → 3.4 → 3.4.1 → 3.4.2 → 3.5 → 3.6 → 3.6.1 → 3.6.2 → 3.7 in order.",
       "item": [
         {
           "name": "3.1 Creator Creates Task (CREATED)",
@@ -1105,7 +1105,7 @@
                 "{{taskId}}"
               ]
             },
-            "description": "Get full task detail (only participants can see full detail)."
+            "description": "Get task detail (only direct participants can see full detail). The response includes a safe direct children array; call the same endpoint with a child task ID to load that child when needed. Child documents and submission content are not embedded."
           }
         },
         {
@@ -1158,6 +1158,85 @@
               }
             }
           ]
+        },
+        {
+          "name": "3.4.1 Creator Assigns Explicit Reviewer",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{creatorToken}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"reviewer_id\": \"{{archivistId}}\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/tasks/{{taskId}}/reviewer",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "tasks",
+                "{{taskId}}",
+                "reviewer"
+              ]
+            },
+            "description": "Only the task creator may assign the explicit reviewer. The reviewer is added as a direct participant and will receive the submission notification."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Explicit reviewer is assigned', function () {",
+                  "  pm.expect(pm.response.code).to.eql(200);",
+                  "  pm.expect(pm.response.json().reviewer_id).to.eql(pm.collectionVariables.get('archivistId'));",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "3.4.2 Creator Updates Task Metadata",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{creatorToken}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"title\": \"Updated task {{$timestamp}}\",\n  \"description\": \"Updated by the task creator\",\n  \"deadline\": \"{{taskDeadline}}\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/tasks/{{taskId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "tasks",
+                "{{taskId}}"
+              ]
+            },
+            "description": "Only the task creator may edit title, description, or deadline. Status and workflow transitions remain separate endpoints."
+          }
         },
         {
           "name": "3.5 Assignee Starts Work (IN_PROGRESS)",
@@ -1256,6 +1335,57 @@
           ]
         },
         {
+          "name": "3.6.1 List Task Submissions",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{archivistToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/tasks/{{taskId}}/submissions",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "tasks",
+                "{{taskId}}",
+                "submissions"
+              ]
+            },
+            "description": "List submissions for the task. Only the submitter, task creator, or configured reviewer may read submission content."
+          }
+        },
+        {
+          "name": "3.6.2 Get One Task Submission",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{archivistToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/tasks/{{taskId}}/submissions/{{submissionId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "tasks",
+                "{{taskId}}",
+                "submissions",
+                "{{submissionId}}"
+              ]
+            },
+            "description": "Get one submission by task ID and submission ID. The backend rejects a submission ID that belongs to another task."
+          }
+        },
+        {
           "name": "3.7 Approve Task",
           "request": {
             "method": "POST",
@@ -1266,7 +1396,7 @@
               },
               {
                 "key": "Authorization",
-                "value": "Bearer {{creatorToken}}"
+                "value": "Bearer {{archivistToken}}"
               }
             ],
             "body": {
@@ -1274,19 +1404,20 @@
               "raw": "{\n  \"decision\": \"APPROVED\",\n  \"comment\": \"Looks good!\"\n}"
             },
             "url": {
-              "raw": "{{baseUrl}}/api/tasks/submissions/{{submissionId}}/review",
+              "raw": "{{baseUrl}}/api/tasks/{{taskId}}/submissions/{{submissionId}}/review",
               "host": [
                 "{{baseUrl}}"
               ],
               "path": [
                 "api",
                 "tasks",
+                "{{taskId}}",
                 "submissions",
                 "{{submissionId}}",
                 "review"
               ]
             },
-            "description": "The original creator reviews the assignee submission. Task moves WAITING_REVIEW → APPROVED."
+            "description": "The explicitly configured reviewer reviews the submission through the task-scoped route. Task moves WAITING_REVIEW → APPROVED. The legacy /api/tasks/submissions/:submissionId/review route remains available for compatibility."
           },
           "event": [
             {
@@ -2240,7 +2371,7 @@
     },
     {
       "name": "4. Document Management",
-      "description": "Complete document flow: upload → owner inventory → attach to task → grant PREVIEW/DOWNLOAD → read metadata → download via ticket → detach and revoke.",
+      "description": "Complete document flow: upload → owner inventory → attach to task → grant PREVIEW/DOWNLOAD → inspect/update one task-document grant → read metadata → download via ticket → detach and revoke.",
       "item": [
         {
           "name": "4.1 Upload & Inventory",
@@ -3320,7 +3451,7 @@
                     "exec": [
                       "pm.test('Grant listing shows parent and delegated grants revoked', function () {",
                       "  pm.expect(pm.response.code).to.eql(200);",
-                      "  var grants = pm.response.json();",
+                      "  var grants = pm.response.json().items || pm.response.json();",
                       "  pm.expect(grants).to.be.an('array');",
                       "  var parent = grants.find(function (grant) { return grant.id === pm.collectionVariables.get('grantId'); });",
                       "  var child = grants.find(function (grant) { return grant.id === pm.collectionVariables.get('delegatedGrantId'); });",
@@ -3372,6 +3503,115 @@
                   }
                 }
               ]
+            },
+            {
+              "name": "4.3.10 List Grants for This Task–Document",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{creatorToken}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/tasks/{{taskId}}/documents/{{documentId}}/grants?page=1&page_size=20",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "tasks",
+                    "{{taskId}}",
+                    "documents",
+                    "{{documentId}}",
+                    "grants"
+                  ],
+                  "query": [
+                    {
+                      "key": "page",
+                      "value": "1"
+                    },
+                    {
+                      "key": "page_size",
+                      "value": "20"
+                    }
+                  ]
+                },
+                "description": "List grants for the exact Task–Document association. The response is { items, pagination }."
+              }
+            },
+            {
+              "name": "4.3.11 Update One Task–Document Grant",
+              "request": {
+                "method": "PATCH",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{creatorToken}}"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"permissions\": [\"PREVIEW\", \"DOWNLOAD\"],\n  \"expires_at\": \"{{grantExpiresAt}}\"\n}"
+                },
+                "url": {
+                  "raw": "{{baseUrl}}/api/tasks/{{taskId}}/documents/{{documentId}}/grants/{{taskDocumentGrantId}}",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "tasks",
+                    "{{taskId}}",
+                    "documents",
+                    "{{documentId}}",
+                    "grants",
+                    "{{taskDocumentGrantId}}"
+                  ]
+                },
+                "description": "Update one grant's permissions and/or expiry without detaching the document."
+              }
+            },
+            {
+              "name": "4.3.12 Revoke One Task–Document Grant [ALTERNATIVE FLOW]",
+              "request": {
+                "method": "DELETE",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{creatorToken}}"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"reason\": \"Access is no longer needed\"\n}"
+                },
+                "url": {
+                  "raw": "{{baseUrl}}/api/tasks/{{taskId}}/documents/{{documentId}}/grants/{{taskDocumentGrantId}}",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "tasks",
+                    "{{taskId}}",
+                    "documents",
+                    "{{documentId}}",
+                    "grants",
+                    "{{taskDocumentGrantId}}"
+                  ]
+                },
+                "description": "Alternative branch: revoke only one grant. The association and other grants remain active. Skip this request before the secure-download flow."
+              }
             }
           ]
         },
@@ -3614,7 +3854,7 @@
                     "exec": [
                       "pm.test('Detach cascades to task-scoped grant', function () {",
                       "  pm.expect(pm.response.code).to.eql(200);",
-                      "  var grants = pm.response.json();",
+                      "  var grants = pm.response.json().items || pm.response.json();",
                       "  var grant = grants.find(function (entry) { return entry.id === pm.collectionVariables.get('taskDocumentGrantId'); });",
                       "  pm.expect(grant).to.exist;",
                       "  pm.expect(grant.status).to.eql('REVOKED');",

@@ -161,6 +161,75 @@ export class PermissionClient {
     }
   }
 
+  async listTaskDocumentGrants(data: {
+    task_id: string;
+    resource_id: string;
+    page: number;
+    page_size: number;
+    caller: AuthContext;
+  }): Promise<{
+    items: PermissionGrantSummary[];
+    pagination: Record<string, unknown>;
+  }> {
+    const response = await this.fetchWithCaller(
+      `/internal/grants/task-document?task_id=${encodeURIComponent(data.task_id)}&resource_id=${encodeURIComponent(data.resource_id)}&page=${data.page}&page_size=${data.page_size}`,
+      data.caller,
+      { method: 'GET' },
+    );
+    return (await response.json()) as {
+      items: PermissionGrantSummary[];
+      pagination: Record<string, unknown>;
+    };
+  }
+
+  async updateTaskDocumentGrant(data: {
+    task_id: string;
+    resource_id: string;
+    grant_id: string;
+    permissions?: string[];
+    expires_at?: string;
+    caller: AuthContext;
+  }): Promise<PermissionGrantSummary> {
+    const response = await this.fetchWithCaller(
+      `/internal/grants/task-document/${encodeURIComponent(data.grant_id)}`,
+      data.caller,
+      {
+        method: 'PATCH',
+        body: JSON.stringify({
+          task_id: data.task_id,
+          resource_type: 'DOCUMENT',
+          resource_id: data.resource_id,
+          ...(data.permissions ? { permissions: data.permissions } : {}),
+          ...(data.expires_at ? { expires_at: data.expires_at } : {}),
+        }),
+      },
+    );
+    return (await response.json()) as PermissionGrantSummary;
+  }
+
+  async revokeTaskDocumentGrant(data: {
+    task_id: string;
+    resource_id: string;
+    grant_id: string;
+    reason: string;
+    caller: AuthContext;
+  }): Promise<PermissionGrantSummary> {
+    const response = await this.fetchWithCaller(
+      `/internal/grants/task-document/${encodeURIComponent(data.grant_id)}`,
+      data.caller,
+      {
+        method: 'DELETE',
+        body: JSON.stringify({
+          task_id: data.task_id,
+          resource_type: 'DOCUMENT',
+          resource_id: data.resource_id,
+          reason: data.reason,
+        }),
+      },
+    );
+    return (await response.json()) as PermissionGrantSummary;
+  }
+
   private async fetchWithCaller(
     path: string,
     caller: AuthContext,

@@ -15,6 +15,7 @@ model Task {
   status          String    @default("CREATED")
   creator_id      String
   assignee_id     String?
+  reviewer_id     String?
   parent_task_id  String?
   deadline        DateTime?
   blocked         Boolean   @default(false)
@@ -36,6 +37,7 @@ model Task {
 
   @@index([creator_id])
   @@index([assignee_id])
+  @@index([reviewer_id])
   @@index([parent_task_id])
   @@index([status])
   @@index([deadline])
@@ -64,6 +66,7 @@ model OutboxEvent {
 
   @@index([published_at, available_at, created_at])
   @@index([task_id])
+  @@index([task_id, created_at])
 }
 
 model TaskParticipant {

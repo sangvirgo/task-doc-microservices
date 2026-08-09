@@ -17,6 +17,7 @@ type MockFetch = typeof fetch & jest.MockedFunction<typeof fetch>;
 const EMPLOYEE_ID = '10000000-0000-4000-8000-000000000001';
 const SECOND_EMPLOYEE_ID = '10000000-0000-4000-8000-000000000002';
 const ADMIN_ID = '10000000-0000-4000-8000-000000000003';
+const THIRD_EMPLOYEE_ID = '10000000-0000-4000-8000-000000000004';
 
 function authHeaders(userId: string, role: 'EMPLOYEE' | 'ADMIN'): Record<string, string> {
   return {
@@ -109,7 +110,9 @@ describe('Task authorization integration (PostgreSQL)', () => {
         const role =
           userId === ADMIN_ID
             ? 'ADMIN'
-            : userId === EMPLOYEE_ID || userId === SECOND_EMPLOYEE_ID
+            : userId === EMPLOYEE_ID ||
+                userId === SECOND_EMPLOYEE_ID ||
+                userId === THIRD_EMPLOYEE_ID
               ? 'EMPLOYEE'
               : null;
 
@@ -266,6 +269,88 @@ describe('Task authorization integration (PostgreSQL)', () => {
 
     expect(res.status).toBe(200);
     expect(res.body.id).toBe(taskId);
+    expect(res.body.children).toEqual([]);
+  });
+
+  it('returns direct child summaries from the single task detail endpoint', async () => {
+    const parentTaskId = await seedTask();
+    const childTaskId = await seedTask({
+      parentTaskId,
+      creatorId: SECOND_EMPLOYEE_ID,
+      assigneeId: EMPLOYEE_ID,
+      status: 'IN_PROGRESS',
+    });
+
+    const res = await request(app.getHttpServer())
+      .get(`/tasks/${parentTaskId}`)
+      .set(authHeaders(EMPLOYEE_ID, 'EMPLOYEE'));
+
+    expect(res.status).toBe(200);
+    expect(res.body.children).toEqual([
+      expect.objectContaining({
+        id: childTaskId,
+        title: 'Task under test',
+        status: 'IN_PROGRESS',
+        creator_id: SECOND_EMPLOYEE_ID,
+        assignee_id: EMPLOYEE_ID,
+      }),
+    ]);
+    expect(res.body.children[0].submissions).toBeUndefined();
+    expect(res.body.children[0].documents).toBeUndefined();
+  });
+
+  it('allows only the task creator to edit task metadata', async () => {
+    const taskId = await seedTask({ deadline: new Date('2026-08-10T09:00:00.000Z') });
+
+    const denied = await request(app.getHttpServer())
+      .patch(`/tasks/${taskId}`)
+      .set(authHeaders(SECOND_EMPLOYEE_ID, 'EMPLOYEE'))
+      .send({ title: 'Assignee cannot rename' });
+    expect(denied.status).toBe(403);
+
+    const allowed = await request(app.getHttpServer())
+      .patch(`/tasks/${taskId}`)
+      .set(authHeaders(EMPLOYEE_ID, 'EMPLOYEE'))
+      .send({
+        title: 'Renamed task',
+        description: 'Updated description',
+        deadline: '2026-08-12T09:00:00.000Z',
+      });
+
+    expect(allowed.status).toBe(200);
+    expect(allowed.body).toEqual(
+      expect.objectContaining({
+        title: 'Renamed task',
+        description: 'Updated description',
+        deadline: '2026-08-12T09:00:00.000Z',
+      }),
+    );
+    expect(allowed.body.creator_id).toBe(EMPLOYEE_ID);
+    const deadlineEvent = await prisma.outboxEvent.findFirst({
+      where: { task_id: taskId, event_type: 'task.deadline.changed' },
+    });
+    expect(deadlineEvent).toEqual(expect.objectContaining({ task_id: taskId }));
+    expect(deadlineEvent?.payload).toEqual(
+      expect.objectContaining({ deadline: '2026-08-12T09:00:00.000Z' }),
+    );
+  });
+
+  it('assigns an explicit reviewer and exposes the reviewer in task detail', async () => {
+    const taskId = await seedTask();
+
+    const res = await request(app.getHttpServer())
+      .put(`/tasks/${taskId}/reviewer`)
+      .set(authHeaders(EMPLOYEE_ID, 'EMPLOYEE'))
+      .send({ reviewer_id: THIRD_EMPLOYEE_ID });
+
+    expect(res.status).toBe(200);
+    expect(res.body.reviewer_id).toBe(THIRD_EMPLOYEE_ID);
+
+    const detail = await request(app.getHttpServer())
+      .get(`/tasks/${taskId}`)
+      .set(authHeaders(THIRD_EMPLOYEE_ID, 'EMPLOYEE'));
+    expect(detail.status).toBe(200);
+    expect(detail.body.reviewer_id).toBe(THIRD_EMPLOYEE_ID);
   });
 
   it('returns completion metrics from direct child task approvals', async () => {
@@ -528,6 +613,11 @@ describe('Task authorization integration (PostgreSQL)', () => {
       .send({ content: 'Submission content' });
 
     expect(res.status).toBe(201);
+    expect(
+      await prisma.outboxEvent.findFirst({
+        where: { task_id: taskId, event_type: 'task.submitted' },
+      }),
+    ).toEqual(expect.objectContaining({ task_id: taskId }));
   });
 
   it('denies non-assignee submission', async () => {
@@ -559,6 +649,93 @@ describe('Task authorization integration (PostgreSQL)', () => {
 
     expect(res.status).toBe(200);
     expect(res.body.status).toBe('APPROVED');
+  });
+
+  it('allows only the configured reviewer to review through the task-scoped route', async () => {
+    const taskId = await seedTask({ status: 'WAITING_REVIEW' });
+    await request(app.getHttpServer())
+      .put(`/tasks/${taskId}/reviewer`)
+      .set(authHeaders(EMPLOYEE_ID, 'EMPLOYEE'))
+      .send({ reviewer_id: THIRD_EMPLOYEE_ID })
+      .expect(200);
+    const submission = await prisma.taskSubmission.create({
+      data: {
+        task_id: taskId,
+        author_id: SECOND_EMPLOYEE_ID,
+        content: 'Pending review',
+        status: 'PENDING',
+      },
+    });
+
+    const creatorReview = await request(app.getHttpServer())
+      .post(`/tasks/${taskId}/submissions/${submission.id}/review`)
+      .set(authHeaders(EMPLOYEE_ID, 'EMPLOYEE'))
+      .send({ decision: 'APPROVED' });
+    expect(creatorReview.status).toBe(403);
+
+    const reviewerReview = await request(app.getHttpServer())
+      .post(`/tasks/${taskId}/submissions/${submission.id}/review`)
+      .set(authHeaders(THIRD_EMPLOYEE_ID, 'EMPLOYEE'))
+      .send({ decision: 'APPROVED' });
+    expect(reviewerReview.status).toBe(200);
+    expect(
+      await prisma.outboxEvent.findFirst({
+        where: { task_id: taskId, event_type: 'task.reviewed' },
+      }),
+    ).toEqual(expect.objectContaining({ task_id: taskId }));
+  });
+
+  it('lists submissions only to the submitter, creator, or configured reviewer', async () => {
+    const taskId = await seedTask({ status: 'WAITING_REVIEW' });
+    await request(app.getHttpServer())
+      .put(`/tasks/${taskId}/reviewer`)
+      .set(authHeaders(EMPLOYEE_ID, 'EMPLOYEE'))
+      .send({ reviewer_id: THIRD_EMPLOYEE_ID })
+      .expect(200);
+    await prisma.taskSubmission.create({
+      data: {
+        task_id: taskId,
+        author_id: SECOND_EMPLOYEE_ID,
+        content: 'Sensitive submission',
+        status: 'PENDING',
+      },
+    });
+
+    const reviewer = await request(app.getHttpServer())
+      .get(`/tasks/${taskId}/submissions`)
+      .set(authHeaders(THIRD_EMPLOYEE_ID, 'EMPLOYEE'));
+    expect(reviewer.status).toBe(200);
+    expect(reviewer.body.items[0].content).toBe('Sensitive submission');
+
+    const otherParticipant = await prisma.taskParticipant.create({
+      data: { task_id: taskId, user_id: ADMIN_ID, role: 'PARTICIPANT' },
+    });
+    expect(otherParticipant.user_id).toBe(ADMIN_ID);
+    const denied = await request(app.getHttpServer())
+      .get(`/tasks/${taskId}/submissions`)
+      .set(authHeaders(ADMIN_ID, 'ADMIN'));
+    expect(denied.status).toBe(403);
+  });
+
+  it('rejects reviewing an already resolved submission', async () => {
+    const taskId = await seedTask({ status: 'WAITING_REVIEW' });
+    const submission = await prisma.taskSubmission.create({
+      data: {
+        task_id: taskId,
+        author_id: SECOND_EMPLOYEE_ID,
+        content: 'Already reviewed',
+        status: 'APPROVED',
+        reviewer_id: EMPLOYEE_ID,
+        reviewed_at: new Date(),
+      },
+    });
+
+    const res = await request(app.getHttpServer())
+      .post(`/tasks/${taskId}/submissions/${submission.id}/review`)
+      .set(authHeaders(EMPLOYEE_ID, 'EMPLOYEE'))
+      .send({ decision: 'REJECTED' });
+
+    expect(res.status).toBe(400);
   });
 
   it('denies non-creator review', async () => {

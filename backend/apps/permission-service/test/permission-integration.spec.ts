@@ -29,6 +29,10 @@ describe('Permission Service Integration (PostgreSQL)', () => {
     return { 'x-user-id': ADMIN_ID, 'x-user-role': 'ADMIN' };
   }
 
+  function employeeHeaders(userId: string): Record<string, string> {
+    return { 'x-user-id': userId, 'x-user-role': 'EMPLOYEE' };
+  }
+
   beforeAll(async () => {
     const moduleRef = await Test.createTestingModule({
       controllers: [PermissionsController],
@@ -69,7 +73,9 @@ describe('Permission Service Integration (PostgreSQL)', () => {
     // Clean up test grants
     try {
       await prisma.grant.deleteMany({
-        where: { OR: [{ actor_id: ACTOR_ID }, { grantor_id: ADMIN_ID }] },
+        where: {
+          OR: [{ actor_id: ACTOR_ID }, { grantor_id: ADMIN_ID }, { grantor_id: GRANTOR_ID }],
+        },
       });
     } catch {
       /* ignore */
@@ -113,6 +119,47 @@ describe('Permission Service Integration (PostgreSQL)', () => {
 
     expect(res.body.id).toBe(grantId);
     expect(res.body.permissions).toEqual(['PREVIEW', 'DOWNLOAD']);
+  });
+
+  it('should update and revoke one task-document grant without detaching the association', async () => {
+    const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
+    const createRes = await request(app.getHttpServer())
+      .post('/internal/grants/task-document')
+      .set(employeeHeaders(GRANTOR_ID))
+      .send({
+        task_id: TASK_ID,
+        resource_type: 'DOCUMENT',
+        resource_id: RESOURCE_ID,
+        actor_id: ACTOR_ID,
+        permissions: ['PREVIEW'],
+        expires_at: expiresAt,
+      })
+      .expect(201);
+
+    const taskGrantId = createRes.body.id as string;
+    const updated = await request(app.getHttpServer())
+      .patch(`/internal/grants/task-document/${taskGrantId}`)
+      .set(employeeHeaders(GRANTOR_ID))
+      .send({
+        task_id: TASK_ID,
+        resource_type: 'DOCUMENT',
+        resource_id: RESOURCE_ID,
+        permissions: ['PREVIEW', 'DOWNLOAD'],
+      })
+      .expect(200);
+    expect(updated.body.permissions).toEqual(['PREVIEW', 'DOWNLOAD']);
+
+    const revoked = await request(app.getHttpServer())
+      .delete(`/internal/grants/task-document/${taskGrantId}`)
+      .set(employeeHeaders(GRANTOR_ID))
+      .send({
+        task_id: TASK_ID,
+        resource_type: 'DOCUMENT',
+        resource_id: RESOURCE_ID,
+        reason: 'Task grant no longer needed',
+      })
+      .expect(200);
+    expect(revoked.body.status).toBe('REVOKED');
   });
 
   it('should list grants filtered by actor_id', async () => {

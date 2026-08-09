@@ -47,6 +47,11 @@ export interface TaskDocumentGrantInput {
   parent_grant_id?: string;
 }
 
+export interface TaskDocumentGrantUpdateInput {
+  permissions?: string[];
+  expires_at?: string;
+}
+
 export interface TaskDocumentGrantResult {
   association: TaskDocumentAssociationDto;
   document: DocumentDto;
@@ -255,6 +260,111 @@ export class TaskDocumentsService {
     return created;
   }
 
+  async listGrants(
+    taskId: string,
+    documentId: string,
+    caller: AuthContext,
+    pagination: PaginationQuery = DEFAULT_PAGINATION,
+  ): Promise<{
+    items: PermissionGrantSummary[];
+    pagination: Record<string, unknown>;
+  }> {
+    const context = await this.taskContextClient.getContext(taskId);
+    await this.assertDirectParticipant(context, caller, taskId, 'TASK_DOCUMENT_GRANT_LIST_DENIED');
+    const association = await this.documentsService.getTaskDocument(taskId, documentId);
+    if (!association) throw new NotFoundException('Task-document association not found');
+    await this.assertCanShare(association.document, caller, taskId);
+    return this.permissionClient.listTaskDocumentGrants({
+      task_id: taskId,
+      resource_id: documentId,
+      page: pagination.page,
+      page_size: pagination.page_size,
+      caller,
+    });
+  }
+
+  async updateGrant(
+    taskId: string,
+    documentId: string,
+    grantId: string,
+    update: TaskDocumentGrantUpdateInput,
+    caller: AuthContext,
+  ): Promise<PermissionGrantSummary> {
+    const context = await this.taskContextClient.getContext(taskId);
+    await this.assertDirectParticipant(
+      context,
+      caller,
+      taskId,
+      'TASK_DOCUMENT_GRANT_UPDATE_DENIED',
+    );
+    const association = await this.documentsService.getTaskDocument(taskId, documentId);
+    if (!association) throw new NotFoundException('Task-document association not found');
+    await this.assertCanShare(association.document, caller, taskId);
+
+    if (update.permissions) {
+      this.assertDocumentPermissions(update.permissions);
+    }
+    if (update.expires_at) {
+      this.assertFutureExpiry(update.expires_at);
+    }
+    const updated = await this.permissionClient.updateTaskDocumentGrant({
+      task_id: taskId,
+      resource_id: documentId,
+      grant_id: grantId,
+      permissions: update.permissions,
+      expires_at: update.expires_at,
+      caller,
+    });
+    await this.auditClient.record({
+      event_type: 'DOCUMENT_GRANT_UPDATED_IN_TASK',
+      actor_id: caller.userId,
+      resource_type: ResourceType.DOCUMENT,
+      resource_id: documentId,
+      payload: {
+        task_id: taskId,
+        grant_id: grantId,
+        permissions: update.permissions,
+        expires_at: update.expires_at,
+      },
+    });
+    return updated;
+  }
+
+  async revokeGrant(
+    taskId: string,
+    documentId: string,
+    grantId: string,
+    caller: AuthContext,
+    reason = 'Task-document grant revoked',
+  ): Promise<PermissionGrantSummary> {
+    const context = await this.taskContextClient.getContext(taskId);
+    await this.assertDirectParticipant(
+      context,
+      caller,
+      taskId,
+      'TASK_DOCUMENT_GRANT_REVOKE_DENIED',
+    );
+    const association = await this.documentsService.getTaskDocument(taskId, documentId);
+    if (!association) throw new NotFoundException('Task-document association not found');
+    await this.assertCanShare(association.document, caller, taskId);
+
+    const revoked = await this.permissionClient.revokeTaskDocumentGrant({
+      task_id: taskId,
+      resource_id: documentId,
+      grant_id: grantId,
+      reason,
+      caller,
+    });
+    await this.auditClient.record({
+      event_type: 'DOCUMENT_GRANT_REVOKED_IN_TASK',
+      actor_id: caller.userId,
+      resource_type: ResourceType.DOCUMENT,
+      resource_id: documentId,
+      payload: { task_id: taskId, grant_id: grantId, reason },
+    });
+    return revoked;
+  }
+
   async detach(taskId: string, documentId: string, caller: AuthContext): Promise<void> {
     const context = await this.taskContextClient.getContext(taskId);
     await this.assertDirectParticipant(context, caller, taskId, 'TASK_DOCUMENT_DETACH_DENIED');
@@ -336,21 +446,8 @@ export class TaskDocumentsService {
         throw new ForbiddenException('Grant recipient must be a direct task participant');
       }
 
-      if (
-        grant.permissions.length === 0 ||
-        grant.permissions.some((permission) => !isPermissionAction(permission))
-      ) {
-        throw new BadRequestException('Grant contains an invalid permission action');
-      }
-
-      if (grant.permissions.some((permission) => !DOCUMENT_GRANTABLE_ACTIONS.has(permission))) {
-        throw new BadRequestException('Grant contains an invalid document permission action');
-      }
-
-      const expiresAt = new Date(grant.expires_at);
-      if (Number.isNaN(expiresAt.getTime()) || expiresAt.getTime() <= Date.now()) {
-        throw new BadRequestException('Grant expiration must be in the future');
-      }
+      this.assertDocumentPermissions(grant.permissions);
+      this.assertFutureExpiry(grant.expires_at);
 
       if (!callerOwnsDocument) {
         for (const permission of grant.permissions) {
@@ -375,6 +472,25 @@ export class TaskDocumentsService {
           }
         }
       }
+    }
+  }
+
+  private assertDocumentPermissions(permissions: string[]): void {
+    if (
+      permissions.length === 0 ||
+      permissions.some((permission) => !isPermissionAction(permission))
+    ) {
+      throw new BadRequestException('Grant contains an invalid permission action');
+    }
+    if (permissions.some((permission) => !DOCUMENT_GRANTABLE_ACTIONS.has(permission))) {
+      throw new BadRequestException('Grant contains an invalid document permission action');
+    }
+  }
+
+  private assertFutureExpiry(expiresAtValue: string): void {
+    const expiresAt = new Date(expiresAtValue);
+    if (Number.isNaN(expiresAt.getTime()) || expiresAt.getTime() <= Date.now()) {
+      throw new BadRequestException('Grant expiration must be in the future');
     }
   }
 

@@ -81,6 +81,24 @@ function makeService() {
       effective_expires_at: EXPIRY,
     }),
     revokeTaskDocumentGrants: jest.fn().mockResolvedValue(1),
+    listTaskDocumentGrants: jest.fn().mockResolvedValue({
+      items: [{ id: 'grant-1', actor_id: ASSIGNEE_ID }],
+      pagination: {
+        page: 1,
+        page_size: 20,
+        total: 1,
+        total_pages: 1,
+        has_next: false,
+        has_previous: false,
+      },
+    }),
+    updateTaskDocumentGrant: jest.fn().mockResolvedValue({
+      id: 'grant-1',
+      actor_id: ASSIGNEE_ID,
+      permissions: [PermissionAction.PREVIEW, PermissionAction.DOWNLOAD],
+      effective_expires_at: EXPIRY,
+    }),
+    revokeTaskDocumentGrant: jest.fn().mockResolvedValue({ id: 'grant-1', status: 'REVOKED' }),
   };
   const auditClient = { record: jest.fn().mockResolvedValue(undefined) };
 
@@ -327,6 +345,59 @@ describe('TaskDocumentsService', () => {
       ),
     ).rejects.toBeInstanceOf(NotFoundException);
     expect(permissionClient.createTaskScopedGrant).not.toHaveBeenCalled();
+  });
+
+  it('lists grants only for an existing task-document association', async () => {
+    const { service, documentsService, permissionClient } = makeService();
+    documentsService.getTaskDocument.mockResolvedValue({
+      association: { id: 'association-1', task_id: TASK_ID, document_id: DOCUMENT_ID },
+      document: document(),
+    });
+
+    const result = await service.listGrants(TASK_ID, DOCUMENT_ID, caller());
+
+    expect(result.items).toHaveLength(1);
+    expect(permissionClient.listTaskDocumentGrants).toHaveBeenCalledWith({
+      task_id: TASK_ID,
+      resource_id: DOCUMENT_ID,
+      page: 1,
+      page_size: 20,
+      caller: expect.objectContaining({ userId: CREATOR_ID }),
+    });
+  });
+
+  it('updates and revokes one task-document grant without detaching the document', async () => {
+    const { service, documentsService, permissionClient } = makeService();
+    documentsService.getTaskDocument.mockResolvedValue({
+      association: { id: 'association-1', task_id: TASK_ID, document_id: DOCUMENT_ID },
+      document: document(),
+    });
+
+    await service.updateGrant(
+      TASK_ID,
+      DOCUMENT_ID,
+      'grant-1',
+      { permissions: [PermissionAction.PREVIEW, PermissionAction.DOWNLOAD], expires_at: EXPIRY },
+      caller(),
+    );
+    await service.revokeGrant(TASK_ID, DOCUMENT_ID, 'grant-1', caller());
+
+    expect(permissionClient.updateTaskDocumentGrant).toHaveBeenCalledWith({
+      task_id: TASK_ID,
+      resource_id: DOCUMENT_ID,
+      grant_id: 'grant-1',
+      permissions: [PermissionAction.PREVIEW, PermissionAction.DOWNLOAD],
+      expires_at: EXPIRY,
+      caller: expect.objectContaining({ userId: CREATOR_ID }),
+    });
+    expect(permissionClient.revokeTaskDocumentGrant).toHaveBeenCalledWith({
+      task_id: TASK_ID,
+      resource_id: DOCUMENT_ID,
+      grant_id: 'grant-1',
+      reason: 'Task-document grant revoked',
+      caller: expect.objectContaining({ userId: CREATOR_ID }),
+    });
+    expect(documentsService.detachDocumentFromTask).not.toHaveBeenCalled();
   });
 
   it('detaches the association and revokes only grants for that Task–Document pair', async () => {

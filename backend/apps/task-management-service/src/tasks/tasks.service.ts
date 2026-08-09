@@ -55,6 +55,7 @@ type TaskRecord = {
   status: string;
   creator_id: string;
   assignee_id: string | null;
+  reviewer_id: string | null;
   parent_task_id: string | null;
   deadline: Date | null;
   blocked: boolean;
@@ -67,7 +68,12 @@ type TaskRecord = {
 
 type TaskTransaction = Pick<
   TaskPrismaService,
-  'task' | 'taskStatusHistory' | 'taskActivity' | 'taskParticipant' | 'taskSubmission'
+  | 'task'
+  | 'taskStatusHistory'
+  | 'taskActivity'
+  | 'taskParticipant'
+  | 'taskSubmission'
+  | 'outboxEvent'
 >;
 
 export interface TaskDto {
@@ -77,6 +83,7 @@ export interface TaskDto {
   status: string;
   creator_id: string;
   assignee_id: string | null;
+  reviewer_id: string | null;
   parent_task_id: string | null;
   deadline: string | null;
   blocked: boolean;
@@ -89,6 +96,18 @@ export interface TaskDto {
   completion_color: CompletionColor;
   created_at: string;
   updated_at: string;
+  children: TaskChildSummaryDto[];
+}
+
+export interface TaskChildSummaryDto {
+  id: string;
+  title: string;
+  status: string;
+  creator_id: string;
+  assignee_id: string | null;
+  reviewer_id: string | null;
+  deadline: string | null;
+  is_overdue: boolean;
 }
 
 export interface TaskParticipantDto {
@@ -126,6 +145,18 @@ export interface TaskActivityDto {
   activity_type: string;
   actor_id: string;
   summary: string;
+  created_at: string;
+}
+
+export interface TaskSubmissionDto {
+  id: string;
+  task_id: string;
+  author_id: string;
+  content: string;
+  status: string;
+  reviewer_id: string | null;
+  review_comment: string | null;
+  reviewed_at: string | null;
   created_at: string;
 }
 
@@ -172,6 +203,7 @@ export class TasksService {
           title: data.title,
           description: data.description || null,
           creator_id: data.creator_id,
+          reviewer_id: data.creator_id,
           assignee_id: data.assignee_id || null,
           parent_task_id: data.parent_task_id || null,
           deadline: data.deadline || null,
@@ -230,7 +262,7 @@ export class TasksService {
     const task = await this.requireTask(id);
 
     if (await this.hasDirectParticipation(id, actor_id)) {
-      return this.toDto(task, await this.getChildStatuses(id));
+      return this.toDto(task, await this.getChildStatuses(id), await this.getChildSummaries(id));
     }
 
     if (await this.hasAncestorOversight(task, actor_id)) {
@@ -275,6 +307,107 @@ export class TasksService {
       items: tasks.map((task) => this.toDto(task, childStatusesByTaskId.get(task.id) ?? [])),
       pagination: createPaginationMeta(pagination.page, pagination.page_size, total),
     };
+  }
+
+  async updateTaskMetadata(
+    id: string,
+    changed_by: string,
+    data: { title?: string; description?: string | null; deadline?: Date | null },
+    correlation_id: string = randomUUID(),
+  ): Promise<TaskDto> {
+    const task = await this.requireTask(id);
+    this.assertCreator(task, changed_by);
+
+    if (data.title === undefined && data.description === undefined && data.deadline === undefined) {
+      throw new BadRequestException('At least one task field must be changed');
+    }
+    if (data.title !== undefined && !data.title.trim()) {
+      throw new BadRequestException('Task title is required');
+    }
+
+    const deadlineChanged =
+      data.deadline !== undefined &&
+      (task.deadline?.getTime() ?? null) !== (data.deadline?.getTime() ?? null);
+    const updated = await this.prisma.$transaction(async (tx) => {
+      const nextTask = await tx.task.update({
+        where: { id },
+        data: {
+          ...(data.title !== undefined ? { title: data.title.trim() } : {}),
+          ...(data.description !== undefined
+            ? { description: data.description?.trim() || null }
+            : {}),
+          ...(data.deadline !== undefined ? { deadline: data.deadline } : {}),
+        },
+      });
+
+      await tx.taskActivity.create({
+        data: {
+          task_id: id,
+          activity_type: 'TASK_UPDATED',
+          actor_id: changed_by,
+          summary: 'Task metadata updated',
+          metadata: {
+            title_changed: data.title !== undefined,
+            description_changed: data.description !== undefined,
+            deadline_changed: deadlineChanged,
+          },
+        },
+      });
+
+      if (deadlineChanged && nextTask.deadline) {
+        await tx.outboxEvent.create({
+          data: {
+            task_id: id,
+            event_id: randomUUID(),
+            event_type: EventType.TASK_DEADLINE_CHANGED,
+            correlation_id,
+            producer: Producer.TASK_MANAGEMENT_SERVICE,
+            actor_id: changed_by,
+            resource_type: 'TASK',
+            resource_id: id,
+            payload: {
+              task_id: id,
+              old_deadline: task.deadline?.toISOString() ?? null,
+              deadline: nextTask.deadline.toISOString(),
+              new_deadline: nextTask.deadline.toISOString(),
+            },
+            occurred_at: new Date(),
+          },
+        });
+      }
+
+      return nextTask;
+    });
+
+    return this.toDto(updated, await this.getChildStatuses(id), await this.getChildSummaries(id));
+  }
+
+  async assignReviewer(id: string, reviewer_id: string, assigned_by: string): Promise<TaskDto> {
+    const task = await this.requireTask(id);
+    this.assertCreator(task, assigned_by);
+
+    const updated = await this.prisma.$transaction(async (tx) => {
+      const nextTask = await tx.task.update({ where: { id }, data: { reviewer_id } });
+      if (reviewer_id !== nextTask.creator_id) {
+        await tx.taskParticipant.upsert({
+          where: { task_id_user_id: { task_id: id, user_id: reviewer_id } },
+          update: { role: 'REVIEWER' },
+          create: { task_id: id, user_id: reviewer_id, role: 'REVIEWER' },
+        });
+      }
+      await tx.taskActivity.create({
+        data: {
+          task_id: id,
+          activity_type: 'REVIEWER_ASSIGNED',
+          actor_id: assigned_by,
+          summary: `Task reviewer assigned to ${reviewer_id}`,
+          metadata: { reviewer_id },
+        },
+      });
+      return nextTask;
+    });
+
+    return this.toDto(updated, await this.getChildStatuses(id), await this.getChildSummaries(id));
   }
 
   async updateTaskStatus(
@@ -582,6 +715,27 @@ export class TasksService {
         'Task result submitted for review',
       );
 
+      await tx.outboxEvent.create({
+        data: {
+          task_id,
+          event_id: randomUUID(),
+          event_type: EventType.TASK_SUBMITTED,
+          correlation_id: randomUUID(),
+          producer: Producer.TASK_MANAGEMENT_SERVICE,
+          actor_id: author_id,
+          resource_type: 'TASK_SUBMISSION',
+          resource_id: created.id,
+          payload: {
+            task_id,
+            submission_id: created.id,
+            author_id,
+            reviewer_id: task.reviewer_id ?? task.creator_id,
+            title: task.title,
+          },
+          occurred_at: new Date(),
+        },
+      });
+
       return created;
     });
 
@@ -597,6 +751,7 @@ export class TasksService {
     reviewer_id: string,
     decision: ReviewDecision,
     comment?: string,
+    expected_task_id?: string,
   ): Promise<{ id: string; status: string }> {
     const normalizedDecision = this.parseReviewDecision(decision);
     const submission = await this.prisma.taskSubmission.findUnique({
@@ -607,13 +762,32 @@ export class TasksService {
     }
 
     const task = await this.requireTask(submission.task_id);
-    this.assertCreator(task, reviewer_id);
+    if (expected_task_id && task.id !== expected_task_id) {
+      throw new NotFoundException('Submission does not belong to this task');
+    }
+    const designatedReviewer = task.reviewer_id ?? task.creator_id;
+    if (designatedReviewer !== reviewer_id) {
+      throw new ForbiddenException('Only the configured task reviewer may review');
+    }
     this.assertNotBlocked(task);
 
     if (task.status !== 'WAITING_REVIEW') {
       throw new BadRequestException(
         `Task must be WAITING_REVIEW before review; received ${task.status}`,
       );
+    }
+
+    if (submission.status !== 'PENDING') {
+      throw new BadRequestException('Only a PENDING submission may be reviewed');
+    }
+
+    const latestPending = await this.prisma.taskSubmission.findFirst({
+      where: { task_id: task.id, status: 'PENDING' },
+      orderBy: [{ created_at: 'desc' }, { id: 'desc' }],
+      select: { id: true },
+    });
+    if (!latestPending || latestPending.id !== submission.id) {
+      throw new BadRequestException('Only the latest pending submission may be reviewed');
     }
 
     if (normalizedDecision === 'APPROVED') {
@@ -642,10 +816,74 @@ export class TasksService {
         normalizedDecision === 'APPROVED' ? submission.content : task.result,
       );
 
+      await tx.outboxEvent.create({
+        data: {
+          task_id: task.id,
+          event_id: randomUUID(),
+          event_type: EventType.TASK_REVIEWED,
+          correlation_id: randomUUID(),
+          producer: Producer.TASK_MANAGEMENT_SERVICE,
+          actor_id: reviewer_id,
+          resource_type: 'TASK_SUBMISSION',
+          resource_id: submission_id,
+          payload: {
+            task_id: task.id,
+            submission_id,
+            author_id: submission.author_id,
+            reviewer_id,
+            decision: normalizedDecision,
+            title: task.title,
+          },
+          occurred_at: new Date(),
+        },
+      });
+
       return nextSubmission;
     });
 
     return { id: updated.id, status: updated.status };
+  }
+
+  async getSubmissions(
+    task_id: string,
+    actor_id: string,
+    pagination: PaginationQuery = DEFAULT_PAGINATION,
+  ): Promise<PaginatedResponse<TaskSubmissionDto>> {
+    const task = await this.requireTask(task_id);
+    const canReview = (task.reviewer_id ?? task.creator_id) === actor_id;
+    const isCreator = task.creator_id === actor_id;
+    const isSubmitter = await this.prisma.taskSubmission.findFirst({
+      where: { task_id, author_id: actor_id },
+      select: { id: true },
+    });
+    if (!canReview && !isCreator && !isSubmitter) {
+      throw new ForbiddenException('Submission access is restricted to submitter and reviewer');
+    }
+
+    const where = { task_id };
+    const [total, submissions] = await Promise.all([
+      this.prisma.taskSubmission.count({ where }),
+      this.prisma.taskSubmission.findMany({
+        where,
+        orderBy: [{ created_at: 'desc' }, { id: 'desc' }],
+        ...toPrismaPagination(pagination),
+      }),
+    ]);
+    return {
+      items: submissions.map((submission) => this.submissionToDto(submission)),
+      pagination: createPaginationMeta(pagination.page, pagination.page_size, total),
+    };
+  }
+
+  async getSubmission(
+    task_id: string,
+    submission_id: string,
+    actor_id: string,
+  ): Promise<TaskSubmissionDto> {
+    const submissions = await this.getSubmissions(task_id, actor_id, { page: 1, page_size: 100 });
+    const submission = submissions.items.find((item) => item.id === submission_id);
+    if (!submission) throw new NotFoundException('Submission not found');
+    return submission;
   }
 
   async getTaskActivity(
@@ -678,7 +916,11 @@ export class TasksService {
     };
   }
 
-  private toDto(task: TaskRecord, childStatuses: readonly string[] = []): TaskDto {
+  private toDto(
+    task: TaskRecord,
+    childStatuses: readonly string[] = [],
+    children: TaskChildSummaryDto[] = [],
+  ): TaskDto {
     const progress = calculateTaskProgress(task.status, childStatuses);
 
     return {
@@ -688,6 +930,7 @@ export class TasksService {
       status: task.status,
       creator_id: task.creator_id,
       assignee_id: task.assignee_id,
+      reviewer_id: task.reviewer_id,
       parent_task_id: task.parent_task_id,
       deadline: task.deadline?.toISOString() ?? null,
       blocked: task.blocked,
@@ -697,6 +940,31 @@ export class TasksService {
       ...progress,
       created_at: task.created_at.toISOString(),
       updated_at: task.updated_at.toISOString(),
+      children,
+    };
+  }
+
+  private submissionToDto(submission: {
+    id: string;
+    task_id: string;
+    author_id: string;
+    content: string;
+    status: string;
+    reviewer_id: string | null;
+    review_comment: string | null;
+    reviewed_at: Date | null;
+    created_at: Date;
+  }): TaskSubmissionDto {
+    return {
+      id: submission.id,
+      task_id: submission.task_id,
+      author_id: submission.author_id,
+      content: submission.content,
+      status: submission.status,
+      reviewer_id: submission.reviewer_id,
+      review_comment: submission.review_comment,
+      reviewed_at: submission.reviewed_at?.toISOString() ?? null,
+      created_at: submission.created_at.toISOString(),
     };
   }
 
@@ -742,6 +1010,24 @@ export class TasksService {
     });
 
     return children.map((child) => child.status);
+  }
+
+  private async getChildSummaries(taskId: string): Promise<TaskChildSummaryDto[]> {
+    const children = await this.prisma.task.findMany({
+      where: { parent_task_id: taskId },
+      orderBy: [{ created_at: 'asc' }, { id: 'asc' }],
+    });
+
+    return children.map((child) => ({
+      id: child.id,
+      title: child.title,
+      status: child.status,
+      creator_id: child.creator_id,
+      assignee_id: child.assignee_id,
+      reviewer_id: child.reviewer_id,
+      deadline: child.deadline?.toISOString() ?? null,
+      is_overdue: this.isOverdue(child),
+    }));
   }
 
   private async getChildStatusesByTaskIds(
