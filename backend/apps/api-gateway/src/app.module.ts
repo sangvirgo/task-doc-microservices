@@ -9,6 +9,8 @@ import { ObservabilityModule } from '@c17/observability';
 import { JwtAuthGuard } from './auth/jwt-auth.guard';
 import { GatewayController } from './proxy/gateway.controller';
 import { RateLimitGuard } from './rate-limit/rate-limit.guard';
+import { StatisticsController } from './statistics/statistics.controller';
+import { StatisticsService } from './statistics/statistics.service';
 
 export const SERVICE = 'api-gateway';
 
@@ -38,12 +40,13 @@ export const envSchema = baseEnvSchema.extend({
       signOptions: { expiresIn: Number(process.env.JWT_TTL_SECONDS ?? 1800) },
     }),
   ],
-  controllers: [GatewayController],
+  controllers: [GatewayController, StatisticsController],
   providers: [
     { provide: APP_GUARD, useClass: RateLimitGuard },
     { provide: APP_GUARD, useClass: JwtAuthGuard },
     JwtAuthGuard,
     RateLimitGuard,
+    StatisticsService,
   ],
 })
 export class AppModule {}
