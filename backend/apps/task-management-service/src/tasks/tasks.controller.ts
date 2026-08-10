@@ -32,6 +32,10 @@ import {
   TaskContextDto,
   TaskSubmissionDto,
 } from './tasks.service';
+import {
+  parseTaskStatisticsQuery,
+  TaskStatisticsService,
+} from './task-statistics.service';
 import { PermissionClient } from '../permissions/permission.client';
 import { AuditClient } from '../audit/audit.client';
 import { UserRoleClient } from '../users/user-role.client';
@@ -129,6 +133,7 @@ export class TasksController {
     private readonly permissionClient: PermissionClient,
     private readonly auditClient: AuditClient,
     private readonly userRoleClient: UserRoleClient,
+    private readonly taskStatisticsService: TaskStatisticsService,
   ) {}
 
   /**
@@ -139,6 +144,16 @@ export class TasksController {
   @ApiOperation({ summary: 'Get task context for internal service authorization' })
   async getInternalTaskContext(@Param('id') taskId: string): Promise<TaskContextDto> {
     return this.tasksService.getTaskContext(taskId);
+  }
+
+  @Get('internal/statistics')
+  @ApiOperation({ summary: 'Get task statistics for an internal aggregator' })
+  async getInternalStatistics(
+    @Query() query: Record<string, unknown>,
+    @CurrentUser() user: AuthContext,
+  ) {
+    const parsed = parseTaskStatisticsQuery(query);
+    return this.taskStatisticsService.getOverview({ ...parsed, caller: user });
   }
 
   @Get()

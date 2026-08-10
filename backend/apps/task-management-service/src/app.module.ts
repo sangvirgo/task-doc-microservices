@@ -12,6 +12,7 @@ import { AuditClient } from './audit/audit.client';
 import { TaskPrismaService } from './prisma/task-prisma.service';
 import { UserRoleClient } from './users/user-role.client';
 import { TaskOutboxRelayService } from './messaging/task-outbox-relay.service';
+import { TaskStatisticsService } from './tasks/task-statistics.service';
 
 export const SERVICE = 'task-management-service';
 
@@ -47,6 +48,7 @@ export const envSchema = baseEnvSchema.extend({
     AuditClient,
     UserRoleClient,
     TaskOutboxRelayService,
+    TaskStatisticsService,
   ],
 })
 export class AppModule {}
