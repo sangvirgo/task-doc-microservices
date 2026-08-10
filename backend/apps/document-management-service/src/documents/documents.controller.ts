@@ -15,6 +15,7 @@ import {
   ServiceUnavailableException,
   UploadedFiles,
   UseInterceptors,
+  Optional,
 } from '@nestjs/common';
 import { FilesInterceptor } from '@nestjs/platform-express';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
@@ -56,6 +57,10 @@ import type {
   TaskDocumentGrantInput,
   TaskDocumentGrantResult,
 } from '../tasks/task-documents.service';
+import {
+  DocumentStatisticsService,
+  parseDocumentStatisticsQuery,
+} from './document-statistics.service';
 
 const createDocumentSchema = z.object({
   title: z.string().min(1),
@@ -236,7 +241,21 @@ export class DocumentsController {
     private readonly auditClient: AuditClient,
     private readonly securityClient: SecurityClient,
     private readonly taskDocumentsService: TaskDocumentsService,
+    @Optional() private readonly documentStatisticsService?: DocumentStatisticsService,
   ) {}
+
+  @Get('internal/statistics')
+  @ApiOperation({ summary: 'Get document statistics for an internal aggregator' })
+  async getInternalStatistics(
+    @Query() query: Record<string, unknown>,
+    @CurrentUser() user: AuthContext,
+  ) {
+    if (!this.documentStatisticsService) {
+      throw new ServiceUnavailableException('Document statistics unavailable');
+    }
+    const parsed = parseDocumentStatisticsQuery(query);
+    return this.documentStatisticsService.getOverview({ ...parsed, caller: user });
+  }
 
   @Get()
   @ApiOperation({ summary: 'List documents' })

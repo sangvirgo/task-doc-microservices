@@ -49,6 +49,10 @@ describe('API Gateway security policy', () => {
       ['get', '/api/security/records'],
       ['post', '/api/permissions/internal/permissions/check'],
       ['post', '/api/auth/internal/sessions/revoke-all'],
+      ['get', '/api/tasks/internal/statistics'],
+      ['get', '/api/documents/internal/statistics'],
+      ['get', '/api/users/internal/statistics'],
+      ['get', '/api/monitoring/internal/statistics'],
       ['post', '/api/documents/30000000-0000-4000-8000-000000000003/versions'],
     ] as const) {
       await request(app.getHttpServer())

@@ -32,10 +32,7 @@ import {
   TaskContextDto,
   TaskSubmissionDto,
 } from './tasks.service';
-import {
-  parseTaskStatisticsQuery,
-  TaskStatisticsService,
-} from './task-statistics.service';
+import { parseTaskStatisticsQuery, TaskStatisticsService } from './task-statistics.service';
 import { PermissionClient } from '../permissions/permission.client';
 import { AuditClient } from '../audit/audit.client';
 import { UserRoleClient } from '../users/user-role.client';

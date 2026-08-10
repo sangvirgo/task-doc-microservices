@@ -10,6 +10,7 @@ import { MonitoringController } from './monitoring/monitoring.controller';
 import { MonitoringEventsConsumer } from './monitoring/monitoring-events.consumer';
 import { MonitoringService } from './monitoring/monitoring.service';
 import { SecurityMonitoringPrismaService } from './prisma/security-monitoring-prisma.service';
+import { MonitoringStatisticsService } from './monitoring/monitoring-statistics.service';
 
 export const SERVICE = 'security-monitoring-service';
 
@@ -36,6 +37,7 @@ export const envSchema = baseEnvSchema.extend({
     MonitoringService,
     MonitoringEventsConsumer,
     AuthAdminClient,
+    MonitoringStatisticsService,
   ],
 })
 export class AppModule {}

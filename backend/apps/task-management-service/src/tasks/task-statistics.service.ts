@@ -91,9 +91,7 @@ export class TaskStatisticsService {
     }
 
     const visibilityWhere: Prisma.TaskWhereInput =
-      input.scope === 'ME'
-        ? { participants: { some: { user_id: input.caller.userId } } }
-        : {};
+      input.scope === 'ME' ? { participants: { some: { user_id: input.caller.userId } } } : {};
 
     const [visibleTasks, tasksInRange] = await Promise.all([
       this.prisma.task.findMany({
@@ -130,9 +128,10 @@ export class TaskStatisticsService {
       }),
     ]);
 
-    const taskStatus = Object.fromEntries(
-      TASK_STATUSES.map((status) => [status, 0]),
-    ) as Record<TaskStatus, number>;
+    const taskStatus = Object.fromEntries(TASK_STATUSES.map((status) => [status, 0])) as Record<
+      TaskStatus,
+      number
+    >;
     let overdueTasks = 0;
     for (const task of tasksInRange) {
       if (TASK_STATUSES.includes(task.status as TaskStatus)) {

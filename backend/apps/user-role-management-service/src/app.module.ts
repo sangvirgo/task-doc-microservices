@@ -7,6 +7,7 @@ import { ObservabilityModule } from '@c17/observability';
 import { UsersController } from './users/users.controller';
 import { UsersService } from './users/users.service';
 import { UserRolePrismaService } from './prisma/user-role-prisma.service';
+import { UserStatisticsService } from './users/user-statistics.service';
 
 export const SERVICE = 'user-role-management-service';
 
@@ -21,6 +22,6 @@ export const envSchema = baseEnvSchema.extend({
     ObservabilityModule,
   ],
   controllers: [UsersController],
-  providers: [UserRolePrismaService, UsersService],
+  providers: [UserRolePrismaService, UsersService, UserStatisticsService],
 })
 export class AppModule {}

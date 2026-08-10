@@ -23,6 +23,7 @@ import { SecurityClient } from './security/security.client';
 import { DocumentOutboxRelayService } from './messaging/document-outbox-relay.service';
 import { TaskContextClient } from './tasks/task-context.client';
 import { TaskDocumentsService } from './tasks/task-documents.service';
+import { DocumentStatisticsService } from './documents/document-statistics.service';
 
 export const SERVICE = 'document-management-service';
 
@@ -69,6 +70,7 @@ export const envSchema = baseEnvSchema.extend({
     DocumentOutboxRelayService,
     TaskContextClient,
     TaskDocumentsService,
+    DocumentStatisticsService,
   ],
 })
 export class AppModule {}

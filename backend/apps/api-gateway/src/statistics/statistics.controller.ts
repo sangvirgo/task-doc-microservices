@@ -2,10 +2,7 @@ import { Controller, ForbiddenException, Get, Query, Req } from '@nestjs/common'
 import type { Request } from 'express';
 
 import { StatisticsService } from './statistics.service';
-import {
-  parseStatisticsQuery,
-  type GatewayUser,
-} from './statistics.types';
+import { parseStatisticsQuery, type GatewayUser } from './statistics.types';
 
 @Controller('api/statistics')
 export class StatisticsController {

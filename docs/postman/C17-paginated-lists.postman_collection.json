@@ -156,6 +156,31 @@
           "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.test('200 OK', () => pm.response.to.have.status(200));", "const body = pm.response.json(); pm.expect(body.items).to.be.an('array'); pm.expect(body.pagination.page).to.eql(999999); pm.expect(body.pagination.has_next).to.eql(false);"] } }]
         }
       ]
+    },
+    {
+      "name": "6. Statistics overview",
+      "item": [
+        {
+          "name": "Overview - current employee scope",
+          "request": { "method": "GET", "url": "{{baseUrl}}/statistics/overview?scope=ME&from=2026-08-01&to=2026-08-10" },
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.test('200 OK', () => pm.response.to.have.status(200));", "const body = pm.response.json(); pm.expect(body.scope).to.eql('ME'); pm.expect(body.summary).to.be.an('object'); pm.expect(body.task_status).to.be.an('object'); pm.expect(body.task_trend).to.be.an('array'); pm.expect(body.recent_activity).to.be.an('array');"] } }]
+        },
+        {
+          "name": "Overview - organization scope (admin)",
+          "request": { "method": "GET", "url": "{{baseUrl}}/statistics/overview?scope=ORGANIZATION&from=2026-08-01&to=2026-08-10" },
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.test('200 OK', () => pm.response.to.have.status(200));", "const body = pm.response.json(); pm.expect(body.scope).to.eql('ORGANIZATION'); pm.expect(body.users).to.be.an('object'); pm.expect(body.organization_tasks).to.be.an('object'); pm.expect(body.security).to.be.an('object'); pm.expect(body.retention).to.be.an('object'); pm.expect(body.growth_trend).to.be.an('array');"] } }]
+        },
+        {
+          "name": "Overview - organization scope (employee forbidden)",
+          "request": { "method": "GET", "url": "{{baseUrl}}/statistics/overview?scope=ORGANIZATION&from=2026-08-01&to=2026-08-10" },
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.test('403 Forbidden', () => pm.response.to.have.status(403));"] } }]
+        },
+        {
+          "name": "Overview - reject range above 90 days",
+          "request": { "method": "GET", "url": "{{baseUrl}}/statistics/overview?scope=ME&from=2026-01-01&to=2026-08-10" },
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.test('400 Bad Request', () => pm.response.to.have.status(400));"] } }]
+        }
+      ]
     }
   ]
 }

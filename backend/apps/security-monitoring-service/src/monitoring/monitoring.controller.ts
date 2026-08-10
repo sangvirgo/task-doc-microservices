@@ -17,6 +17,10 @@ import { z } from 'zod';
 import { CurrentUser, type AuthContext, isAdmin } from '@c17/auth-context';
 import { paginationQuerySchema, PaginationQuery } from '@c17/contracts';
 import { MonitoringService, SecurityAlertDto, SecurityRuleDto } from './monitoring.service';
+import {
+  MonitoringStatisticsService,
+  parseMonitoringStatisticsQuery,
+} from './monitoring-statistics.service';
 
 const recordEventSchema = z.object({
   rule_id: z.string().uuid(),
@@ -43,10 +47,26 @@ const toggleRuleSchema = z.object({
 @ApiTags('monitoring')
 @Controller('monitoring')
 export class MonitoringController {
-  constructor(private readonly monitoringService: MonitoringService) {}
+  constructor(
+    private readonly monitoringService: MonitoringService,
+    private readonly monitoringStatisticsService?: MonitoringStatisticsService,
+  ) {}
 
   private requireAdmin(user: AuthContext): void {
     if (!isAdmin(user)) throw new ForbiddenException('Administrator role required');
+  }
+
+  @Get('internal/statistics')
+  @ApiOperation({ summary: 'Get monitoring statistics for an internal aggregator' })
+  async getInternalStatistics(
+    @Query() query: Record<string, unknown>,
+    @CurrentUser() user: AuthContext,
+  ) {
+    if (!this.monitoringStatisticsService) {
+      throw new ForbiddenException('Monitoring statistics unavailable');
+    }
+    const parsed = parseMonitoringStatisticsQuery(query);
+    return this.monitoringStatisticsService.getOverview({ ...parsed, caller: user });
   }
 
   @Post('events')

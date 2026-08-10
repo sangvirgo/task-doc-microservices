@@ -321,6 +321,18 @@ export class GatewayController {
       throw new ForbiddenException('Task context endpoints are internal-only');
     }
 
+    if (path === '/api/documents/internal/statistics') {
+      throw new ForbiddenException('Document statistics endpoint is internal-only');
+    }
+
+    if (path === '/api/users/internal/statistics') {
+      throw new ForbiddenException('User statistics endpoint is internal-only');
+    }
+
+    if (path === '/api/monitoring/internal/statistics') {
+      throw new ForbiddenException('Monitoring statistics endpoint is internal-only');
+    }
+
     if (/^\/api\/documents\/[^/]+\/versions$/.test(path) && req.method === 'POST') {
       throw new ForbiddenException('Document version processing is internal-only');
     }

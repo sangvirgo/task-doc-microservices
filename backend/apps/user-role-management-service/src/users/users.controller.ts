@@ -15,6 +15,8 @@ import { z } from 'zod';
 
 import { UsersService, UserDto } from './users.service';
 import { paginationQuerySchema, PaginationQuery } from '@c17/contracts';
+import { AuthContext, CurrentUser } from '@c17/auth-context';
+import { parseUserStatisticsQuery, UserStatisticsService } from './user-statistics.service';
 
 const createUserSchema = z.object({
   id: z.string().uuid(),
@@ -29,7 +31,10 @@ const capabilitySchema = z.object({
 @ApiTags('users')
 @Controller('users')
 export class UsersController {
-  constructor(private readonly usersService: UsersService) {}
+  constructor(
+    private readonly usersService: UsersService,
+    private readonly userStatisticsService: UserStatisticsService,
+  ) {}
 
   @Get()
   @ApiOperation({ summary: 'List all users' })
@@ -47,6 +52,13 @@ export class UsersController {
     @Query('page_size') page_size?: string,
   ): Promise<unknown> {
     return this.usersService.memberDirectory(this.parsePagination(page, page_size));
+  }
+
+  @Get('internal/statistics')
+  @ApiOperation({ summary: 'Get user statistics for an internal aggregator' })
+  getInternalStatistics(@Query() query: Record<string, unknown>, @CurrentUser() user: AuthContext) {
+    const parsed = parseUserStatisticsQuery(query);
+    return this.userStatisticsService.getOverview({ ...parsed, caller: user });
   }
 
   private parsePagination(page?: string, page_size?: string): PaginationQuery {
