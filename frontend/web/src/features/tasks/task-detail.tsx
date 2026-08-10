@@ -78,9 +78,9 @@ function DirectTask({ task, comments, activity, participants, submissions, membe
   const isAssignee = currentUserId === task.assignee_id;
   const canReview = currentUserId === (task.reviewer_id ?? task.creator_id);
   const canSubmit = isAssignee;
-  const canCreateSubtask = isAssignee;
   const assignableMembers = currentUserId ? members.filter(member => member.id !== currentUserId) : members;
   const finalState = ['APPROVED', 'REJECTED', 'CANCELLED'].includes(task.status);
+  const canCreateSubtask = isAssignee && !finalState;
   const canCancelTask = !finalState && !isAssignee;
 
   return <section className={styles.page}>
