@@ -1,6 +1,7 @@
 'use client';
 /* eslint-disable react-hooks/set-state-in-effect */
 import { ChangeEvent, useEffect, useState } from 'react';
+import Link from 'next/link';
 import { notificationsApi } from '@/api/notifications';
 import { readSession } from '@/auth/session';
 import { ErrorState, LoadingState } from '@/components/common-states';
@@ -82,7 +83,7 @@ export function NotificationList() {
     {message && <p className={styles.feedback} role="status"><span aria-hidden="true">✓</span>{message}</p>}
     <section className={styles.inbox} aria-label="Danh sách thông báo">
       {items.length === 0 ? <div className={styles.empty}><span aria-hidden="true">◌</span><h2>No notifications</h2><p>{unreadOnly ? 'Không còn thông báo chưa đọc.' : 'Thông báo dành cho phiên làm việc này sẽ xuất hiện tại đây.'}</p></div> : <ul className={styles.list}>
-        {items.map(item => { const visual = presentation(item.type); const unread = item.read_at === null; return <li className={`${styles.item} ${unread ? styles.unread : ''}`} key={item.id}><span className={`${styles.eventIcon} ${styles[visual.tone]}`} aria-hidden="true">{visual.icon}</span><div className={styles.itemContent}><div className={styles.itemHeading}><h2>{item.title}</h2><time dateTime={item.created_at}>{new Date(item.created_at).toLocaleString('vi-VN')}</time></div><p>{item.body}</p><div className={styles.itemFooter}><span className={`${styles.typeChip} ${styles[visual.tone]}`}>{visual.label}</span>{unread && <button type="button" onClick={() => markRead(item.id)}><span aria-hidden="true">✓</span> Đánh dấu đã đọc</button>}</div></div>{unread && <span className={styles.unreadDot} aria-label="Chưa đọc" />}</li>; })}
+        {items.map(item => { const visual = presentation(item.type); const unread = item.read_at === null; return <li className={`${styles.item} ${unread ? styles.unread : ''}`} key={item.id}><span className={`${styles.eventIcon} ${styles[visual.tone]}`} aria-hidden="true">{visual.icon}</span><div className={styles.itemContent}><Link className={styles.itemLink} href={`/notifications/${item.id}`}><div className={styles.itemHeading}><h2>{item.title}</h2><time dateTime={item.created_at}>{new Date(item.created_at).toLocaleString('vi-VN')}</time></div><p>{item.body}</p></Link><div className={styles.itemFooter}><span className={`${styles.typeChip} ${styles[visual.tone]}`}>{visual.label}</span>{unread && <button type="button" onClick={() => markRead(item.id)}><span aria-hidden="true">✓</span> Đánh dấu đã đọc</button>}</div></div>{unread && <span className={styles.unreadDot} aria-label="Chưa đọc" />}</li>; })}
       </ul>}
     </section>
     <section className={styles.preferences} aria-labelledby="preferences-title">
