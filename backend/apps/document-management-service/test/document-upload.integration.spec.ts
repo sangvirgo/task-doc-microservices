@@ -15,7 +15,7 @@ type MockFetch = typeof fetch & jest.MockedFunction<typeof fetch>;
 const EMPLOYEE_ID = '10000000-0000-4000-8000-000000000001';
 const ASSIGNEE_ID = '10000000-0000-4000-8000-000000000002';
 const TASK_ID = '10000000-0000-4000-a000-000000000003';
-const GRANT_EXPIRY = '2026-08-10T17:00:00.000Z';
+const GRANT_EXPIRY = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
 const DOCX_MIME = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
 
 function authHeaders(userId: string): Record<string, string> {
