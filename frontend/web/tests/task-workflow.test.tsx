@@ -3,9 +3,9 @@ import { cleanup, render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { TaskDetail } from '@/features/tasks/task-detail';
 
-const mocks = vi.hoisted(() => ({ get: vi.fn(), participants: vi.fn(), activity: vi.fn(), comments: vi.fn(), submissions: vi.fn(), directory: vi.fn(), taskDocuments: vi.fn(), submit: vi.fn(), review: vi.fn() }));
+const mocks = vi.hoisted(() => ({ get: vi.fn(), children: vi.fn(), participants: vi.fn(), activity: vi.fn(), comments: vi.fn(), submissions: vi.fn(), directory: vi.fn(), taskDocuments: vi.fn(), submit: vi.fn(), review: vi.fn() }));
 
-vi.mock('@/api/tasks', () => ({ tasksApi: { get: mocks.get, participants: mocks.participants, activity: mocks.activity, comments: mocks.comments, submissions: mocks.submissions, submit: mocks.submit, review: mocks.review } }));
+vi.mock('@/api/tasks', () => ({ tasksApi: { get: mocks.get, children: mocks.children, participants: mocks.participants, activity: mocks.activity, comments: mocks.comments, submissions: mocks.submissions, submit: mocks.submit, review: mocks.review } }));
 vi.mock('@/api/admin', () => ({ adminApi: { directory: mocks.directory } }));
 vi.mock('@/api/documents', () => ({ documentsApi: { taskDocuments: mocks.taskDocuments } }));
 
@@ -13,6 +13,7 @@ const task = (status: 'IN_PROGRESS' | 'WAITING_REVIEW') => ({ id: 'task-id', tit
 
 beforeEach(() => {
   mocks.participants.mockReset().mockResolvedValue([]);
+  mocks.children.mockReset().mockResolvedValue([]);
   mocks.activity.mockReset().mockResolvedValue([]);
   mocks.comments.mockReset().mockResolvedValue([]);
   mocks.directory.mockReset().mockResolvedValue([]);

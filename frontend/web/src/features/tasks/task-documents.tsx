@@ -1,7 +1,7 @@
 'use client';
 /* eslint-disable react-hooks/set-state-in-effect */
 import Link from 'next/link';
-import { ChangeEvent, useCallback, useEffect, useState } from 'react';
+import { ChangeEvent, useCallback, useEffect, useRef, useState } from 'react';
 import { documentsApi } from '@/api/documents';
 import { DocumentPreview } from '@/features/documents/document-preview';
 import type { Task } from '@/types/task';
@@ -11,20 +11,26 @@ import { GatewayError } from '@/lib/errors';
 import styles from './task-documents.module.css';
 const MAX_UPLOAD_BYTES = 25 * 1024 * 1024;
 
-export function TaskDocuments({ task }: { task: Task }) {
+export function TaskDocuments({ task, canUpload = false }: { task: Task; canUpload?: boolean }) {
   const [items, setItems] = useState<TaskDocument[] | null>(null);
   const [loadFailed, setLoadFailed] = useState(false);
   const [status, setStatus] = useState('');
   const [preview, setPreview] = useState<{ documentId: string; version: number }>();
   const [uploading, setUploading] = useState(false);
+  const [uploadOpen, setUploadOpen] = useState(false);
+  const [detachingId, setDetachingId] = useState<string>();
+  const loadSequence = useRef(0);
 
   const load = useCallback(async () => {
+    const sequence = ++loadSequence.current;
+    const isCurrent = () => loadSequence.current === sequence;
     setItems(null);
     setLoadFailed(false);
     try {
-      setItems(await documentsApi.taskDocuments(task.id));
+      const nextItems = await documentsApi.taskDocuments(task.id);
+      if (isCurrent()) setItems(nextItems);
     } catch {
-      setLoadFailed(true);
+      if (isCurrent()) setLoadFailed(true);
     }
   }, [task.id]);
 
@@ -53,7 +59,9 @@ export function TaskDocuments({ task }: { task: Task }) {
     setStatus('Đang chuẩn bị các trang xem trước có watermark…');
   };
   const detachDocument = async (item: TaskDocument) => {
+    if (detachingId) return;
     if (!window.confirm('Detach this document from the task?')) return;
+    setDetachingId(item.document_id);
     setStatus('Detaching document…');
     try {
       await documentsApi.detachFromTask(task.id, item.document_id);
@@ -61,6 +69,8 @@ export function TaskDocuments({ task }: { task: Task }) {
       await load();
     } catch {
       setStatus('Không thể detach tài liệu. Kiểm tra quyền task và thử lại.');
+    } finally {
+      setDetachingId(undefined);
     }
   };
 
@@ -86,6 +96,7 @@ export function TaskDocuments({ task }: { task: Task }) {
     try {
       await documentsApi.upload(data, percent => setStatus(`Đang tải tài liệu lên… ${percent}%`));
       form.reset();
+      setUploadOpen(false);
       setStatus('Đã tải và gắn tài liệu riêng cho task này.');
       await load();
     } catch (reason) {
@@ -93,16 +104,16 @@ export function TaskDocuments({ task }: { task: Task }) {
     } finally { setUploading(false); }
   };
   return <section className={styles.section} aria-labelledby="task-documents-title">
-    <form className={styles.uploadForm} onSubmit={uploadDocument}>
+    <div className={styles.heading}><div><p className={styles.eyebrow}>Tệp trong công việc</p><h2 id="task-documents-title">Tài liệu đính kèm</h2></div><div className={styles.headingActions}><span>{items ? `${items.length} tệp` : '—'}</span>{canUpload && <button className={styles.addAttachment} type="button" aria-expanded={uploadOpen} onClick={() => setUploadOpen(value => !value)}>＋ Thêm</button>}</div></div>
+    {canUpload && uploadOpen && <form className={styles.uploadForm} onSubmit={uploadDocument}>
       <label>Tải tài liệu vào task này<input name="file" type="file" required disabled={uploading} /></label>
       <label>Tên hiển thị <span>Tùy chọn</span><input name="title" placeholder="Mặc định theo tên file" disabled={uploading} /></label>
       <button type="submit" disabled={uploading}>{uploading ? 'Đang tải…' : 'Tải lên task này'}</button>
-    </form>
-    <div className={styles.heading}><div><h2 id="task-documents-title">Tài liệu đính kèm</h2><p>Tài liệu đã được gắn khi tạo công việc.</p></div><span>{items ? `${items.length} tệp` : '—'}</span></div>
+    </form>}
     {status && <p className={styles.status} role="status">{status}</p>}
     {preview && <DocumentPreview documentId={preview.documentId} version={preview.version} taskId={task.id} onClose={() => setPreview(undefined)} />}
     {loadFailed ? <div className={styles.loadError} role="alert"><span aria-hidden="true">!</span><div><strong>Không tải được tài liệu</strong><p>Đây là lỗi tải dữ liệu, không phải trạng thái “0 tệp”. Hãy thử tải lại.</p></div><button type="button" onClick={() => void load()}>Tải lại</button></div> : <div className={styles.documentGrid}>
-      {items?.map(item => <article className={styles.documentCard} key={item.association_id}><span className={styles.documentIcon}>▧</span><div><Link href={'/documents/' + item.document_id + '?task_id=' + task.id}><strong>{item.title}</strong></Link><small>{item.document_type} · v{item.current_version}</small></div><span className={styles.security}>{item.security_level}</span><footer><span>{item.permissions.join(' · ')}</span><div className={styles.documentActions}>{item.permissions.includes('PREVIEW') && <button type="button" onClick={() => openPreview(item)}>Xem trước</button>}<button type="button" className={styles.downloadButton} disabled={!item.permissions.includes('DOWNLOAD')} title={!item.permissions.includes('DOWNLOAD') ? 'Bạn không có quyền DOWNLOAD' : undefined} onClick={() => void downloadDocument(item)}>Tải xuống</button><button type="button" className={styles.detachButton} onClick={() => void detachDocument(item)}>Detach</button>{!item.permissions.includes('PREVIEW') && !item.permissions.includes('DOWNLOAD') && <span className={styles.noAction}>Bạn không có quyền thao tác</span>}</div></footer></article>)}
+      {items?.map(item => <article className={styles.documentCard} key={item.association_id}><span className={styles.documentIcon}>▧</span><div><Link href={'/documents/' + item.document_id + '?task_id=' + task.id}><strong>{item.title}</strong></Link><small>{item.document_type} · v{item.current_version}</small></div><span className={styles.security}>{item.security_level}</span><footer><span>{item.permissions.join(' · ')}</span><div className={styles.documentActions}>{item.permissions.includes('PREVIEW') && <button type="button" onClick={() => openPreview(item)}>Xem trước</button>}<button type="button" className={styles.downloadButton} disabled={!item.permissions.includes('DOWNLOAD')} title={!item.permissions.includes('DOWNLOAD') ? 'Bạn không có quyền DOWNLOAD' : undefined} onClick={() => void downloadDocument(item)}>Tải xuống</button>{item.permissions.includes('SHARE') && <button type="button" className={styles.detachButton} disabled={detachingId === item.document_id} onClick={() => void detachDocument(item)}>Detach</button>}{!item.permissions.includes('PREVIEW') && !item.permissions.includes('DOWNLOAD') && <span className={styles.noAction}>Bạn không có quyền thao tác</span>}</div></footer></article>)}
       {items?.length === 0 && <p className={styles.empty}>Chưa có tài liệu nào được gắn vào công việc này.</p>}
       {items === null && <p className={styles.empty}>Đang tải tài liệu…</p>}
     </div>}

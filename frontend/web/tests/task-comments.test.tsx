@@ -1,6 +1,6 @@
 import React from 'react';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
-import { beforeEach, expect, it, vi } from 'vitest';
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { TaskComments } from '@/features/tasks/task-comments';
 
 const mocks = vi.hoisted(() => ({ get: vi.fn(), comments: vi.fn(), comment: vi.fn(), directory: vi.fn() }));
@@ -14,6 +14,8 @@ beforeEach(() => {
   mocks.comment.mockReset().mockResolvedValue({ id: 'comment-2', created_at: '2026-08-10T11:00:00Z' });
   mocks.directory.mockReset().mockResolvedValue([{ id: 'employee-id', email: 'employee@example.com' }]);
 });
+
+afterEach(cleanup);
 
 it('keeps task comments on an official page and posts through the existing task API', async () => {
   render(<TaskComments id="task-id" />);

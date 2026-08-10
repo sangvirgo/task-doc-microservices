@@ -25,10 +25,18 @@ it('routes PREVIEW-only access to a secure preview session and never creates a d
   const downloadButton = screen.getByRole('button', { name: /tải xuống/i });
   expect(previewButton).toBeEnabled();
   expect(downloadButton).toBeDisabled();
+  expect(screen.queryByRole('button', { name: 'Detach' })).not.toBeInTheDocument();
 
   fireEvent.click(previewButton);
   await waitFor(() => expect(mocks.createPreviewSession).toHaveBeenCalledWith('document-id', 1, 'task-id'));
   expect(mocks.ticket).not.toHaveBeenCalled();
   expect(mocks.redeem).not.toHaveBeenCalled();
   expect(await screen.findByLabelText('Preview only warning')).toBeInTheDocument();
+});
+
+it('hides upload when the task viewer is not a direct participant', async () => {
+  render(<TaskDocuments task={task} canUpload={false} />);
+
+  await screen.findByText('Bao cao');
+  expect(screen.queryByRole('button', { name: /thêm/i })).not.toBeInTheDocument();
 });

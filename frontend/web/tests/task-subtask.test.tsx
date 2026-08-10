@@ -4,10 +4,10 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { TaskDetail } from '@/features/tasks/task-detail';
 
 const mocks = vi.hoisted(() => ({
-  get: vi.fn(), participants: vi.fn(), activity: vi.fn(), comments: vi.fn(), create: vi.fn(), directory: vi.fn(), taskDocuments: vi.fn(),
+  get: vi.fn(), children: vi.fn(), participants: vi.fn(), activity: vi.fn(), comments: vi.fn(), create: vi.fn(), directory: vi.fn(), taskDocuments: vi.fn(),
 }));
 
-vi.mock('@/api/tasks', () => ({ tasksApi: { get: mocks.get, participants: mocks.participants, activity: mocks.activity, comments: mocks.comments, create: mocks.create } }));
+vi.mock('@/api/tasks', () => ({ tasksApi: { get: mocks.get, children: mocks.children, participants: mocks.participants, activity: mocks.activity, comments: mocks.comments, create: mocks.create } }));
 vi.mock('@/api/admin', () => ({ adminApi: { directory: mocks.directory } }));
 vi.mock('@/api/documents', () => ({ documentsApi: { taskDocuments: mocks.taskDocuments } }));
 
@@ -19,6 +19,7 @@ const parentTask = {
 
 beforeEach(() => {
   mocks.get.mockReset().mockResolvedValue(parentTask);
+  mocks.children.mockReset().mockResolvedValue([]);
   mocks.participants.mockReset().mockResolvedValue([]);
   mocks.activity.mockReset().mockResolvedValue([]);
   mocks.comments.mockReset().mockResolvedValue([]);
