@@ -192,9 +192,7 @@ export class TasksService {
   }): Promise<TaskDto> {
     if (data.parent_task_id) {
       const parent = await this.requireTask(data.parent_task_id);
-      if (parent.assignee_id !== data.creator_id) {
-        throw new ForbiddenException('Only the current parent assignee may create a child task');
-      }
+      await this.assertDirectParticipant(parent.id, data.creator_id);
     }
 
     const reviewerId = data.reviewer_id ?? data.creator_id;

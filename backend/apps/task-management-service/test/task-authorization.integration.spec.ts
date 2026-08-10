@@ -827,22 +827,38 @@ describe('Task authorization integration (PostgreSQL)', () => {
     expect(res.status).toBe(403);
   });
 
-  it('allows child task creation only for the parent assignee', async () => {
-    const parentTaskId = await seedTask({ assigneeId: SECOND_EMPLOYEE_ID });
+  it('allows every direct parent participant to create a child task', async () => {
+    const parentTaskId = await seedTask({
+      assigneeId: SECOND_EMPLOYEE_ID,
+      explicitParticipantId: THIRD_EMPLOYEE_ID,
+    });
 
-    const denied = await request(app.getHttpServer())
+    for (const [index, participantId] of [
+      EMPLOYEE_ID,
+      SECOND_EMPLOYEE_ID,
+      THIRD_EMPLOYEE_ID,
+    ].entries()) {
+      const response = await request(app.getHttpServer())
+        .post('/tasks')
+        .set(authHeaders(participantId, 'EMPLOYEE'))
+        .send({ title: `Child allowed ${index}`, parent_task_id: parentTaskId });
+
+      expect(response.status).toBe(201);
+    }
+  });
+
+  it('denies a non-participant from creating a child task', async () => {
+    const parentTaskId = await seedTask({
+      assigneeId: SECOND_EMPLOYEE_ID,
+      explicitParticipantId: THIRD_EMPLOYEE_ID,
+    });
+
+    const response = await request(app.getHttpServer())
       .post('/tasks')
-      .set(authHeaders(EMPLOYEE_ID, 'EMPLOYEE'))
+      .set(authHeaders(randomUUID(), 'EMPLOYEE'))
       .send({ title: 'Child denied', parent_task_id: parentTaskId });
 
-    expect(denied.status).toBe(403);
-
-    const allowed = await request(app.getHttpServer())
-      .post('/tasks')
-      .set(authHeaders(SECOND_EMPLOYEE_ID, 'EMPLOYEE'))
-      .send({ title: 'Child allowed', parent_task_id: parentTaskId });
-
-    expect(allowed.status).toBe(201);
+    expect(response.status).toBe(403);
   });
 
   it('fails closed when permission service is unavailable', async () => {

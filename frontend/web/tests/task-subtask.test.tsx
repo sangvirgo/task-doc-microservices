@@ -49,8 +49,17 @@ it('creates a sub-task from the parent detail with the parent id and default rev
   expect(screen.queryByRole('combobox', { name: /công việc cha/i })).not.toBeInTheDocument();
 });
 
-it('disables sub-task creation for a user who is not the parent assignee', async () => {
+it('enables sub-task creation for an explicit parent participant', async () => {
   mocks.get.mockResolvedValueOnce({ ...parentTask, assignee_id: 'other-employee-id' });
+  mocks.participants.mockResolvedValueOnce([
+    {
+      id: 'participant-id',
+      task_id: parentTask.id,
+      user_id: 'employee-id',
+      role: 'PARTICIPANT',
+      added_at: '2026-08-08T00:00:00.000Z',
+    },
+  ]);
   mocks.directory.mockResolvedValueOnce([
     { id: 'creator-id', email: 'creator@example.com' },
     { id: 'employee-id', email: 'employee@example.com' },
@@ -59,6 +68,8 @@ it('disables sub-task creation for a user who is not the parent assignee', async
 
   render(<TaskDetail id={parentTask.id} />);
   const button = await screen.findByRole('button', { name: /tạo sub-task/i });
-  expect(button).toBeDisabled();
-  expect(screen.getByText(/chỉ người được giao task cha mới có thể tạo sub-task/i)).toBeInTheDocument();
+  expect(button).toBeEnabled();
+  expect(screen.queryByText(/chỉ người tham gia trực tiếp task cha mới có thể tạo sub-task/i)).not.toBeInTheDocument();
+  fireEvent.click(button);
+  expect(await screen.findByRole('heading', { name: 'Giao một phần việc' })).toBeInTheDocument();
 });

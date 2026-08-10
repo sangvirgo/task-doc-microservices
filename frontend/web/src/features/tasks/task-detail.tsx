@@ -76,11 +76,16 @@ function DirectTask({ task, comments, activity, participants, submissions, membe
   const currentUserId = readSession()?.userId;
   const isCreator = currentUserId === task.creator_id;
   const isAssignee = currentUserId === task.assignee_id;
+  const isParticipant = Boolean(currentUserId && (
+    currentUserId === task.creator_id ||
+    currentUserId === task.assignee_id ||
+    participants.some(participant => participant.user_id === currentUserId)
+  ));
   const canReview = currentUserId === (task.reviewer_id ?? task.creator_id);
   const canSubmit = isAssignee;
   const assignableMembers = currentUserId ? members.filter(member => member.id !== currentUserId) : members;
   const finalState = ['APPROVED', 'REJECTED', 'CANCELLED'].includes(task.status);
-  const canCreateSubtask = isAssignee && !finalState;
+  const canCreateSubtask = isParticipant && !finalState;
   const canCancelTask = !finalState && !isAssignee;
 
   return <section className={styles.page}>
@@ -105,7 +110,7 @@ function DirectTask({ task, comments, activity, participants, submissions, membe
           <div className={styles.railStatus}><span>Trạng thái</span><strong className={`${styles.statusBadge} ${styles[task.status.toLowerCase()]}`}>{task.blocked ? 'BLOCKED' : statusLabel(task.status)}</strong></div>
           {isAssignee && (task.status === 'ASSIGNED' || task.status === 'NEED_REVISION') && <button className={styles.startButton} onClick={() => void act(() => tasksApi.status(task.id, 'IN_PROGRESS'), 'Đã bắt đầu công việc.', 'Không thể bắt đầu công việc.')}>Bắt đầu làm</button>}
           <button className={styles.subtaskButton} type="button" disabled={!canCreateSubtask} aria-expanded={subtaskOpen} onClick={() => { setSubtaskError(''); setSubtaskOpen(value => !value); }}>＋ Tạo sub-task</button>
-          {!canCreateSubtask && <p className={styles.inlineHint}>Chỉ người được giao task cha mới có thể tạo sub-task.</p>}
+          {!canCreateSubtask && <p className={styles.inlineHint}>Chỉ người tham gia trực tiếp task cha mới có thể tạo sub-task.</p>}
           {subtaskOpen && <TaskAssignmentDrawer currentUserId={currentUserId ?? ''} members={members} parentTask={{ id: task.id, title: task.title }} submitting={creatingSubtask} error={subtaskError} onSubmit={createSubtask} onClose={() => setSubtaskOpen(false)} />}
           <div className={styles.railBody}>
             <div className={styles.metaBlock}><span>Người thực hiện</span><div className={styles.person}><i>{initials(assignee?.email || 'U')}</i><strong>{assignee?.email || 'Chưa giao'}</strong></div><form className={!isCreator ? styles.hidden : undefined} onSubmit={assign}><SearchableSelect name="assignee_id" aria-label="Chọn người thực hiện" defaultValue={task.assignee_id ?? ''} required><option value="">Chọn nhân viên</option>{assignableMembers.map(member => <option key={member.id} value={member.id}>{member.email}</option>)}</SearchableSelect><button>Cập nhật</button></form></div>

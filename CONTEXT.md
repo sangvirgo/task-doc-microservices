@@ -47,7 +47,7 @@ _Avoid_: watch, follow, subscriber
 
 **Creator**:
 The Participant who raised a task and who reviews its result. For a Child Task, this is
-the Assignee of the parent.
+the direct Participant of the parent who raised it.
 _Avoid_: owner, requester, author
 
 **Assignee**:
@@ -62,9 +62,9 @@ is the justification for document access — grants derive from it and expire wi
 _Avoid_: ticket, issue, job, work item
 
 **Child Task**:
-A task raised by the Assignee of another task, who thereby becomes the Child Task's
-Creator and reviewer. Every Child Task blocks its parent's approval — there are no
-optional children.
+A task raised by a direct Participant of another task, who thereby becomes the Child
+Task's Creator and reviewer. Every Child Task blocks its parent's approval — there are
+no optional children.
 _Avoid_: subtask, sub-task, dependent task
 
 **Comment**:
@@ -161,4 +161,3 @@ _Avoid_: archive, export, submission
 The policy-approved destruction of stored Document content after its retention period.
 The Audit Trail survives it — disposal removes content, never evidence.
 _Avoid_: deletion, purge, removal
-
