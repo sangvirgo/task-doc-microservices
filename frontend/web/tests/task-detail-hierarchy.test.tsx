@@ -8,8 +8,9 @@ const mocks = vi.hoisted(() => ({
   get: vi.fn(),
   children: vi.fn(),
   participants: vi.fn(),
-  activity: vi.fn(),
-  comments: vi.fn(),
+  activityPage: vi.fn(),
+  commentsPage: vi.fn(),
+  comment: vi.fn(),
   directory: vi.fn(),
   taskDocuments: vi.fn(),
 }));
@@ -19,8 +20,9 @@ vi.mock('@/api/tasks', () => ({
     get: mocks.get,
     children: mocks.children,
     participants: mocks.participants,
-    activity: mocks.activity,
-    comments: mocks.comments,
+    activityPage: mocks.activityPage,
+    commentsPage: mocks.commentsPage,
+    comment: mocks.comment,
   },
 }));
 vi.mock('@/api/admin', () => ({ adminApi: { directory: mocks.directory } }));
@@ -64,8 +66,9 @@ beforeEach(() => {
   mocks.get.mockReset().mockImplementation(async (id: string) => id === parentTask.id ? parentTask : task());
   mocks.children.mockReset().mockResolvedValue([]);
   mocks.participants.mockReset().mockResolvedValue([]);
-  mocks.activity.mockReset().mockResolvedValue([]);
-  mocks.comments.mockReset().mockResolvedValue([]);
+  mocks.activityPage.mockReset().mockResolvedValue({ items: [], pagination: { page: 1, page_size: 20, total: 0, total_pages: 0, has_next: false } });
+  mocks.commentsPage.mockReset().mockResolvedValue({ items: [], pagination: { page: 1, page_size: 20, total: 0, total_pages: 0, has_next: false } });
+  mocks.comment.mockReset().mockResolvedValue({ id: 'comment-1', task_id: 'task-id', author_id: 'employee-id', content: 'Bình luận', created_at: '2026-08-10T10:00:00.000Z' });
   mocks.directory.mockReset().mockResolvedValue([]);
   mocks.taskDocuments.mockReset().mockResolvedValue([]);
   window.sessionStorage.setItem('c17.web.session.v1', JSON.stringify({

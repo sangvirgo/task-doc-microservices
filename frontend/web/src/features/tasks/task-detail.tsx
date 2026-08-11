@@ -11,7 +11,8 @@ import { GatewayError } from '@/lib/errors';
 import { TaskDocuments } from './task-documents';
 import { TaskChildren } from './task-children';
 import { TaskPeople } from './task-people';
-import type { Activity, AncestorTaskSummary, CreateTaskInput, Participant, Task, TaskComment, TaskSubmission } from '@/types/task';
+import { TaskCollaboration } from './task-collaboration';
+import type { AncestorTaskSummary, CreateTaskInput, Participant, Task, TaskSubmission } from '@/types/task';
 import styles from './task-detail.module.css';
 import { SearchableSelect } from '@/components/searchable-select';
 import { TaskAssignmentDrawer } from './task-assignment-drawer';
@@ -19,7 +20,6 @@ import { taskStatusClass, taskStatusLabel } from './task-status';
 
 const isSummary = (value: Task | AncestorTaskSummary): value is AncestorTaskSummary => !('id' in value);
 const message = (error: unknown, fallback: string) => error instanceof GatewayError && error.status === 409 ? 'Công việc đã thay đổi. Tải lại và thử lại.' : fallback;
-const initials = (value: string) => value.split(/[@ ._-]/).filter(Boolean).slice(0, 2).map(part => part[0]?.toUpperCase()).join('') || 'U';
 const formatDate = (value: string | null) => value ? new Date(value).toLocaleDateString('vi-VN', { day: '2-digit', month: 'short', year: 'numeric' }) : 'Chưa đặt';
 const formatDateTime = (value: string) => new Date(value).toLocaleString('vi-VN');
 
@@ -27,8 +27,6 @@ export function TaskDetail({ id }: { id: string }) {
   const [task, setTask] = useState<Task | AncestorTaskSummary | null>(null);
   const [parentContext, setParentContext] = useState<Task | AncestorTaskSummary | null>(null);
   const [members, setMembers] = useState<MemberOption[]>([]);
-  const [comments, setComments] = useState<TaskComment[]>([]);
-  const [activity, setActivity] = useState<Activity[]>([]);
   const [participants, setParticipants] = useState<Participant[]>([]);
   const [submissions, setSubmissions] = useState<TaskSubmission[]>([]);
   const [error, setError] = useState<number>();
@@ -40,8 +38,6 @@ export function TaskDetail({ id }: { id: string }) {
     setError(undefined);
     setTask(null);
     setParentContext(null);
-    setComments([]);
-    setActivity([]);
     setParticipants([]);
     setSubmissions([]);
     tasksApi.get(id).then(async result => {
@@ -55,15 +51,9 @@ export function TaskDetail({ id }: { id: string }) {
           .catch(() => { if (isCurrent()) setParentContext(null); });
       }
 
-      const [participantResult, activityResult, commentResult] = await Promise.allSettled([
-        tasksApi.participants(id),
-        tasksApi.activity(id),
-        tasksApi.comments(id),
-      ]);
+      const [participantResult] = await Promise.allSettled([tasksApi.participants(id)]);
       if (!isCurrent()) return;
       if (participantResult.status === 'fulfilled') setParticipants(participantResult.value);
-      if (activityResult.status === 'fulfilled') setActivity(activityResult.value);
-      if (commentResult.status === 'fulfilled') setComments(commentResult.value);
       if (tasksApi.submissions) tasksApi.submissions(id).then(submissionItems => { if (isCurrent()) setSubmissions(submissionItems); }).catch(() => { if (isCurrent()) setSubmissions([]); });
     }).catch((reason: unknown) => { if (isCurrent()) setError(reason instanceof GatewayError ? reason.status : 503); });
   };
@@ -82,7 +72,7 @@ export function TaskDetail({ id }: { id: string }) {
   if (error) return <ErrorState message="Không thể tải chi tiết công việc." onRetry={load} />;
   if (!task) return <LoadingState />;
   if (isSummary(task)) return <AncestorSummary task={task} />;
-  return <DirectTask task={task} parentContext={parentContext} comments={comments} activity={activity} participants={participants} submissions={submissions} members={members} reload={load} />;
+  return <DirectTask task={task} parentContext={parentContext} participants={participants} submissions={submissions} members={members} reload={load} />;
 }
 
 function AncestorSummary({ task }: { task: AncestorTaskSummary }) {
@@ -95,7 +85,7 @@ function AncestorSummary({ task }: { task: AncestorTaskSummary }) {
   </section>;
 }
 
-function DirectTask({ task, parentContext, comments, activity, participants, submissions, members, reload }: { task: Task; parentContext: Task | AncestorTaskSummary | null; comments: TaskComment[]; activity: Activity[]; participants: Participant[]; submissions: TaskSubmission[]; members: MemberOption[]; reload: () => void }) {
+function DirectTask({ task, parentContext, participants, submissions, members, reload }: { task: Task; parentContext: Task | AncestorTaskSummary | null; participants: Participant[]; submissions: TaskSubmission[]; members: MemberOption[]; reload: () => void }) {
   const [notice, setNotice] = useState('');
   const [pendingAction, setPendingAction] = useState(false);
   const [subtaskOpen, setSubtaskOpen] = useState(false);
@@ -129,7 +119,6 @@ function DirectTask({ task, parentContext, comments, activity, participants, sub
   const canModifyTask = isCreator || isAssignee;
   const canCancelTask = !finalState && isCreator;
   const nextStep = task.blocked ? 'Cần bỏ chặn trước khi tiếp tục.' : task.status === 'ASSIGNED' ? 'Người thực hiện có thể bắt đầu công việc.' : task.status === 'IN_PROGRESS' ? 'Hoàn tất nội dung rồi nộp để phê duyệt.' : task.status === 'WAITING_REVIEW' ? 'Người review cần xử lý submission mới nhất.' : task.status === 'NEED_REVISION' ? 'Cần chỉnh sửa rồi bắt đầu lại.' : finalState ? 'Công việc đã kết thúc.' : 'Theo dõi tiến độ và phối hợp cùng người tham gia.';
-  const memberName = (userId: string) => members.find(member => member.id === userId)?.email ?? userId.slice(0, 8);
   const parentTitle = parentContext?.title ?? (task.parent_task_id ? `Task ${task.parent_task_id.slice(0, 8)}` : null);
   const parentHref = parentContext && !isSummary(parentContext) ? `/tasks/${parentContext.id}` : undefined;
 
@@ -184,12 +173,7 @@ function DirectTask({ task, parentContext, comments, activity, participants, sub
           {submissions.length > 0 && <div className={styles.submissionList}><strong>Lịch sử submission</strong>{submissions.slice(0, 3).map(item => <div className={styles.submissionItem} key={item.id}><span>{formatDateTime(item.created_at)}</span><b>{item.status}</b><small>{item.content}</small></div>)}</div>}
         </section>
 
-        <section className={styles.activitySection} aria-labelledby="task-activity-title">
-          <div className={styles.sectionHeading}><div><p className={styles.eyebrow}>Dòng thời gian</p><h2 id="task-activity-title">Hoạt động</h2></div><span className={styles.mutedValue}>{activity.length} cập nhật</span></div>
-          <div className={styles.timeline}>{activity.length === 0 ? <p className={styles.emptyText}>Chưa có hoạt động.</p> : activity.map(item => <article key={item.id}><span className={styles.timelineAvatar}>{initials(memberName(item.actor_id))}</span><div><strong>{item.summary}</strong><small>{item.activity_type} · {memberName(item.actor_id)}</small><time dateTime={item.created_at}>{formatDateTime(item.created_at)}</time></div></article>)}</div>
-        </section>
-
-        <section className={styles.commentsSection} aria-labelledby="comments-summary-title"><div><p className={styles.eyebrow}>Trao đổi chính thức</p><h2 id="comments-summary-title">Bình luận</h2><p>{comments.length === 0 ? 'Chưa có trao đổi trong task.' : `${comments.length} bình luận đang được lưu theo task.`}</p></div><Link className={styles.commentLink} href={`/tasks/${task.id}/comments`}>Mở bình luận <span>→</span></Link></section>
+        <TaskCollaboration taskId={task.id} members={members} />
 
         <details className={styles.secondaryDetails}>
           <summary>Thông tin &amp; thao tác khác</summary>
