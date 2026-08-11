@@ -10,6 +10,7 @@ import { ErrorState, LoadingState, PermissionDeniedState } from '@/components/co
 import { GatewayError } from '@/lib/errors';
 import { TaskDocuments } from './task-documents';
 import { TaskChildren } from './task-children';
+import { TaskPeople } from './task-people';
 import type { Activity, AncestorTaskSummary, CreateTaskInput, Participant, Task, TaskComment, TaskSubmission } from '@/types/task';
 import styles from './task-detail.module.css';
 import { SearchableSelect } from '@/components/searchable-select';
@@ -162,9 +163,9 @@ function DirectTask({ task, parentContext, comments, activity, participants, sub
           <div className={styles.metaRow}><span className={styles.metaIcon}>☷</span><span className={styles.metaLabel}>Mô tả</span><strong className={task.description ? styles.descriptionValue : styles.mutedValue}>{task.description || 'Thêm mô tả cho công việc'}</strong></div>
         </section>
 
-        <section className={styles.peopleRow}><span className={styles.metaIcon}>♧</span><div><span className={styles.metaLabel}>Người tham gia</span><div className={styles.people}>{participants.map(item => { const member = members.find(option => option.id === item.user_id); return <span className={styles.personChip} key={item.id} title={member?.email || item.user_id}>{initials(member?.email || item.user_id)}</span>; })}{participants.length === 0 && <small className={styles.mutedValue}>Chưa có người tham gia</small>}</div></div></section>
+        <TaskPeople task={task} participants={participants} members={members} />
 
-        <TaskChildren parentId={task.id} />
+        <TaskChildren parentId={task.id} initialChildren={task.children} />
 
         <section className={styles.subtaskActionSection}>
           <button className={styles.addRow} type="button" disabled={!canCreateSubtask} aria-expanded={subtaskOpen} onClick={() => { setSubtaskError(''); setSubtaskOpen(value => !value); }}><span>＋</span> Tạo sub-task</button>

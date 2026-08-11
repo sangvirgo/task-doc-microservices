@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
-import type { Task } from '@/types/task';
+import type { Task, TaskChildSummary } from '@/types/task';
 import { tasksApi } from '@/api/tasks';
 import styles from './task-children.module.css';
 import { taskStatusClass, taskStatusLabel } from './task-status';
@@ -11,8 +11,10 @@ const formatDeadline = (deadline: string | null, overdue: boolean) => {
   return overdue ? `${formatted} · Quá hạn` : formatted;
 };
 
-export function TaskChildren({ parentId }: { parentId: string }) {
-  const [children, setChildren] = useState<Task[] | null>(null);
+type ChildItem = Task | TaskChildSummary;
+
+export function TaskChildren({ parentId, initialChildren }: { parentId: string; initialChildren?: ChildItem[] }) {
+  const [children, setChildren] = useState<ChildItem[] | null>(initialChildren ?? null);
   const [error, setError] = useState(false);
   const [attempt, setAttempt] = useState(0);
 
@@ -20,6 +22,7 @@ export function TaskChildren({ parentId }: { parentId: string }) {
     let cancelled = false;
 
     async function loadChildren() {
+      if (initialChildren !== undefined) return;
       setChildren(null);
       setError(false);
       try {
@@ -34,7 +37,7 @@ export function TaskChildren({ parentId }: { parentId: string }) {
     return () => {
       cancelled = true;
     };
-  }, [parentId, attempt]);
+  }, [initialChildren, parentId, attempt]);
 
   if (children === null && !error) {
     return <section className={styles.section}>Đang tải sub-task…</section>;

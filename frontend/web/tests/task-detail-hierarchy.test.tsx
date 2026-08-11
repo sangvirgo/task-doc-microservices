@@ -103,6 +103,49 @@ it('renders direct children as task links without loading child documents', asyn
   expect(mocks.taskDocuments).not.toHaveBeenCalledWith('direct-child-id');
 });
 
+it('renders the child tree returned by the task detail response', async () => {
+  mocks.get.mockReset().mockResolvedValue(task({
+    id: 'task-with-tree',
+    title: 'Task có cây sub-task',
+    parent_task_id: null,
+    children: [{
+      id: 'tree-child-id',
+      title: 'Sub-task đã trả về',
+      status: 'ASSIGNED',
+      creator_id: 'creator-id',
+      assignee_id: 'employee-id',
+      reviewer_id: 'creator-id',
+      deadline: null,
+      is_overdue: false,
+    }],
+  }));
+
+  render(<TaskDetail id="task-with-tree" />);
+
+  expect(await screen.findByRole('link', { name: /Sub-task đã trả về/ })).toHaveAttribute('href', '/tasks/tree-child-id');
+  expect(mocks.children).not.toHaveBeenCalled();
+});
+
+it('shows role-labelled task participants in the task context', async () => {
+  mocks.get.mockReset().mockResolvedValue(task({ id: 'task-with-people', parent_task_id: null }));
+  mocks.participants.mockResolvedValue([{ id: 'participant-row', task_id: 'task-with-people', user_id: 'participant-id', role: 'PARTICIPANT', added_at: '2026-08-10T00:00:00.000Z' }]);
+  mocks.directory.mockResolvedValue([
+    { id: 'creator-id', email: 'creator@example.com' },
+    { id: 'employee-id', email: 'assignee@example.com' },
+    { id: 'participant-id', email: 'participant@example.com' },
+  ]);
+
+  render(<TaskDetail id="task-with-people" />);
+
+  expect(await screen.findByRole('heading', { name: 'Người tham gia' })).toBeInTheDocument();
+  expect(screen.getAllByText('Người tạo').length).toBeGreaterThan(0);
+  expect(screen.getAllByText('Người thực hiện').length).toBeGreaterThan(0);
+  expect(screen.getByText('Người review')).toBeInTheDocument();
+  expect(screen.getAllByText('creator@example.com').length).toBeGreaterThan(0);
+  expect(screen.getAllByText('assignee@example.com').length).toBeGreaterThan(0);
+  expect(screen.getByText('participant@example.com')).toBeInTheDocument();
+});
+
 it('ignores a stale task response after navigating to another task', async () => {
   const first = deferred<ReturnType<typeof task>>();
   const second = deferred<ReturnType<typeof task>>();
