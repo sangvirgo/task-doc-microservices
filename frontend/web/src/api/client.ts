@@ -2,6 +2,7 @@ import { clearSession, readSession, writeSession } from '@/auth/session';
 import { createCorrelationId } from '@/lib/correlation';
 import { GatewayError, toGatewayError } from '@/lib/errors';
 import type { TokenPair } from '@/types/auth';
+import type { PaginatedResponse, PaginationMeta } from '@/types/pagination';
 
 let refreshPromise: Promise<TokenPair> | null = null;
 const apiUrl = (path: string) => `/gateway${path}`;
@@ -42,9 +43,38 @@ function normalizeList<T>(payload: unknown): T[] {
   }
   throw new GatewayError(502, 'Gateway returned an invalid list response.');
 }
+
+function normalizePage<T>(payload: unknown): PaginatedResponse<T> {
+  if (!payload || typeof payload !== 'object') {
+    throw new GatewayError(502, 'Gateway returned an invalid paginated response.');
+  }
+
+  const envelope = payload as Record<string, unknown>;
+  const items = envelope.items;
+  const pagination = envelope.pagination;
+  if (!Array.isArray(items) || !pagination || typeof pagination !== 'object') {
+    throw new GatewayError(502, 'Gateway returned an invalid paginated response.');
+  }
+
+  const metadata = pagination as Record<string, unknown>;
+  if (typeof metadata.page !== 'number' || typeof metadata.page_size !== 'number') {
+    throw new GatewayError(502, 'Gateway returned invalid pagination metadata.');
+  }
+
+  const normalized: PaginationMeta = {
+    page: metadata.page,
+    page_size: metadata.page_size,
+    ...(typeof metadata.total === 'number' ? { total: metadata.total } : {}),
+    ...(typeof metadata.total_pages === 'number' ? { total_pages: metadata.total_pages } : {}),
+    has_next: metadata.has_next === true,
+  };
+  return { items, pagination: normalized } as PaginatedResponse<T>;
+}
+
 export const gatewayClient = {
   get: <T>(path: string, signal?: AbortSignal) => request<T>(path, { signal }),
   getList: async <T>(path: string, signal?: AbortSignal) => normalizeList<T>(await request<unknown>(path, { signal })),
+  getPage: async <T>(path: string, signal?: AbortSignal) => normalizePage<T>(await request<unknown>(path, { signal })),
   post: <T>(path: string, body?: unknown) => request<T>(path, { method: 'POST', body: body === undefined ? undefined : JSON.stringify(body) }),
   patch: <T>(path: string, body: unknown) => request<T>(path, { method: 'PATCH', body: JSON.stringify(body) }),
   put: <T>(path: string, body: unknown) => request<T>(path, { method: 'PUT', body: JSON.stringify(body) }),
