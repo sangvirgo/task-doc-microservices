@@ -1,5 +1,5 @@
 import React from 'react';
-import { render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { beforeEach, expect, it, vi } from 'vitest';
 import { WorkspaceOverview } from '@/features/workspace/workspace-overview';
 
@@ -68,4 +68,16 @@ it('shows organization cards for an admin without adding another API flow', asyn
   expect(screen.getByText('128')).toBeVisible();
   expect(screen.getByText('Chuỗi audit hợp lệ')).toBeVisible();
   expect(mocks.overview).toHaveBeenCalledWith('ORGANIZATION', expect.any(String), expect.any(String));
+});
+
+it('reloads the overview for the date range selected by the user', async () => {
+  const { container } = render(<WorkspaceOverview />);
+  await waitFor(() => expect(screen.getAllByRole('heading', { name: 'Tổng quan' }).length).toBeGreaterThan(0));
+  const filter = within(container.querySelector('form[aria-label="Lọc thời gian tổng quan"]') as HTMLFormElement);
+
+  fireEvent.change(filter.getByLabelText('Từ ngày'), { target: { value: '2026-08-01' } });
+  fireEvent.change(filter.getByLabelText('Đến ngày'), { target: { value: '2026-08-05' } });
+  fireEvent.click(filter.getByRole('button', { name: 'Áp dụng' }));
+
+  await waitFor(() => expect(mocks.overview).toHaveBeenLastCalledWith('ME', '2026-08-01', '2026-08-05'));
 });

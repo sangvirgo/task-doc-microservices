@@ -11,6 +11,7 @@ const mocks = vi.hoisted(() => ({
   activityPage: vi.fn(),
   commentsPage: vi.fn(),
   comment: vi.fn(),
+  addParticipant: vi.fn(),
   directory: vi.fn(),
   taskDocuments: vi.fn(),
 }));
@@ -23,6 +24,7 @@ vi.mock('@/api/tasks', () => ({
     activityPage: mocks.activityPage,
     commentsPage: mocks.commentsPage,
     comment: mocks.comment,
+    addParticipant: mocks.addParticipant,
   },
 }));
 vi.mock('@/api/admin', () => ({ adminApi: { directory: mocks.directory } }));
@@ -69,6 +71,7 @@ beforeEach(() => {
   mocks.activityPage.mockReset().mockResolvedValue({ items: [], pagination: { page: 1, page_size: 20, total: 0, total_pages: 0, has_next: false } });
   mocks.commentsPage.mockReset().mockResolvedValue({ items: [], pagination: { page: 1, page_size: 20, total: 0, total_pages: 0, has_next: false } });
   mocks.comment.mockReset().mockResolvedValue({ id: 'comment-1', task_id: 'task-id', author_id: 'employee-id', content: 'Bình luận', created_at: '2026-08-10T10:00:00.000Z' });
+  mocks.addParticipant.mockReset().mockResolvedValue({ id: 'participant-row', task_id: 'task-id', user_id: 'participant-id', role: 'PARTICIPANT', added_at: '2026-08-10T00:00:00.000Z' });
   mocks.directory.mockReset().mockResolvedValue([]);
   mocks.taskDocuments.mockReset().mockResolvedValue([]);
   window.sessionStorage.setItem('c17.web.session.v1', JSON.stringify({
@@ -140,13 +143,47 @@ it('shows role-labelled task participants in the task context', async () => {
 
   render(<TaskDetail id="task-with-people" />);
 
-  expect(await screen.findByRole('heading', { name: 'Người tham gia' })).toBeInTheDocument();
-  expect(screen.getAllByText('Người tạo').length).toBeGreaterThan(0);
-  expect(screen.getAllByText('Người thực hiện').length).toBeGreaterThan(0);
-  expect(screen.getByText('Người review')).toBeInTheDocument();
+  expect(await screen.findByRole('heading', { name: /Người tham gia/ })).toBeInTheDocument();
+  expect(screen.getAllByText(/Người tạo/).length).toBeGreaterThan(0);
+  expect(screen.getAllByText(/Người thực hiện/).length).toBeGreaterThan(0);
+  expect(screen.getByText(/Người review/)).toBeInTheDocument();
   expect(screen.getAllByText('creator@example.com').length).toBeGreaterThan(0);
   expect(screen.getAllByText('assignee@example.com').length).toBeGreaterThan(0);
   expect(screen.getByText('participant@example.com')).toBeInTheDocument();
+});
+
+it('shows the inline add-participant control only to the task creator', async () => {
+  mocks.get.mockReset().mockResolvedValue(task({ id: 'creator-task', parent_task_id: null }));
+  mocks.directory.mockResolvedValue([
+    { id: 'creator-id', email: 'creator@example.com' },
+    { id: 'employee-id', email: 'assignee@example.com' },
+  ]);
+  window.sessionStorage.setItem('c17.web.session.v1', JSON.stringify({
+    access_token: 'token', refresh_token: 'refresh', expires_in_seconds: 3600,
+    role: 'EMPLOYEE', userId: 'creator-id', expiresAt: Date.now() + 3600000,
+  }));
+
+  const { rerender } = render(<TaskDetail id="creator-task" />);
+  expect(await screen.findByRole('button', { name: /Thêm người/ })).toBeInTheDocument();
+
+  window.sessionStorage.setItem('c17.web.session.v1', JSON.stringify({
+    access_token: 'token', refresh_token: 'refresh', expires_in_seconds: 3600,
+    role: 'EMPLOYEE', userId: 'employee-id', expiresAt: Date.now() + 3600000,
+  }));
+  rerender(<TaskDetail id="creator-task" />);
+  await waitFor(() => expect(screen.queryByRole('button', { name: /Thêm người/ })).not.toBeInTheDocument());
+});
+
+it('keeps the assignee update control in the top task metadata for the creator', async () => {
+  mocks.get.mockReset().mockResolvedValue(task({ id: 'creator-task', parent_task_id: null }));
+  mocks.directory.mockResolvedValue([{ id: 'employee-id', email: 'assignee@example.com' }]);
+  window.sessionStorage.setItem('c17.web.session.v1', JSON.stringify({
+    access_token: 'token', refresh_token: 'refresh', expires_in_seconds: 3600,
+    role: 'EMPLOYEE', userId: 'creator-id', expiresAt: Date.now() + 3600000,
+  }));
+
+  render(<TaskDetail id="creator-task" />);
+  expect(await screen.findByRole('form', { name: 'Cập nhật người thực hiện' })).toBeInTheDocument();
 });
 
 it('ignores a stale task response after navigating to another task', async () => {

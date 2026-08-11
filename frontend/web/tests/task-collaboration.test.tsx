@@ -1,5 +1,5 @@
 import React from 'react';
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { TaskCollaboration } from '@/features/tasks/task-collaboration';
 
@@ -41,6 +41,13 @@ it('opens comments first and appends the next page at the scroll sentinel', asyn
   observerCallbacks.at(-1)?.([{ isIntersecting: true } as IntersectionObserverEntry]);
   expect(await screen.findByText('Tiếp theo')).toBeInTheDocument();
   expect(mocks.commentsPage).toHaveBeenLastCalledWith('task-id', 2, 20);
+});
+
+it('keeps the comment composer inside the active conversation surface', async () => {
+  render(<TaskCollaboration taskId="task-id" members={members} />);
+
+  const thread = await screen.findByRole('region', { name: 'Bình luận' });
+  expect(within(thread).getByRole('textbox', { name: 'Nội dung' })).toBeInTheDocument();
 });
 
 it('switches to the timeline tab and loads activity independently', async () => {

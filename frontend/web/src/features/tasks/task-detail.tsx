@@ -17,6 +17,7 @@ import styles from './task-detail.module.css';
 import { SearchableSelect } from '@/components/searchable-select';
 import { TaskAssignmentDrawer } from './task-assignment-drawer';
 import { taskStatusClass, taskStatusLabel } from './task-status';
+import { uploadTaskAttachments } from './task-document-upload';
 
 const isSummary = (value: Task | AncestorTaskSummary): value is AncestorTaskSummary => !('id' in value);
 const message = (error: unknown, fallback: string) => error instanceof GatewayError && error.status === 409 ? 'Công việc đã thay đổi. Tải lại và thử lại.' : fallback;
@@ -100,10 +101,16 @@ function DirectTask({ task, parentContext, participants, submissions, members, r
   const participant = (event: FormEvent<HTMLFormElement>) => { event.preventDefault(); const form = event.currentTarget; const data = new FormData(form); void act(() => tasksApi.addParticipant(task.id, String(data.get('user_id')), String(data.get('role')) || undefined), 'Đã thêm người tham gia.', 'Không thể thêm người tham gia.'); form.reset(); };
   const submit = (event: FormEvent<HTMLFormElement>) => { event.preventDefault(); const content = String(new FormData(event.currentTarget).get('content')); void act(() => tasksApi.submit(task.id, content), 'Đã nộp kết quả để duyệt.', 'Không thể nộp kết quả.'); };
   const review = (event: FormEvent<HTMLFormElement>) => { event.preventDefault(); const data = new FormData(event.currentTarget); void act(() => tasksApi.review(task.id, String(data.get('submission_id')), String(data.get('decision')) as 'APPROVED' | 'NEED_REVISION' | 'REJECTED', String(data.get('comment')) || undefined), 'Đã ghi nhận phê duyệt.', 'Không thể ghi nhận phê duyệt.'); };
-  const createSubtask = async (input: CreateTaskInput) => {
+  const createSubtask = async (input: CreateTaskInput, form: HTMLFormElement) => {
     setSubtaskError('');
     setCreatingSubtask(true);
-    try { await tasksApi.create({ ...input, parent_task_id: task.id }); setSubtaskOpen(false); setNotice('Đã tạo sub-task trong công việc này.'); reload(); } catch { setSubtaskError('Không thể tạo sub-task. Kiểm tra thông tin và thử lại.'); } finally { setCreatingSubtask(false); }
+    try {
+      const created = await tasksApi.create({ ...input, parent_task_id: task.id });
+      const attachments = await uploadTaskAttachments(form, created, currentUserId ?? '');
+      setSubtaskOpen(false);
+      setNotice(attachments.skipped ? `Đã tạo sub-task, nhưng ${attachments.skipped} tệp chưa thể tải lên.` : 'Đã tạo sub-task trong công việc này.');
+      reload();
+    } catch { setSubtaskError('Không thể tạo sub-task. Kiểm tra thông tin và thử lại.'); } finally { setCreatingSubtask(false); }
   };
 
   const assignee = members.find(member => member.id === task.assignee_id);
@@ -129,7 +136,6 @@ function DirectTask({ task, parentContext, participants, submissions, members, r
         <span className={styles.topBarTitle}>Chi tiết công việc</span>
         <div className={styles.topActions}>
           {isAssignee && (task.status === 'ASSIGNED' || task.status === 'NEED_REVISION') && <button className={styles.topAction} type="button" disabled={pendingAction} onClick={() => void act(() => tasksApi.status(task.id, 'IN_PROGRESS'), 'Đã bắt đầu công việc.', 'Không thể bắt đầu công việc.')}>Bắt đầu</button>}
-          <Link className={styles.topAction} href={`/tasks/${task.id}/comments`}>Bình luận</Link>
         </div>
       </header>
 
@@ -146,40 +152,36 @@ function DirectTask({ task, parentContext, participants, submissions, members, r
         </header>
         {notice && <p className={styles.notice} role="status">{notice}</p>}
 
-        <section className={styles.metaList} aria-label="Thông tin công việc">
-          <div className={styles.metaRow}><span className={styles.metaIcon}>♙</span><span className={styles.metaLabel}>Người thực hiện</span><strong>{assignee?.email || 'Chưa giao'}</strong></div>
-          <div className={styles.metaRow}><span className={styles.metaIcon}>▣</span><span className={styles.metaLabel}>Hạn hoàn thành</span><strong>{formatDate(task.deadline)}{task.is_overdue ? ' · Quá hạn' : ''}</strong></div>
-          <div className={styles.metaRow}><span className={styles.metaIcon}>☷</span><span className={styles.metaLabel}>Mô tả</span><strong className={task.description ? styles.descriptionValue : styles.mutedValue}>{task.description || 'Thêm mô tả cho công việc'}</strong></div>
-        </section>
-
-        <TaskPeople task={task} participants={participants} members={members} />
-
-        <TaskChildren parentId={task.id} initialChildren={task.children} />
-
-        <section className={styles.subtaskActionSection}>
-          <button className={styles.addRow} type="button" disabled={!canCreateSubtask} aria-expanded={subtaskOpen} onClick={() => { setSubtaskError(''); setSubtaskOpen(value => !value); }}><span>＋</span> Tạo sub-task</button>
-          {!canCreateSubtask && <p className={styles.inlineHint}>Chỉ người tham gia trực tiếp task cha mới có thể tạo sub-task.</p>}
-          {subtaskOpen && <TaskAssignmentDrawer currentUserId={currentUserId ?? ''} members={members} parentTask={{ id: task.id, title: task.title }} submitting={creatingSubtask} error={subtaskError} onSubmit={createSubtask} onClose={() => setSubtaskOpen(false)} />}
-        </section>
-
-        <TaskDocuments task={task} canUpload={isParticipant} />
-
-        <section className={styles.workflowSection} aria-labelledby="workflow-title">
-          <div className={styles.sectionHeading}><div><p className={styles.eyebrow}>Bước tiếp theo</p><h2 id="workflow-title">Xử lý công việc</h2></div><span className={styles.mutedValue}>{nextStep}</span></div>
-          {(canSubmit || canReview) ? <div className={styles.workflowGrid}>
-            {canSubmit && <form className={styles.workflowForm} onSubmit={submit}><h3>Nộp kết quả</h3><p>Gửi nội dung hoàn thành để người review xử lý.</p><label>Kết quả<textarea name="content" required placeholder="Mô tả kết quả hoàn thành…" /></label><button type="submit" disabled={pendingAction}>Nộp để phê duyệt</button></form>}
-            {canReview && <form className={styles.workflowForm} onSubmit={review}><h3>Phê duyệt submission</h3><p>Chọn submission đang chờ xử lý.</p><label>Submission<SearchableSelect name="submission_id" required defaultValue=""><option value="" disabled>Chọn submission</option>{submissions.filter(item => item.status === 'PENDING').map(item => <option key={item.id} value={item.id}>{formatDateTime(item.created_at)} · {item.status}</option>)}</SearchableSelect></label>{submissions.filter(item => item.status === 'PENDING').length === 0 && <small className={styles.inlineHint}>Chưa có submission đang chờ.</small>}<label>Quyết định<SearchableSelect name="decision" defaultValue="APPROVED"><option value="APPROVED">Phê duyệt</option><option value="NEED_REVISION">Yêu cầu chỉnh sửa</option><option value="REJECTED">Từ chối</option></SearchableSelect></label><label>Nhận xét <span>Tùy chọn</span><input name="comment" placeholder="Ghi chú cho người thực hiện" /></label><button type="submit" disabled={pendingAction || submissions.filter(item => item.status === 'PENDING').length === 0}>Ghi nhận quyết định</button></form>}
-          </div> : <p className={styles.workflowHint}>{finalState ? 'Workflow đã hoàn tất.' : nextStep}</p>}
-          {submissions.length > 0 && <div className={styles.submissionList}><strong>Lịch sử submission</strong>{submissions.slice(0, 3).map(item => <div className={styles.submissionItem} key={item.id}><span>{formatDateTime(item.created_at)}</span><b>{item.status}</b><small>{item.content}</small></div>)}</div>}
-        </section>
-
-        <TaskCollaboration taskId={task.id} members={members} />
+        <div className={styles.detailGrid}>
+          <div className={styles.mainColumn}>
+            <section className={styles.metaList} aria-label="Thông tin công việc">
+              <div className={styles.metaRow}><span className={styles.metaIcon}>♙</span><span className={styles.metaLabel}>Người thực hiện</span>{isCreator ? <form className={styles.detailBlock} aria-label="Cập nhật người thực hiện" onSubmit={assign}><SearchableSelect name="assignee_id" aria-label="Chọn người thực hiện" defaultValue={task.assignee_id ?? ''} required><option value="">Chọn nhân viên</option>{assignableMembers.map(member => <option key={member.id} value={member.id}>{member.email}</option>)}</SearchableSelect><button type="submit" disabled={pendingAction}>Cập nhật</button></form> : <strong>{assignee?.email || 'Chưa giao'}</strong>}</div>
+              <div className={styles.metaRow}><span className={styles.metaIcon}>▣</span><span className={styles.metaLabel}>Hạn hoàn thành</span><strong>{formatDate(task.deadline)}{task.is_overdue ? ' · Quá hạn' : ''}</strong></div>
+              <div className={styles.metaRow}><span className={styles.metaIcon}>☷</span><span className={styles.metaLabel}>Mô tả</span><strong className={task.description ? styles.descriptionValue : styles.mutedValue}>{task.description || 'Thêm mô tả cho công việc'}</strong></div>
+            </section>
+            <TaskChildren parentId={task.id} initialChildren={task.children} />
+            <TaskPeople task={task} participants={participants} members={members} canManageParticipants={isCreator} addingParticipant={pendingAction} onAddParticipant={participant} />
+            <TaskCollaboration taskId={task.id} members={members} />
+            <section className={styles.subtaskActionSection}>
+              <button className={styles.addRow} type="button" disabled={!canCreateSubtask} aria-expanded={subtaskOpen} onClick={() => { setSubtaskError(''); setSubtaskOpen(value => !value); }}><span>＋</span> Tạo sub-task</button>
+              {!canCreateSubtask && <p className={styles.inlineHint}>Chỉ người tham gia trực tiếp task cha mới có thể tạo sub-task.</p>}
+              {subtaskOpen && <TaskAssignmentDrawer currentUserId={currentUserId ?? ''} members={members} parentTask={{ id: task.id, title: task.title }} submitting={creatingSubtask} error={subtaskError} onSubmit={createSubtask} onClose={() => setSubtaskOpen(false)} />}
+            </section>
+            <TaskDocuments task={task} canUpload={isParticipant} />
+            <section className={styles.workflowSection} aria-labelledby="workflow-title">
+              <div className={styles.sectionHeading}><div><p className={styles.eyebrow}>Bước tiếp theo</p><h2 id="workflow-title">Xử lý công việc</h2></div><span className={styles.mutedValue}>{nextStep}</span></div>
+              {(canSubmit || canReview) ? <div className={styles.workflowGrid}>
+                {canSubmit && <form className={styles.workflowForm} onSubmit={submit}><h3>Nộp kết quả</h3><p>Gửi nội dung hoàn thành để người review xử lý.</p><label>Kết quả<textarea name="content" required placeholder="Mô tả kết quả hoàn thành…" /></label><button type="submit" disabled={pendingAction}>Nộp để phê duyệt</button></form>}
+                {canReview && <form className={styles.workflowForm} onSubmit={review}><h3>Phê duyệt submission</h3><p>Chọn submission đang chờ xử lý.</p><label>Submission<SearchableSelect name="submission_id" required defaultValue=""><option value="" disabled>Chọn submission</option>{submissions.filter(item => item.status === 'PENDING').map(item => <option key={item.id} value={item.id}>{formatDateTime(item.created_at)} · {item.status}</option>)}</SearchableSelect></label>{submissions.filter(item => item.status === 'PENDING').length === 0 && <small className={styles.inlineHint}>Chưa có submission đang chờ.</small>}<label>Quyết định<SearchableSelect name="decision" defaultValue="APPROVED"><option value="APPROVED">Phê duyệt</option><option value="NEED_REVISION">Yêu cầu chỉnh sửa</option><option value="REJECTED">Từ chối</option></SearchableSelect></label><label>Nhận xét <span>Tùy chọn</span><input name="comment" placeholder="Ghi chú cho người thực hiện" /></label><button type="submit" disabled={pendingAction || submissions.filter(item => item.status === 'PENDING').length === 0}>Ghi nhận quyết định</button></form>}
+              </div> : <p className={styles.workflowHint}>{finalState ? 'Workflow đã hoàn tất.' : nextStep}</p>}
+              {submissions.length > 0 && <div className={styles.submissionList}><strong>Lịch sử submission</strong>{submissions.slice(0, 3).map(item => <div className={styles.submissionItem} key={item.id}><span>{formatDateTime(item.created_at)}</span><b>{item.status}</b><small>{item.content}</small></div>)}</div>}
+            </section>
+          </div>
+        </div>
 
         <details className={styles.secondaryDetails}>
           <summary>Thông tin &amp; thao tác khác</summary>
           <div className={styles.detailsBody}>
-            <div className={styles.detailBlock}><span className={styles.metaLabel}>Người thực hiện</span><form className={!isCreator ? styles.hidden : undefined} onSubmit={assign}><SearchableSelect name="assignee_id" aria-label="Chọn người thực hiện" defaultValue={task.assignee_id ?? ''} required><option value="">Chọn nhân viên</option>{assignableMembers.map(member => <option key={member.id} value={member.id}>{member.email}</option>)}</SearchableSelect><button type="submit" disabled={pendingAction}>Cập nhật</button></form></div>
-            <div className={styles.detailBlock}><span className={styles.metaLabel}>Thêm người tham gia</span><form className={`${styles.participantForm} ${!isCreator ? styles.hidden : ''}`} onSubmit={participant}><SearchableSelect name="user_id" aria-label="Thêm người tham gia" required defaultValue=""><option value="" disabled>Chọn nhân viên</option>{members.map(member => <option key={member.id} value={member.id}>{member.email}</option>)}</SearchableSelect><input name="role" placeholder="Vai trò (tùy chọn)" /><button type="submit" disabled={pendingAction}>Thêm</button></form></div>
             <div className={styles.secondaryActions}>{canCancelTask && <button type="button" disabled={pendingAction} onClick={() => { if (window.confirm('Hủy công việc này?')) void act(() => tasksApi.status(task.id, 'CANCELLED'), 'Đã hủy công việc.', 'Không thể hủy công việc.'); }}>Hủy công việc</button>}{canModifyTask && <button type="button" className={styles.dangerAction} disabled={pendingAction} onClick={() => { const reason = window.prompt('Lý do công việc bị chặn?'); if (reason) void act(() => tasksApi.block(task.id, reason), 'Đã đánh dấu bị chặn.', 'Không thể chặn công việc.'); }}>{task.blocked ? 'Cập nhật lý do chặn' : 'Báo cáo lỗi / Chặn'}</button>}{canModifyTask && task.blocked && <button type="button" disabled={pendingAction} onClick={() => void act(() => tasksApi.unblock(task.id), 'Đã bỏ chặn.', 'Không thể bỏ chặn.')}>Bỏ chặn</button>}</div>
           </div>
         </details>

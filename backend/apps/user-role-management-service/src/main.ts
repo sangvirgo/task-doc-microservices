@@ -6,6 +6,7 @@ import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import { StructuredLogger } from '@c17/observability';
 
 import { AppModule, SERVICE } from './app.module';
+import { configureApp } from './bootstrap-config';
 
 export const DEFAULT_PORT = 3002;
 
@@ -15,6 +16,7 @@ async function bootstrap(): Promise<void> {
   const logger = app.get(StructuredLogger);
   app.useLogger(logger);
   app.enableShutdownHooks();
+  configureApp(app);
 
   SwaggerModule.setup(
     'docs',

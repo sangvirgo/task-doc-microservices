@@ -11,6 +11,7 @@ import type { CreateTaskInput, Task, TaskStatus } from '@/types/task';
 import styles from './tasks.module.css';
 import { SearchableSelect } from '@/components/searchable-select';
 import { TaskAssignmentDrawer } from './task-assignment-drawer';
+import { uploadTaskAttachments } from './task-document-upload';
 
 const filters: TaskStatus[] = ['CREATED', 'ASSIGNED', 'IN_PROGRESS', 'WAITING_REVIEW', 'APPROVED', 'NEED_REVISION', 'REJECTED', 'CANCELLED'];
 const boardColumns: TaskStatus[] = ['CREATED', 'ASSIGNED', 'IN_PROGRESS', 'WAITING_REVIEW', 'APPROVED'];
@@ -56,14 +57,15 @@ export function TaskList() {
   }, [items, search, sort]);
 
   const openComposer = () => { setCreateError(''); setCreatedTaskId(''); setComposerOpen(true); };
-  const create = async (input: CreateTaskInput) => {
+  const create = async (input: CreateTaskInput, form: HTMLFormElement) => {
     setCreateError('');
     setCreating(true);
     try {
       const created = await tasksApi.create(input);
+      const attachments = await uploadTaskAttachments(form, created, currentUserId ?? '');
       setCreatedTaskId(created.id);
       setComposerOpen(false);
-      setNotice(input.assignee_id ? 'Đã giao task.' : 'Đã tạo task ở trạng thái Chưa giao.');
+      setNotice(attachments.skipped ? `Đã tạo task, nhưng ${attachments.skipped} tệp chưa thể tải lên.` : input.assignee_id ? 'Đã giao task kèm tệp đính kèm.' : 'Đã tạo task ở trạng thái Chưa giao.');
       load();
     } catch {
       setCreateError('Không thể tạo task. Kiểm tra thông tin và thử lại.');

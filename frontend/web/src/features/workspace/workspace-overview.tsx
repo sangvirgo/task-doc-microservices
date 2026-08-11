@@ -1,7 +1,7 @@
 'use client';
 /* eslint-disable react-hooks/set-state-in-effect */
 import Link from 'next/link';
-import { useEffect, useState } from 'react';
+import { FormEvent, useEffect, useState } from 'react';
 import { statisticsApi } from '@/api/statistics';
 import { readSession } from '@/auth/session';
 import { ErrorState, LoadingState } from '@/components/common-states';
@@ -34,15 +34,23 @@ function StatCard({ icon, label, value, tone }: { icon: string; label: string; v
 export function WorkspaceOverview() {
   const session = readSession();
   const scope: StatisticsScope = session?.role === 'ADMIN' ? 'ORGANIZATION' : 'ME';
+  const [selectedRange, setSelectedRange] = useState(rangeForOverview);
+  const [appliedRange, setAppliedRange] = useState(rangeForOverview);
   const [overview, setOverview] = useState<StatisticsOverview | null>(null);
   const [failed, setFailed] = useState(false);
+  const [rangeError, setRangeError] = useState('');
   const load = () => {
     setFailed(false);
     setOverview(null);
-    const range = rangeForOverview();
-    statisticsApi.overview(scope, range.from, range.to).then(setOverview).catch(() => setFailed(true));
+    statisticsApi.overview(scope, appliedRange.from, appliedRange.to).then(setOverview).catch(() => setFailed(true));
   };
-  useEffect(load, [scope]);
+  useEffect(load, [scope, appliedRange]);
+  const applyRange = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (selectedRange.from > selectedRange.to) { setRangeError('Ngày bắt đầu phải trước hoặc bằng ngày kết thúc.'); return; }
+    setRangeError('');
+    setAppliedRange(selectedRange);
+  };
 
   if (!session?.userId) return <ErrorState message="Không tìm thấy phiên đăng nhập. Vui lòng đăng nhập lại." />;
   if (failed) return <ErrorState message="Không thể tải số liệu tổng quan từ máy chủ." onRetry={load} />;
@@ -53,7 +61,7 @@ export function WorkspaceOverview() {
   return <section className={styles.page}>
     <header className={styles.pageHeader}>
       <div><p className={styles.eyebrow}>{overview.scope === 'ORGANIZATION' ? 'Không gian quản trị' : 'Không gian làm việc'}</p><h1>Tổng quan</h1><p className={styles.subtitle}>Nắm nhanh việc cần làm, tài liệu được phép xem và các cập nhật mới nhất.</p></div>
-      <div className={styles.range}><span>Dữ liệu trong khoảng</span><strong>{displayDate(overview.range.from)} — {displayDate(overview.range.to)}</strong></div>
+      <form className={styles.range} onSubmit={applyRange} aria-label="Lọc thời gian tổng quan"><span>Dữ liệu trong khoảng</span><div className={styles.dateFields}><label>Từ ngày<input aria-label="Từ ngày" type="date" value={selectedRange.from} max={selectedRange.to} onChange={event => setSelectedRange(range => ({ ...range, from: event.target.value }))} /></label><label>Đến ngày<input aria-label="Đến ngày" type="date" value={selectedRange.to} min={selectedRange.from} onChange={event => setSelectedRange(range => ({ ...range, to: event.target.value }))} /></label></div><div className={styles.rangeFooter}><strong>{displayDate(overview.range.from)} — {displayDate(overview.range.to)}</strong><button type="submit">Áp dụng</button></div>{rangeError && <small role="alert">{rangeError}</small>}</form>
     </header>
 
     <div className={styles.statGrid} aria-label="Chỉ số tổng quan">

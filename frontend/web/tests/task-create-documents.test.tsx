@@ -3,10 +3,11 @@ import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/re
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { TaskList } from '@/features/tasks/task-list';
 
-const mocks = vi.hoisted(() => ({ create: vi.fn(), list: vi.fn(), directory: vi.fn() }));
+const mocks = vi.hoisted(() => ({ create: vi.fn(), list: vi.fn(), directory: vi.fn(), upload: vi.fn() }));
 
 vi.mock('@/api/tasks', () => ({ tasksApi: { create: mocks.create, list: mocks.list } }));
 vi.mock('@/api/admin', () => ({ adminApi: { directory: mocks.directory } }));
+vi.mock('@/api/documents', () => ({ documentsApi: { upload: mocks.upload } }));
 
 const createdTask = {
   id: 'task-created', title: 'Rà soát hồ sơ', description: null, status: 'ASSIGNED' as const,
@@ -23,6 +24,7 @@ describe('task list creation flow', () => {
       { id: 'employee-id', email: 'employee@example.com' },
     ]);
     mocks.create.mockReset().mockResolvedValue(createdTask);
+    mocks.upload.mockReset().mockResolvedValue({});
     window.sessionStorage.setItem('c17.web.session.v1', JSON.stringify({ access_token: 'token', refresh_token: 'refresh', expires_in_seconds: 3600, role: 'EMPLOYEE', userId: 'creator-id', expiresAt: Date.now() + 3600000 }));
   });
 
@@ -58,5 +60,23 @@ describe('task list creation flow', () => {
 
     expect(await screen.findByRole('alert')).toHaveTextContent('Không thể tạo task.');
     expect(title).toHaveValue('Task cần thử lại');
+  });
+
+  it('uploads selected files directly into the task after creating it', async () => {
+    render(<TaskList />);
+    fireEvent.click((await screen.findAllByRole('button', { name: /new task/i }))[0]);
+    fireEvent.change(screen.getByLabelText('Tiêu đề task'), { target: { value: 'Task có tài liệu' } });
+    const file = new File(['nội dung'], 'bien-ban.docx', { type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' });
+    fireEvent.change(screen.getByLabelText('Đính kèm tệp'), { target: { files: [file] } });
+
+    expect(screen.getByText('bien-ban.docx')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Tạo task' }));
+
+    await waitFor(() => expect(mocks.upload).toHaveBeenCalledTimes(1));
+    const [data] = mocks.upload.mock.calls[0] as [FormData, (percent: number) => void];
+    expect(data.get('task_id')).toBe('task-created');
+    expect(data.get('file')).toBe(file);
+    expect(data.get('title')).toBe('bien-ban');
+    expect(data.get('document_type')).toBe('DOCX');
   });
 });

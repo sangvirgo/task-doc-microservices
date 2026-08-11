@@ -1,5 +1,5 @@
 import React from 'react';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { beforeEach, expect, it, vi } from 'vitest';
 import { TaskDocuments } from '@/features/tasks/task-documents';
 
@@ -24,4 +24,18 @@ it('shows a retryable load error instead of reporting a false zero-file state', 
   fireEvent.click(screen.getByRole('button', { name: 'Tải lại' }));
   await waitFor(() => expect(mocks.taskDocuments).toHaveBeenCalledTimes(2));
   expect(await screen.findByText('Chưa có tài liệu nào được gắn vào công việc này.')).toBeInTheDocument();
+});
+
+it('groups each file permission summary and actions in an accessible footer', async () => {
+  mocks.taskDocuments.mockResolvedValueOnce([{
+    association_id: 'association-id', document_id: 'document-id', title: 'Tệp kiểm toán',
+    document_type: 'PDF', current_version: 1, security_level: 'INTERNAL',
+    permissions: ['PREVIEW', 'DOWNLOAD'],
+  }]);
+  render(<TaskDocuments task={task} />);
+
+  const footer = await screen.findByRole('group', { name: 'Thao tác với tệp Tệp kiểm toán' });
+  expect(within(footer).getByText('PREVIEW · DOWNLOAD')).toBeInTheDocument();
+  expect(within(footer).getByRole('button', { name: 'Xem trước' })).toBeInTheDocument();
+  expect(within(footer).getByRole('button', { name: 'Tải xuống' })).toBeInTheDocument();
 });

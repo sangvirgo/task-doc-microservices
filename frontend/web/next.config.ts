@@ -1,7 +1,7 @@
 import type { NextConfig } from 'next';
 import { PHASE_DEVELOPMENT_SERVER } from 'next/constants';
 
-const gatewayBaseUrl = process.env.NEXT_PUBLIC_API_BASE_URL ?? 'http://13.229.104.126:3000';
+const gatewayBaseUrl = process.env.NEXT_PUBLIC_API_BASE_URL ?? 'http://localhost:3000';
 
 export default function nextConfig(phase: string): NextConfig {
   return {

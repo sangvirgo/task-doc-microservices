@@ -62,6 +62,9 @@ Thumbs.db
 # CodeGraph local index (machine-local, not project state)
 .codegraph/
 
+# Brainstorming visual companion session files
+.superpowers/
+
 # Generated documentation artifacts
 docs/c17-api-postman-collection.json
 
