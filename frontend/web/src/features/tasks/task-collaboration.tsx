@@ -69,11 +69,11 @@ export function TaskCollaboration({ taskId, members, mode = 'both' }: TaskCollab
   };
 
   const current = activeTab === 'comments' ? comments : activity;
-  const loadMore = () => {
+  const loadMore = useCallback(() => {
     if (current.loading || !current.hasNext) return;
     if (activeTab === 'comments') void loadComments(current.page + 1);
     else void loadActivity(current.page + 1);
-  };
+  }, [activeTab, current.hasNext, current.loading, current.page, loadActivity, loadComments]);
 
   useEffect(() => {
     const element = sentinelRef.current;
@@ -81,7 +81,7 @@ export function TaskCollaboration({ taskId, members, mode = 'both' }: TaskCollab
     const observer = new IntersectionObserver(entries => { if (entries.some(entry => entry.isIntersecting)) loadMore(); });
     observer.observe(element);
     return () => observer.disconnect();
-  }, [activeTab, comments.hasNext, comments.loading, activity.hasNext, activity.loading, mode]);
+  }, [activeTab, loadMore, mode]);
 
   const submitComment = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
