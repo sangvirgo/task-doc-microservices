@@ -12,6 +12,7 @@ import styles from './tasks.module.css';
 import { SearchableSelect } from '@/components/searchable-select';
 import { TaskAssignmentDrawer } from './task-assignment-drawer';
 import { uploadTaskAttachments } from './task-document-upload';
+import { TaskProgress } from './task-progress';
 
 const filters: TaskStatus[] = ['CREATED', 'ASSIGNED', 'IN_PROGRESS', 'WAITING_REVIEW', 'APPROVED', 'NEED_REVISION', 'REJECTED', 'CANCELLED'];
 const boardColumns: TaskStatus[] = ['CREATED', 'ASSIGNED', 'IN_PROGRESS', 'WAITING_REVIEW', 'APPROVED'];
@@ -84,6 +85,7 @@ export function TaskList() {
       <span className={styles.metaDivider}>•</span>
       <span className={task.is_overdue ? styles.overdueText : styles.due}><span aria-hidden="true">◷</span> {task.is_overdue ? 'Quá hạn' : dueLabel(task.deadline)}</span>
       {member && <><span className={styles.metaDivider}>•</span><span className={styles.assignee}><span className={styles.avatar}>{initials(member.email)}</span>{member.email}</span></>}
+      {task.child_task_count ? <TaskProgress compact status={task.status} completion_percentage={task.completion_percentage} child_task_count={task.child_task_count} approved_child_task_count={task.approved_child_task_count} completion_color={task.completion_color} /> : null}
     </div>;
   };
   const renderTaskRow = (task: Task) => <Link className={styles.taskRow} href={`/tasks/${task.id}`} key={task.id}>

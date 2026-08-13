@@ -5,6 +5,22 @@ import { SearchableSelect } from '@/components/searchable-select';
 import styles from './task-people.module.css';
 
 const initials = (value: string) => value.split(/[@ ._-]/).filter(Boolean).slice(0, 2).map(part => part[0]?.toUpperCase()).join('') || 'U';
+const roleLabels: Record<string, string> = {
+  CREATOR: 'Người tạo',
+  ASSIGNEE: 'Người thực hiện',
+  REVIEWER: 'Người duyệt',
+  PARTICIPANT: 'Người tham gia',
+};
+
+interface PersonRow {
+  userId: string;
+  value: string;
+  labels: string[];
+}
+
+interface RawPersonRow extends Omit<PersonRow, 'userId'> {
+  userId: string | null;
+}
 
 interface TaskPeopleProps {
   task: Task;
@@ -21,24 +37,24 @@ export function TaskPeople({ task, participants, members, canManageParticipants,
   const rows = [
     { label: 'Người tạo', userId: task.creator_id, value: memberName(task.creator_id) },
     { label: 'Người thực hiện', userId: task.assignee_id, value: memberName(task.assignee_id) },
-    { label: 'Người review', userId: task.reviewer_id ?? task.creator_id, value: memberName(task.reviewer_id ?? task.creator_id) },
+    { label: 'Người duyệt', userId: task.reviewer_id ?? task.creator_id, value: memberName(task.reviewer_id ?? task.creator_id) },
   ];
   const participantRows = participants.filter(item => !rows.some(row => row.userId === item.user_id));
-  const people = [...rows, ...participantRows.map(item => ({ label: item.role || 'Người tham gia', userId: item.user_id, value: memberName(item.user_id) }))]
-    .filter(row => row.userId)
-    .reduce<typeof rows>((unique, row) => {
+  const rawPeople: RawPersonRow[] = [...rows.map(row => ({ userId: row.userId, value: row.value, labels: [row.label] })), ...participantRows.map(item => ({ labels: [roleLabels[item.role] ?? 'Người tham gia'], userId: item.user_id, value: memberName(item.user_id) }))];
+  const people: PersonRow[] = rawPeople
+    .filter((row): row is PersonRow => Boolean(row.userId))
+    .reduce<PersonRow[]>((unique, row) => {
       const existing = unique.find(candidate => candidate.userId === row.userId);
-      if (existing) existing.label = `${existing.label} · ${row.label}`;
+      if (existing && !existing.labels.includes(row.labels[0])) existing.labels.push(row.labels[0]);
       else unique.push(row);
       return unique;
     }, []);
 
   return <section className={styles.section} aria-labelledby="task-people-title">
-    <div className={styles.heading}><div><p className={styles.eyebrow}>Phối hợp trong task</p><h2 id="task-people-title">Người tham gia <span>{people.length}</span></h2></div>{canManageParticipants && <button className={styles.addButton} type="button" aria-expanded={addOpen} aria-controls={`task-add-participant-${task.id}`} onClick={() => setAddOpen(open => !open)}>+ Thêm người</button>}</div>
-    <div className={styles.people}>
-      <div className={styles.avatarStack}>{people.map(row => <span className={styles.avatar} key={row.userId} title={`${row.label}: ${row.value}`}>{initials(row.value)}</span>)}</div>
-      <div className={styles.roles}>{people.map(row => <span key={`${row.label}-${row.userId}`}><b>{row.label}</b>{row.value}</span>)}</div>
+    <div className={styles.heading}><div><p className={styles.eyebrow}>Phối hợp trong công việc</p><h2 id="task-people-title">Người tham gia <span>({people.length})</span></h2></div>{canManageParticipants && <button className={styles.addButton} type="button" aria-expanded={addOpen} aria-controls={`task-add-participant-${task.id}`} onClick={() => setAddOpen(open => !open)}>+ Thêm người tham gia</button>}</div>
+    <div className={styles.peopleList} role="list" aria-label="Danh sách người tham gia">
+      {people.map(row => <div className={styles.personCard} role="listitem" key={row.userId}><span className={styles.avatar} aria-hidden="true">{initials(row.value)}</span><div className={styles.personInfo}><strong>{row.value}</strong><span>{row.labels.join(' · ')}</span></div></div>)}
     </div>
-    {canManageParticipants && onAddParticipant && <details id={`task-add-participant-${task.id}`} className={styles.addForm} open={addOpen} onToggle={event => setAddOpen(event.currentTarget.open)}><summary>Thêm người vào task</summary><form onSubmit={onAddParticipant}><SearchableSelect name="user_id" aria-label="Chọn người tham gia" required defaultValue=""><option value="" disabled>Chọn nhân viên</option>{members.map(member => <option key={member.id} value={member.id}>{member.email}</option>)}</SearchableSelect><input name="role" placeholder="Vai trò (tùy chọn)" /><button type="submit" disabled={addingParticipant}>Thêm</button></form></details>}
+    {canManageParticipants && onAddParticipant && addOpen && <div id={`task-add-participant-${task.id}`} className={styles.addForm} aria-label="Thêm người tham gia"><div className={styles.addFormHeading}><strong>Thêm người vào công việc</strong><span>Chọn người và vai trò để họ biết mình cần làm gì.</span></div><form onSubmit={onAddParticipant}><label>Người tham gia<SearchableSelect name="user_id" aria-label="Chọn người tham gia" required defaultValue=""><option value="" disabled>Chọn nhân viên</option>{members.map(member => <option key={member.id} value={member.id}>{member.email}</option>)}</SearchableSelect></label><label>Vai trò <span>Tùy chọn</span><input name="role" placeholder="Ví dụ: Người hỗ trợ" /></label><div className={styles.addFormActions}><button type="submit" disabled={addingParticipant}>Thêm người</button><button type="button" className={styles.cancelButton} onClick={() => setAddOpen(false)}>Hủy</button></div></form></div>}
   </section>;
 }

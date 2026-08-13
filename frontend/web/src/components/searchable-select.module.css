@@ -8,11 +8,13 @@
 .control button:hover{background:#ebecf0;color:#172b4d;box-shadow:none;transform:none}
 .control.disabled{cursor:not-allowed;opacity:.6;background:#f1f2f4}
 .control.disabled button{cursor:not-allowed}
-.menu{position:absolute;z-index:120;top:calc(100% + 6px);right:0;left:0;max-height:280px;overflow:auto;padding:5px;border:1px solid #c7ced8;border-radius:8px;background:#fff;box-shadow:0 10px 25px rgb(9 30 66 / 14%)}
-.option{display:flex;width:100%;min-height:36px;align-items:center;justify-content:space-between;gap:10px;padding:7px 10px;border:0;border-radius:5px;background:transparent;color:#172b4d;text-align:left;font-size:.74rem;font-weight:500}
+.menu{position:absolute;z-index:120;top:calc(100% + 6px);right:0;left:0;max-height:280px;overflow:auto;padding:6px;border:1px solid #b8c4d4;border-radius:9px;background:#fff;box-shadow:0 12px 28px rgb(9 30 66 / 18%)}
+.option{display:flex;width:100%;min-height:40px;align-items:center;justify-content:space-between;gap:10px;padding:8px 11px;border:0;border-radius:6px;background:#fff;color:#172b4d;opacity:1;text-align:left;font-size:.74rem;font-weight:600;line-height:1.25}
 .option span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.option i{color:#0c66e4;font-style:normal;font-weight:900}
-.option:hover,.option.active{background:#f1f7ff;box-shadow:none;transform:none}
-.option.selected{color:#0747a6;background:#deebff;font-weight:750}
+.option i{display:grid;place-items:center;min-width:20px;height:20px;border-radius:50%;color:#0747a6;background:#cfe2ff;font-size:.7rem;font-style:normal;font-weight:900}
+.option:hover,.option.active{color:#0747a6;background:#eef5ff;box-shadow:inset 3px 0 #4c9aff;transform:none}
+.option.selected{color:#0747a6;background:#dbeafe;font-weight:800}
+.option.selected:hover,.option.selected.active{background:#cfe2ff;box-shadow:inset 3px 0 #0c66e4}
+.option:focus-visible{outline:2px solid #0c66e4;outline-offset:-2px}
 .empty{margin:0;padding:14px 10px;color:#6b778c;text-align:center;font-size:.7rem}
 @media(max-width:600px){.menu{max-height:220px}}

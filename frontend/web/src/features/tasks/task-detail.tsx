@@ -18,6 +18,7 @@ import { SearchableSelect } from '@/components/searchable-select';
 import { TaskAssignmentDrawer } from './task-assignment-drawer';
 import { taskStatusClass, taskStatusLabel } from './task-status';
 import { uploadTaskAttachments } from './task-document-upload';
+import { TaskProgress } from './task-progress';
 
 const isSummary = (value: Task | AncestorTaskSummary): value is AncestorTaskSummary => !('id' in value);
 const message = (error: unknown, fallback: string) => error instanceof GatewayError && error.status === 409 ? 'Công việc đã thay đổi. Tải lại và thử lại.' : fallback;
@@ -89,18 +90,35 @@ function AncestorSummary({ task }: { task: AncestorTaskSummary }) {
 function DirectTask({ task, parentContext, participants, submissions, members, reload }: { task: Task; parentContext: Task | AncestorTaskSummary | null; participants: Participant[]; submissions: TaskSubmission[]; members: MemberOption[]; reload: () => void }) {
   const [notice, setNotice] = useState('');
   const [pendingAction, setPendingAction] = useState(false);
+  const [actionMenuOpen, setActionMenuOpen] = useState(false);
+  const [blockFormOpen, setBlockFormOpen] = useState(false);
+  const [blockReason, setBlockReason] = useState('');
+  const [blockValidation, setBlockValidation] = useState('');
   const [subtaskOpen, setSubtaskOpen] = useState(false);
   const [creatingSubtask, setCreatingSubtask] = useState(false);
   const [subtaskError, setSubtaskError] = useState('');
-  const act = async (work: () => Promise<unknown>, success: string, fallback: string) => {
+  const actionMenuRef = useRef<HTMLDivElement>(null);
+  const act = async (work: () => Promise<unknown>, success: string, fallback: string, onSuccess?: () => void) => {
     if (pendingAction) return;
     setPendingAction(true);
-    try { await work(); setNotice(success); reload(); } catch (error) { setNotice(message(error, fallback)); } finally { setPendingAction(false); }
+    try { await work(); onSuccess?.(); setNotice(success); reload(); } catch (error) { setNotice(message(error, fallback)); } finally { setPendingAction(false); }
   };
   const assign = (event: FormEvent<HTMLFormElement>) => { event.preventDefault(); const assigneeId = String(new FormData(event.currentTarget).get('assignee_id')); void act(() => tasksApi.assign(task.id, assigneeId), 'Đã cập nhật người được giao.', 'Không thể cập nhật người được giao.'); };
   const participant = (event: FormEvent<HTMLFormElement>) => { event.preventDefault(); const form = event.currentTarget; const data = new FormData(form); void act(() => tasksApi.addParticipant(task.id, String(data.get('user_id')), String(data.get('role')) || undefined), 'Đã thêm người tham gia.', 'Không thể thêm người tham gia.'); form.reset(); };
   const submit = (event: FormEvent<HTMLFormElement>) => { event.preventDefault(); const content = String(new FormData(event.currentTarget).get('content')); void act(() => tasksApi.submit(task.id, content), 'Đã nộp kết quả để duyệt.', 'Không thể nộp kết quả.'); };
   const review = (event: FormEvent<HTMLFormElement>) => { event.preventDefault(); const data = new FormData(event.currentTarget); void act(() => tasksApi.review(task.id, String(data.get('submission_id')), String(data.get('decision')) as 'APPROVED' | 'NEED_REVISION' | 'REJECTED', String(data.get('comment')) || undefined), 'Đã ghi nhận phê duyệt.', 'Không thể ghi nhận phê duyệt.'); };
+  const cancelTask = () => { if (window.confirm('Hủy công việc này?')) void act(() => tasksApi.status(task.id, 'CANCELLED'), 'Đã hủy công việc.', 'Không thể hủy công việc.'); };
+  const submitBlock = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const reason = blockReason.trim();
+    if (!reason) { setBlockValidation('Hãy nhập lý do trước khi chặn công việc.'); return; }
+    void act(
+      () => tasksApi.block(task.id, reason),
+      'Đã đánh dấu công việc bị chặn.',
+      'Không thể chặn công việc.',
+      () => { setBlockFormOpen(false); setBlockReason(''); setBlockValidation(''); },
+    );
+  };
   const createSubtask = async (input: CreateTaskInput, form: HTMLFormElement) => {
     setSubtaskError('');
     setCreatingSubtask(true);
@@ -125,9 +143,42 @@ function DirectTask({ task, parentContext, participants, submissions, members, r
   const canCreateSubtask = isParticipant && !finalState;
   const canModifyTask = isCreator || isAssignee;
   const canCancelTask = !finalState && isCreator;
+  const hasTaskActions = (canModifyTask && (!finalState || task.blocked)) || canCancelTask;
   const nextStep = task.blocked ? 'Cần bỏ chặn trước khi tiếp tục.' : task.status === 'ASSIGNED' ? 'Người thực hiện có thể bắt đầu công việc.' : task.status === 'IN_PROGRESS' ? 'Hoàn tất nội dung rồi nộp để phê duyệt.' : task.status === 'WAITING_REVIEW' ? 'Người review cần xử lý submission mới nhất.' : task.status === 'NEED_REVISION' ? 'Cần chỉnh sửa rồi bắt đầu lại.' : finalState ? 'Công việc đã kết thúc.' : 'Theo dõi tiến độ và phối hợp cùng người tham gia.';
   const parentTitle = parentContext?.title ?? (task.parent_task_id ? `Task ${task.parent_task_id.slice(0, 8)}` : null);
   const parentHref = parentContext && !isSummary(parentContext) ? `/tasks/${parentContext.id}` : undefined;
+
+  useEffect(() => {
+    if (!actionMenuOpen) return;
+    const closeOnOutsidePointer = (event: PointerEvent) => {
+      if (!actionMenuRef.current?.contains(event.target as Node)) setActionMenuOpen(false);
+    };
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setActionMenuOpen(false);
+    };
+    document.addEventListener('pointerdown', closeOnOutsidePointer);
+    document.addEventListener('keydown', closeOnEscape);
+    return () => { document.removeEventListener('pointerdown', closeOnOutsidePointer); document.removeEventListener('keydown', closeOnEscape); };
+  }, [actionMenuOpen]);
+
+  useEffect(() => {
+    if (!blockFormOpen) return;
+
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return;
+      setBlockFormOpen(false);
+      setBlockReason('');
+      setBlockValidation('');
+    };
+
+    document.addEventListener('keydown', closeOnEscape);
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      document.removeEventListener('keydown', closeOnEscape);
+    };
+  }, [blockFormOpen]);
 
   return <section className={styles.page}>
     <div className={styles.drawer}>
@@ -147,9 +198,16 @@ function DirectTask({ task, parentContext, participants, submissions, members, r
         </nav>
 
         <header className={styles.taskHeader}>
-          <div className={styles.titleRow}><h1>{task.title}</h1><span className={`${styles.statusBadge} ${styles[taskStatusClass(task.status)]}`}>{task.blocked ? 'Bị chặn' : taskStatusLabel(task.status)}</span></div>
+          <div className={styles.titleRow}><h1>{task.title}</h1><div className={styles.titleControls}><span className={`${styles.statusBadge} ${styles[taskStatusClass(task.status)]}`}>{task.blocked ? 'Bị chặn' : taskStatusLabel(task.status)}</span>{hasTaskActions && <div className={styles.actionMenuWrap} ref={actionMenuRef}><button className={styles.actionMenuButton} type="button" aria-label="Thao tác" aria-haspopup="menu" aria-expanded={actionMenuOpen} aria-controls={`task-actions-${task.id}`} onClick={() => setActionMenuOpen(open => !open)}><span aria-hidden="true">⋯</span><span>Thao tác</span></button>{actionMenuOpen && <div id={`task-actions-${task.id}`} className={styles.actionMenu} role="menu" aria-label="Thao tác với công việc">{canModifyTask && !task.blocked && !finalState && <button type="button" role="menuitem" onClick={() => { setActionMenuOpen(false); setBlockValidation(''); setBlockFormOpen(true); }}><span aria-hidden="true">⚠</span> Báo cáo vấn đề / Chặn công việc</button>}{canModifyTask && task.blocked && <button type="button" role="menuitem" onClick={() => { setActionMenuOpen(false); void act(() => tasksApi.unblock(task.id), 'Đã bỏ chặn công việc.', 'Không thể bỏ chặn công việc.'); }}><span aria-hidden="true">✓</span> Bỏ chặn công việc</button>}{canCancelTask && !task.blocked && <button type="button" role="menuitem" onClick={cancelTask}><span aria-hidden="true">×</span> Hủy công việc</button>}</div>}</div>}</div></div>
           <p className={styles.taskId}>ID: {task.id}</p>
         </header>
+        <TaskProgress
+          status={task.status}
+          completion_percentage={task.completion_percentage}
+          child_task_count={task.child_task_count}
+          approved_child_task_count={task.approved_child_task_count}
+          completion_color={task.completion_color}
+        />
         {notice && <p className={styles.notice} role="status">{notice}</p>}
 
         <div className={styles.detailGrid}>
@@ -179,12 +237,7 @@ function DirectTask({ task, parentContext, participants, submissions, members, r
           </div>
         </div>
 
-        <details className={styles.secondaryDetails}>
-          <summary>Thông tin &amp; thao tác khác</summary>
-          <div className={styles.detailsBody}>
-            <div className={styles.secondaryActions}>{canCancelTask && <button type="button" disabled={pendingAction} onClick={() => { if (window.confirm('Hủy công việc này?')) void act(() => tasksApi.status(task.id, 'CANCELLED'), 'Đã hủy công việc.', 'Không thể hủy công việc.'); }}>Hủy công việc</button>}{canModifyTask && <button type="button" className={styles.dangerAction} disabled={pendingAction} onClick={() => { const reason = window.prompt('Lý do công việc bị chặn?'); if (reason) void act(() => tasksApi.block(task.id, reason), 'Đã đánh dấu bị chặn.', 'Không thể chặn công việc.'); }}>{task.blocked ? 'Cập nhật lý do chặn' : 'Báo cáo lỗi / Chặn'}</button>}{canModifyTask && task.blocked && <button type="button" disabled={pendingAction} onClick={() => void act(() => tasksApi.unblock(task.id), 'Đã bỏ chặn.', 'Không thể bỏ chặn.')}>Bỏ chặn</button>}</div>
-          </div>
-        </details>
+        {blockFormOpen && <div className={styles.blockDialog} role="dialog" aria-modal="true" aria-labelledby={`block-title-${task.id}`} aria-describedby={`block-description-${task.id}`}><form onSubmit={submitBlock}><div className={styles.blockDialogHeader}><div><p className={styles.eyebrow}>Cần thông báo cho mọi người</p><h2 id={`block-title-${task.id}`}>Báo cáo vấn đề / Chặn công việc</h2></div><button type="button" className={styles.dialogClose} aria-label="Đóng biểu mẫu chặn công việc" onClick={() => { setBlockFormOpen(false); setBlockReason(''); setBlockValidation(''); }}>×</button></div><p id={`block-description-${task.id}`}>Công việc sẽ tạm dừng. Hãy ghi rõ lý do để người liên quan biết cần xử lý gì.</p><label htmlFor={`block-reason-${task.id}`}>Lý do</label><textarea id={`block-reason-${task.id}`} value={blockReason} onChange={event => { setBlockReason(event.target.value); setBlockValidation(''); }} placeholder="Ví dụ: Chưa nhận được tài liệu từ khách hàng" aria-invalid={Boolean(blockValidation)} aria-describedby={blockValidation ? `block-validation-${task.id}` : undefined} /><span className={styles.blockHint}>Bắt buộc nhập lý do.</span>{blockValidation && <p id={`block-validation-${task.id}`} className={styles.blockValidation} role="alert">{blockValidation}</p>}<div className={styles.blockDialogActions}><button type="button" className={styles.secondaryButton} onClick={() => { setBlockFormOpen(false); setBlockReason(''); setBlockValidation(''); }}>Hủy</button><button type="submit" className={styles.dangerButton} disabled={pendingAction}>Xác nhận chặn công việc</button></div></form></div>}
       </main>
     </div>
   </section>;

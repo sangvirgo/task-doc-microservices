@@ -3,6 +3,7 @@ import { mkdtemp, mkdir, readFile, readdir, rm, writeFile } from 'fs/promises';
 import { promisify } from 'util';
 import { tmpdir } from 'os';
 import { join } from 'path';
+import { pathToFileURL } from 'url';
 
 import sharp from 'sharp';
 
@@ -156,10 +157,20 @@ export class PreviewRenderer {
     jobDir: string,
   ): Promise<Buffer[]> {
     const sourcePath = join(jobDir, `source${format === 'doc' ? '.doc' : '.docx'}`);
+    const libreOfficeProfile = join(jobDir, 'libreoffice-profile');
     await writeFile(sourcePath, content, { mode: 0o600 });
+    await mkdir(libreOfficeProfile, { recursive: true });
     await this.commandRunner.run(
       'libreoffice',
-      ['--headless', '--convert-to', 'pdf', '--outdir', jobDir, sourcePath],
+      [
+        `-env:UserInstallation=${pathToFileURL(libreOfficeProfile).href}`,
+        '--headless',
+        '--convert-to',
+        'pdf',
+        '--outdir',
+        jobDir,
+        sourcePath,
+      ],
       jobDir,
     );
 

@@ -43,11 +43,12 @@ export function DocumentList() {
 
   const upload = async (event: ChangeEvent<HTMLFormElement>) => {
     event.preventDefault();
+    const form = event.currentTarget;
     const selectedTask = tasks.find(task => task.id === selectedTaskId);
     if (!file || !selectedTask) { setProgress('Chọn tệp và task cần gắn trước khi tải lên.'); return; }
     if (file.size > MAX_UPLOAD_BYTES) { setProgress('Tệp vượt quá giới hạn 25 MB và chưa được tải lên.'); return; }
     if (!session?.userId) { setProgress('Phiên đăng nhập đã hết hạn. Hãy đăng nhập lại.'); return; }
-    const data = new FormData(event.currentTarget);
+    const data = new FormData(form);
     const actors = Array.from(new Set([session.userId, selectedTask.creator_id, selectedTask.assignee_id, selectedTask.reviewer_id].filter((value): value is string => Boolean(value))));
     const grants = actors.map(actor_id => ({ actor_id, permissions: ['PREVIEW', 'DOWNLOAD'], expires_at: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString() }));
     data.set('file', file);
@@ -60,7 +61,7 @@ export function DocumentList() {
     setProgress('Đang tải tài liệu lên… 0%');
     try {
       await documentsApi.upload(data, percent => setProgress(`Đang tải tài liệu lên… ${percent}%`));
-      event.currentTarget.reset();
+      form.reset();
       setFile(undefined);
       setSelectedTaskId('');
       setProgress('Đã tải và phân loại tài liệu theo task.');
@@ -84,7 +85,7 @@ export function DocumentList() {
       <label>Tên hiển thị <span>Tùy chọn</span><input name="title" placeholder="Mặc định theo tên file" /></label>
       <label>Security level <SearchableSelect name="security_level" defaultValue="INTERNAL"><option value="PUBLIC">PUBLIC</option><option value="INTERNAL">INTERNAL</option><option value="CONFIDENTIAL">CONFIDENTIAL</option><option value="RESTRICTED">RESTRICTED</option></SearchableSelect></label>
       <input type="hidden" name="document_type" /><input type="hidden" name="declared_state_secret" value="false" />
-      <div className={styles.uploadFooter}><span>{progress || 'Quyền mặc định: PREVIEW · DOWNLOAD theo task'}</span><button type="submit">Tải tài liệu lên</button></div>
+      <div className={styles.uploadFooter}><span role="status">{progress || 'Quyền mặc định: PREVIEW · DOWNLOAD theo task'}</span><button type="submit">Tải tài liệu lên</button></div>
     </form>
     {hasDocuments ? <div className={styles.taskGroups}>
       {groups.taskGroups.map(group => <section className={styles.taskGroup} key={group.task.id}><header className={styles.taskGroupHeader}><div><p className={styles.groupEyebrow}>Task</p><h2>{taskLabel(group.task)}</h2><span>{group.items.length} tài liệu</span></div><Link href={`/tasks/${group.task.id}`}>Mở task →</Link></header><div className={styles.documentCards}>{group.items.map(item => <DocumentCard item={item} taskId={group.task.id} key={item.association_id} />)}</div></section>)}

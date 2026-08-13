@@ -42,4 +42,5 @@ it('requires a task in the upload form and sends its association metadata', asyn
   const payload = mocks.upload.mock.calls[0][0] as FormData;
   expect(payload.get('task_id')).toBe(task.id);
   expect(JSON.parse(String(payload.get('grants')))).toEqual(expect.arrayContaining([expect.objectContaining({ actor_id: 'user-id' }), expect.objectContaining({ actor_id: 'creator-id' })]));
+  expect(await screen.findByText('Đã tải và phân loại tài liệu theo task.')).toBeInTheDocument();
 });

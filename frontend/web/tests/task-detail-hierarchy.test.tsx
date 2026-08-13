@@ -12,6 +12,9 @@ const mocks = vi.hoisted(() => ({
   commentsPage: vi.fn(),
   comment: vi.fn(),
   addParticipant: vi.fn(),
+  block: vi.fn(),
+  unblock: vi.fn(),
+  status: vi.fn(),
   directory: vi.fn(),
   taskDocuments: vi.fn(),
 }));
@@ -25,6 +28,9 @@ vi.mock('@/api/tasks', () => ({
     commentsPage: mocks.commentsPage,
     comment: mocks.comment,
     addParticipant: mocks.addParticipant,
+    block: mocks.block,
+    unblock: mocks.unblock,
+    status: mocks.status,
   },
 }));
 vi.mock('@/api/admin', () => ({ adminApi: { directory: mocks.directory } }));
@@ -72,6 +78,9 @@ beforeEach(() => {
   mocks.commentsPage.mockReset().mockResolvedValue({ items: [], pagination: { page: 1, page_size: 20, total: 0, total_pages: 0, has_next: false } });
   mocks.comment.mockReset().mockResolvedValue({ id: 'comment-1', task_id: 'task-id', author_id: 'employee-id', content: 'Bình luận', created_at: '2026-08-10T10:00:00.000Z' });
   mocks.addParticipant.mockReset().mockResolvedValue({ id: 'participant-row', task_id: 'task-id', user_id: 'participant-id', role: 'PARTICIPANT', added_at: '2026-08-10T00:00:00.000Z' });
+  mocks.block.mockReset().mockResolvedValue(task());
+  mocks.unblock.mockReset().mockResolvedValue(task({ blocked: false }));
+  mocks.status.mockReset().mockResolvedValue(task());
   mocks.directory.mockReset().mockResolvedValue([]);
   mocks.taskDocuments.mockReset().mockResolvedValue([]);
   window.sessionStorage.setItem('c17.web.session.v1', JSON.stringify({
@@ -146,7 +155,8 @@ it('shows role-labelled task participants in the task context', async () => {
   expect(await screen.findByRole('heading', { name: /Người tham gia/ })).toBeInTheDocument();
   expect(screen.getAllByText(/Người tạo/).length).toBeGreaterThan(0);
   expect(screen.getAllByText(/Người thực hiện/).length).toBeGreaterThan(0);
-  expect(screen.getByText(/Người review/)).toBeInTheDocument();
+  expect(screen.getByText(/Người duyệt/)).toBeInTheDocument();
+  expect(screen.getAllByText('Người tham gia').length).toBeGreaterThan(0);
   expect(screen.getAllByText('creator@example.com').length).toBeGreaterThan(0);
   expect(screen.getAllByText('assignee@example.com').length).toBeGreaterThan(0);
   expect(screen.getByText('participant@example.com')).toBeInTheDocument();
@@ -164,14 +174,67 @@ it('shows the inline add-participant control only to the task creator', async ()
   }));
 
   const { rerender } = render(<TaskDetail id="creator-task" />);
-  expect(await screen.findByRole('button', { name: /Thêm người/ })).toBeInTheDocument();
+  expect(await screen.findByRole('button', { name: '+ Thêm người tham gia' })).toBeInTheDocument();
 
   window.sessionStorage.setItem('c17.web.session.v1', JSON.stringify({
     access_token: 'token', refresh_token: 'refresh', expires_in_seconds: 3600,
     role: 'EMPLOYEE', userId: 'employee-id', expiresAt: Date.now() + 3600000,
   }));
   rerender(<TaskDetail id="creator-task" />);
-  await waitFor(() => expect(screen.queryByRole('button', { name: /Thêm người/ })).not.toBeInTheDocument());
+  await waitFor(() => expect(screen.queryByRole('button', { name: '+ Thêm người tham gia' })).not.toBeInTheDocument());
+});
+
+it('puts task actions in the top menu for users who can modify the task', async () => {
+  mocks.get.mockReset().mockResolvedValue(task({ id: 'task-actions', parent_task_id: null }));
+
+  render(<TaskDetail id="task-actions" />);
+
+  const actionsButton = await screen.findByRole('button', { name: /Thao tác/ });
+  expect(screen.queryByText('Thông tin & thao tác khác')).not.toBeInTheDocument();
+
+  fireEvent.click(actionsButton);
+
+  expect(await screen.findByRole('menuitem', { name: 'Báo cáo vấn đề / Chặn công việc' })).toBeInTheDocument();
+  expect(screen.queryByRole('menuitem', { name: 'Hủy công việc' })).not.toBeInTheDocument();
+});
+
+it('shows creator-only cancellation and hides task actions from unrelated users', async () => {
+  mocks.get.mockReset().mockResolvedValue(task({ id: 'creator-actions', parent_task_id: null }));
+  window.sessionStorage.setItem('c17.web.session.v1', JSON.stringify({
+    access_token: 'token', refresh_token: 'refresh', expires_in_seconds: 3600,
+    role: 'EMPLOYEE', userId: 'creator-id', expiresAt: Date.now() + 3600000,
+  }));
+
+  const { unmount } = render(<TaskDetail id="creator-actions" />);
+  fireEvent.click(await screen.findByRole('button', { name: /Thao tác/ }));
+  expect(screen.getByRole('menuitem', { name: 'Hủy công việc' })).toBeInTheDocument();
+  unmount();
+
+  window.sessionStorage.setItem('c17.web.session.v1', JSON.stringify({
+    access_token: 'token', refresh_token: 'refresh', expires_in_seconds: 3600,
+    role: 'EMPLOYEE', userId: 'unrelated-id', expiresAt: Date.now() + 3600000,
+  }));
+  render(<TaskDetail id="creator-actions" />);
+  await screen.findByRole('heading', { name: 'Kiểm tra phụ lục' });
+  expect(screen.queryByRole('button', { name: /Thao tác/ })).not.toBeInTheDocument();
+});
+
+it('requires a clear reason before blocking a task', async () => {
+  mocks.get.mockReset().mockResolvedValue(task({ id: 'blockable-task', parent_task_id: null }));
+
+  render(<TaskDetail id="blockable-task" />);
+  fireEvent.click(await screen.findByRole('button', { name: /Thao tác/ }));
+  fireEvent.click(await screen.findByRole('menuitem', { name: 'Báo cáo vấn đề / Chặn công việc' }));
+
+  const dialog = await screen.findByRole('dialog', { name: 'Báo cáo vấn đề / Chặn công việc' });
+  expect(dialog).toHaveAttribute('aria-modal', 'true');
+  fireEvent.click(screen.getByRole('button', { name: 'Xác nhận chặn công việc' }));
+  expect(await screen.findByText('Hãy nhập lý do trước khi chặn công việc.')).toBeInTheDocument();
+  expect(mocks.block).not.toHaveBeenCalled();
+
+  fireEvent.change(screen.getByLabelText('Lý do'), { target: { value: 'Thiếu tài liệu đầu vào' } });
+  fireEvent.submit(dialog.querySelector('form')!);
+  await waitFor(() => expect(mocks.block).toHaveBeenCalledWith('blockable-task', 'Thiếu tài liệu đầu vào'));
 });
 
 it('keeps the assignee update control in the top task metadata for the creator', async () => {

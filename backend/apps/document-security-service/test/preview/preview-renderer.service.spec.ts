@@ -104,6 +104,23 @@ describe('PreviewRenderer', () => {
     expect(imageProcessor.watermarkPage.mock.calls).toHaveLength(2);
   });
 
+  it('uses an isolated LibreOffice profile for DOCX conversion', async () => {
+    commandRunner.run.mockImplementationOnce(async (command, args, cwd) => {
+      expect(command).toBe('libreoffice');
+      expect(args).toEqual(expect.arrayContaining(['--headless', '--convert-to', 'pdf']));
+      expect(args.some((value) => value.startsWith('-env:UserInstallation=file://'))).toBe(true);
+      await writeFile(join(cwd, 'source.pdf'), Buffer.from('%PDF-1.7'));
+    });
+
+    const renderer = new PreviewRenderer({ tempRoot, commandRunner, imageProcessor });
+
+    await expect(renderer.render({
+      content: Buffer.from('PK\u0003\u0004[Content_Types].xml'),
+      mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      watermark,
+    })).resolves.toEqual(expect.objectContaining({ format: 'docx', pages: expect.any(Array) }));
+  });
+
   it('rejects unknown binary content without returning source bytes', async () => {
     const renderer = new PreviewRenderer({ tempRoot, commandRunner, imageProcessor });
 

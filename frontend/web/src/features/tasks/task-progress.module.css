@@ -1,0 +1,171 @@
+.card {
+  display: grid;
+  gap: 16px;
+  padding: 22px;
+  border: 1px solid #e8e4dc;
+  border-radius: 18px;
+  background: #fffdf9;
+  box-shadow: 0 8px 24px rgba(45, 38, 27, 0.05);
+}
+
+.heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.heading h2 {
+  margin: 4px 0 0;
+  color: #28231d;
+  font-size: 18px;
+}
+
+.eyebrow {
+  margin: 0;
+  color: #8b8174;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.value {
+  color: #28231d;
+  font-size: 24px;
+  line-height: 1;
+}
+
+.track,
+.compactTrack {
+  overflow: hidden;
+  height: 10px;
+  border-radius: 999px;
+  background: #eee9e1;
+}
+
+.fill {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  transition: width 180ms ease;
+}
+
+.green { background: #2f9b68; }
+.yellow { background: #d89932; }
+.red { background: #c85a52; }
+
+.supporting {
+  margin: 0;
+  color: #6f665b;
+  font-size: 13px;
+}
+
+.stepList {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.step {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+  color: #9b9287;
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.stepDot {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border: 1px solid #d9d2c8;
+  border-radius: 50%;
+  color: #8b8174;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.step.complete,
+.step.active {
+  color: #28231d;
+  font-weight: 600;
+}
+
+.step.complete .stepDot,
+.step.active .stepDot {
+  border-color: #2f9b68;
+  background: #e8f5ee;
+  color: #21754d;
+}
+
+.revision {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  color: #a76e1f;
+}
+
+.revision strong { font-weight: 700; }
+
+.terminal {
+  border-color: #efc7c2;
+}
+
+.terminalMark {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: #fbe9e7;
+  color: #a53b35;
+  font-size: 20px;
+  font-weight: 700;
+}
+
+.compact {
+  gap: 8px;
+  padding: 10px 12px;
+  border: 0;
+  border-radius: 10px;
+  background: #f7f4ef;
+  box-shadow: none;
+}
+
+.compactContent {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.compactLabel {
+  overflow: hidden;
+  color: #6f665b;
+  font-size: 11px;
+  font-weight: 700;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.compactCount {
+  color: #28231d;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.compact .track {
+  height: 6px;
+}
+
+@media (max-width: 640px) {
+  .card { padding: 16px; }
+  .stepList { grid-template-columns: 1fr; gap: 10px; }
+  .step { grid-template-columns: 28px 1fr; align-items: center; }
+}
