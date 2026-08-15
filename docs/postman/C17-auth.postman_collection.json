@@ -1,0 +1,92 @@
+{
+  "info": {
+    "name": "C17 Workspace - Auth API",
+    "description": "Auth contract cases used by the web frontend. Public registration only permits EMPLOYEE accounts.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "baseUrl", "value": "http://13.229.104.126:3000/api" }
+  ],
+  "item": [
+    {
+      "name": "Register employee - success",
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": { "mode": "raw", "raw": "{\n  \"email\": \"{{$randomUUID}}@example.com\",\n  \"password\": \"Password123!\"\n}" },
+        "url": { "raw": "{{baseUrl}}/auth/register", "host": ["{{baseUrl}}"], "path": ["auth", "register"] }
+      },
+      "event": [{ "listen": "test", "script": { "exec": ["pm.test('returns 201', () => pm.response.to.have.status(201));", "pm.test('role is EMPLOYEE', () => pm.expect(pm.response.json().role).to.eql('EMPLOYEE'));"], "type": "text/javascript" } }]
+    },
+    {
+      "name": "Register - invalid email/password",
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": { "mode": "raw", "raw": "{\n  \"email\": \"not-an-email\",\n  \"password\": \"short\"\n}" },
+        "url": { "raw": "{{baseUrl}}/auth/register", "host": ["{{baseUrl}}"], "path": ["auth", "register"] }
+      },
+      "event": [{ "listen": "test", "script": { "exec": ["pm.test('returns 400', () => pm.response.to.have.status(400));"], "type": "text/javascript" } }]
+    },
+    {
+      "name": "Register ADMIN publicly - forbidden",
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": { "mode": "raw", "raw": "{\n  \"email\": \"admin-public@example.com\",\n  \"password\": \"Password123!\",\n  \"role\": \"ADMIN\"\n}" },
+        "url": { "raw": "{{baseUrl}}/auth/register", "host": ["{{baseUrl}}"], "path": ["auth", "register"] }
+      },
+      "event": [{ "listen": "test", "script": { "exec": ["pm.test('returns 403', () => pm.response.to.have.status(403));"], "type": "text/javascript" } }]
+    },
+    {
+      "name": "Login - success",
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": { "mode": "raw", "raw": "{\n  \"email\": \"{{test_email}}\",\n  \"password\": \"{{test_password}}\"\n}" },
+        "url": { "raw": "{{baseUrl}}/auth/login", "host": ["{{baseUrl}}"], "path": ["auth", "login"] }
+      },
+      "event": [{ "listen": "test", "script": { "exec": ["pm.test('returns 200', () => pm.response.to.have.status(200));", "const body = pm.response.json();", "pm.environment.set('access_token', body.access_token);", "pm.environment.set('refresh_token', body.refresh_token);", "pm.environment.set('old_refresh_token', body.refresh_token);"], "type": "text/javascript" } }]
+    },
+    {
+      "name": "Login - wrong password",
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": { "mode": "raw", "raw": "{\n  \"email\": \"{{test_email}}\",\n  \"password\": \"WrongPassword123!\"\n}" },
+        "url": { "raw": "{{baseUrl}}/auth/login", "host": ["{{baseUrl}}"], "path": ["auth", "login"] }
+      },
+      "event": [{ "listen": "test", "script": { "exec": ["pm.test('returns 401', () => pm.response.to.have.status(401));"], "type": "text/javascript" } }]
+    },
+    {
+      "name": "Refresh - rotate token",
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": { "mode": "raw", "raw": "{\n  \"refresh_token\": \"{{refresh_token}}\"\n}" },
+        "url": { "raw": "{{baseUrl}}/auth/refresh", "host": ["{{baseUrl}}"], "path": ["auth", "refresh"] }
+      },
+      "event": [{ "listen": "test", "script": { "exec": ["pm.test('returns 200', () => pm.response.to.have.status(200));", "const body = pm.response.json();", "pm.environment.set('refresh_token', body.refresh_token);", "pm.environment.set('access_token', body.access_token);"], "type": "text/javascript" } }]
+    },
+    {
+      "name": "Refresh - reused old token rejected",
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": { "mode": "raw", "raw": "{\n  \"refresh_token\": \"{{old_refresh_token}}\"\n}" },
+        "url": { "raw": "{{baseUrl}}/auth/refresh", "host": ["{{baseUrl}}"], "path": ["auth", "refresh"] }
+      },
+      "event": [{ "listen": "test", "script": { "exec": ["pm.test('returns 401', () => pm.response.to.have.status(401));"], "type": "text/javascript" } }]
+    },
+    {
+      "name": "Logout",
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": { "mode": "raw", "raw": "{\n  \"refresh_token\": \"{{refresh_token}}\"\n}" },
+        "url": { "raw": "{{baseUrl}}/auth/logout", "host": ["{{baseUrl}}"], "path": ["auth", "logout"] }
+      },
+      "event": [{ "listen": "test", "script": { "exec": ["pm.test('returns 204', () => pm.response.to.have.status(204));"], "type": "text/javascript" } }]
+    }
+  ]
+}

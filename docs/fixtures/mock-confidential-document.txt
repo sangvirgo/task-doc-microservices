@@ -1,0 +1,47 @@
+C17 DOCUMENT PLATFORM — SYNTHETIC TEST FIXTURE
+================================================
+
+CLASSIFICATION: CONFIDENTIAL
+HANDLING: TEST DATA ONLY — DO NOT TREAT AS REAL BUSINESS INFORMATION
+DOCUMENT TYPE: PROJECT_BRIEF
+DOCUMENT VERSION: 1
+
+PURPOSE
+-------
+This file is a fictional confidential document for testing the C17 document
+upload, malware-scan, encryption, object-storage, permission, download-ticket,
+and decryption workflow.
+
+All people, identifiers, project names, and values in this file are synthetic.
+No production credential, customer data, private key, or state-secret material
+is included.
+
+SYNTHETIC PROJECT DETAILS
+-------------------------
+Project:     Northstar Records Migration (fictional)
+Owner:       employee-under-test@c17.local
+Document ID: 11111111-1111-4111-8111-111111111111
+Reference:   C17-TEST-CONFIDENTIAL-001
+
+FICTIONAL CONFIDENTIAL CONTENT
+------------------------------
+The fictional Northstar migration plan contains internal milestones, review
+responsibilities, and storage-retention assumptions. Access should be limited
+to the document owner and users granted the appropriate document permission.
+
+Synthetic value examples:
+  project_code = NORTHSTAR-DEMO-ONLY
+  test_token   = NOT-A-REAL-TOKEN
+  test_key     = NOT-A-REAL-KEY
+
+SECURITY TEST EXPECTATIONS
+--------------------------
+1. Upload this file with security_level=CONFIDENTIAL.
+2. Keep declared_state_secret=false; true means state-secret material and the
+   current upload controller rejects the request.
+3. The security service should scan the plaintext with ClamAV before encryption.
+4. The object stored in MinIO should be ciphertext, not this plaintext file.
+5. A permitted download should use a short-lived, single-use download ticket.
+6. The redeemed response should reproduce this plaintext after integrity checks.
+
+END OF SYNTHETIC TEST FIXTURE

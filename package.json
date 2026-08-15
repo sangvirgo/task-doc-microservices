@@ -1,0 +1,28 @@
+{
+  "name": "c17-task-document-platform",
+  "version": "0.1.0",
+  "description": "Task Assignment and Secure Digital Document Sharing Platform for Organizations",
+  "private": true,
+  "license": "UNLICENSED",
+  "packageManager": "pnpm@9.15.9",
+  "engines": {
+    "node": ">=24 <25"
+  },
+  "scripts": {
+    "backend:lint": "pnpm --filter backend lint",
+    "backend:build": "pnpm --filter backend build",
+    "backend:test": "pnpm --filter backend test",
+    "backend:test:e2e": "pnpm --filter backend test:e2e",
+    "backend:verify": "NODE_ENV=test bash backend/scripts/verify-full-backend.sh",
+    "backend:start:dev": "pnpm --filter backend start:dev",
+    "backend:db:generate": "pnpm --filter backend db:generate",
+    "backend:db:migrate": "pnpm --filter backend db:migrate",
+    "backend:db:deploy": "pnpm --filter backend db:deploy",
+    "backend:db:seed": "pnpm --filter backend db:seed",
+    "backend:smoke": "pnpm --filter backend smoke",
+    "docker:config": "docker compose --env-file .env.example config --quiet",
+    "docker:up": "docker compose up -d",
+    "docker:down": "docker compose down",
+    "docker:build": "docker compose build"
+  }
+}

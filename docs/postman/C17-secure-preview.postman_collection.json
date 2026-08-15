@@ -1,0 +1,547 @@
+{
+  "info": {
+    "name": "C17 Secure Document Preview",
+    "description": "Postman collection for testing server-rendered, watermarked document preview through the API Gateway.\n\nRun the requests in order. The upload request requires selecting a local PDF, PNG, JPEG, TXT, DOC, or DOCX file in Postman.\n\nThe flow creates a task, uploads a real document, grants only PREVIEW, creates a short-lived preview session, downloads a watermarked page artifact, proves DOWNLOAD is denied, revokes the session, and proves the page is denied after revocation.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:3000",
+      "description": "API Gateway base URL without the /api suffix"
+    },
+    {
+      "key": "accessToken",
+      "value": "",
+      "description": "Saved automatically by Login"
+    },
+    {
+      "key": "employeeId",
+      "value": "00000000-0000-4000-a000-000000000002",
+      "description": "Seeded employee ID"
+    },
+    {
+      "key": "taskId",
+      "value": "",
+      "description": "Saved automatically by Create Task"
+    },
+    {
+      "key": "documentId",
+      "value": "",
+      "description": "Saved automatically by Upload Document"
+    },
+    {
+      "key": "docVersion",
+      "value": "1",
+      "description": "Uploaded document version"
+    },
+    {
+      "key": "grantExpiresAt",
+      "value": "",
+      "description": "Generated automatically as one hour from the upload request"
+    },
+    {
+      "key": "previewSessionId",
+      "value": "",
+      "description": "Saved automatically by Create Preview Session"
+    },
+    {
+      "key": "pageNumber",
+      "value": "1",
+      "description": "Preview page to request"
+    }
+  ],
+  "item": [
+    {
+      "name": "1. Setup",
+      "description": "Authenticate and create an isolated task for this preview test.",
+      "item": [
+        {
+          "name": "1.1 Login as seeded employee",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"employee@c17.local\",\n  \"password\": \"Employee123!\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/auth/login",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "auth",
+                "login"
+              ]
+            },
+            "description": "Uses the E2E-seeded employee account."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Login succeeds', function () {",
+                  "  pm.expect(pm.response.code).to.eql(200);",
+                  "  var res = pm.response.json();",
+                  "  pm.expect(res.access_token).to.be.a('string').and.not.empty;",
+                  "  pm.collectionVariables.set('accessToken', res.access_token);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "1.2 Create isolated preview test task",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"title\": \"Postman secure preview test {{$timestamp}}\",\n  \"description\": \"Temporary task used to verify PREVIEW-only access\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/tasks",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "tasks"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Task is created', function () {",
+                  "  pm.expect(pm.response.code).to.be.oneOf([200, 201]);",
+                  "  var res = pm.response.json();",
+                  "  pm.expect(res.id).to.be.a('string').and.not.empty;",
+                  "  pm.collectionVariables.set('taskId', res.id);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "2. Upload with PREVIEW only",
+      "description": "Upload a real file and create the task association with PREVIEW only. No DOWNLOAD grant is created.",
+      "item": [
+        {
+          "name": "2.1 Upload document and grant PREVIEW only",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "file",
+                  "type": "file",
+                  "src": "",
+                  "description": "Select a safe PDF/PNG/JPEG/TXT/DOC/DOCX file in Postman"
+                },
+                {
+                  "key": "title",
+                  "value": "Postman watermarked preview {{$timestamp}}",
+                  "type": "text"
+                },
+                {
+                  "key": "document_type",
+                  "value": "REPORT",
+                  "type": "text"
+                },
+                {
+                  "key": "security_level",
+                  "value": "CONFIDENTIAL",
+                  "type": "text"
+                },
+                {
+                  "key": "task_id",
+                  "value": "{{taskId}}",
+                  "type": "text"
+                },
+                {
+                  "key": "grants",
+                  "value": "[{\"actor_id\":\"{{employeeId}}\",\"permissions\":[\"PREVIEW\"],\"expires_at\":\"{{grantExpiresAt}}\"}]",
+                  "type": "text"
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/documents/upload",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "documents",
+                "upload"
+              ]
+            },
+            "description": "Do not manually set Content-Type; Postman must generate the multipart boundary. The document is scanned, encrypted, and stored as ciphertext before preview rendering."
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.collectionVariables.set('grantExpiresAt', new Date(Date.now() + 60 * 60 * 1000).toISOString());"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Upload succeeds with PREVIEW-only grant', function () {",
+                  "  pm.expect(pm.response.code).to.eql(201);",
+                  "  var res = pm.response.json();",
+                  "  pm.expect(res.document.id).to.be.a('string').and.not.empty;",
+                  "  pm.expect(res.version.version).to.eql(1);",
+                  "  pm.expect(res.grants).to.be.an('array').and.not.empty;",
+                  "  var permissions = res.grants[0].permissions;",
+                  "  pm.expect(permissions).to.include('PREVIEW');",
+                  "  pm.expect(permissions).not.to.include('DOWNLOAD');",
+                  "  pm.collectionVariables.set('documentId', res.document.id);",
+                  "  pm.collectionVariables.set('docVersion', res.version.version);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "2.2 Get safe preview metadata",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/documents/{{documentId}}/preview",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "documents",
+                "{{documentId}}",
+                "preview"
+              ]
+            },
+            "description": "Returns metadata only. It must not expose object_key, ciphertext, or original file bytes."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Preview metadata is safe', function () {",
+                  "  pm.expect(pm.response.code).to.eql(200);",
+                  "  var res = pm.response.json();",
+                  "  pm.expect(res.id).to.eql(pm.collectionVariables.get('documentId'));",
+                  "  pm.expect(res).not.to.have.property('object_key');",
+                  "  pm.expect(res).not.to.have.property('encrypted_dek');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "3. Secure watermarked preview",
+      "description": "Create a short-lived session and retrieve server-rendered page images. Original file bytes are never returned by these requests.",
+      "item": [
+        {
+          "name": "3.1 Create preview session",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"task_id\": \"{{taskId}}\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/documents/{{documentId}}/versions/{{docVersion}}/preview-session",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "documents",
+                "{{documentId}}",
+                "versions",
+                "{{docVersion}}",
+                "preview-session"
+              ]
+            },
+            "description": "Creates a short-lived session after rechecking PREVIEW. The capabilities.download value should be false because this collection grants PREVIEW only."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Preview session is created without download capability', function () {",
+                  "  pm.expect(pm.response.code).to.eql(201);",
+                  "  var res = pm.response.json();",
+                  "  pm.expect(res.id).to.be.a('string').and.not.empty;",
+                  "  pm.expect(res.document_id).to.eql(pm.collectionVariables.get('documentId'));",
+                  "  pm.expect(res.version).to.eql(Number(pm.collectionVariables.get('docVersion')));",
+                  "  pm.expect(res.page_count).to.be.at.least(1);",
+                  "  pm.expect(res.capabilities.preview).to.eql(true);",
+                  "  pm.expect(res.capabilities.download).to.eql(false);",
+                  "  pm.collectionVariables.set('previewSessionId', res.id);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "3.2 Get watermarked preview page 1",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              },
+              {
+                "key": "Accept",
+                "value": "image/png,image/jpeg,image/*"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/documents/{{documentId}}/versions/{{docVersion}}/preview-session/{{previewSessionId}}/pages/{{pageNumber}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "documents",
+                "{{documentId}}",
+                "versions",
+                "{{docVersion}}",
+                "preview-session",
+                "{{previewSessionId}}",
+                "pages",
+                "{{pageNumber}}"
+              ]
+            },
+            "description": "The response is a server-rendered PNG/JPEG containing the repeated watermark layers. In Postman, open the response Preview tab to inspect the image. Headers must be private/no-store and nosniff."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Watermarked preview page is returned as an image', function () {",
+                  "  pm.expect(pm.response.code).to.eql(200);",
+                  "  var contentType = pm.response.headers.get('content-type') || '';",
+                  "  pm.expect(contentType).to.match(/^image\\/(png|jpeg)/);",
+                  "  pm.expect(pm.response.headers.get('cache-control') || '').to.include('no-store');",
+                  "  pm.expect(pm.response.headers.get('x-content-type-options')).to.eql('nosniff');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "4. Enforcement checks",
+      "description": "Verify that PREVIEW cannot be escalated to DOWNLOAD and that revocation invalidates the page session.",
+      "item": [
+        {
+          "name": "4.1 Request download ticket (Should DENY)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"task_id\": \"{{taskId}}\",\n  \"version\": {{docVersion}},\n  \"expires_in_seconds\": 900\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/documents/{{documentId}}/download-ticket",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "documents",
+                "{{documentId}}",
+                "download-ticket"
+              ]
+            },
+            "description": "A PREVIEW-only user must not be able to create a download ticket. Expected status: 403."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('PREVIEW-only user cannot create a download ticket', function () {",
+                  "  pm.expect(pm.response.code).to.eql(403);",
+                  "  var res = pm.response.json();",
+                  "  pm.expect(JSON.stringify(res)).to.include('Download denied');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "4.2 Revoke preview session",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/documents/{{documentId}}/versions/{{docVersion}}/preview-session/{{previewSessionId}}/revoke",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "documents",
+                "{{documentId}}",
+                "versions",
+                "{{docVersion}}",
+                "preview-session",
+                "{{previewSessionId}}",
+                "revoke"
+              ]
+            },
+            "description": "Revokes both the document preview session and the rendered preview artifact."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Preview session is revoked', function () {",
+                  "  pm.expect(pm.response.code).to.eql(204);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "4.3 Get page after revoke (Should DENY)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              },
+              {
+                "key": "Accept",
+                "value": "image/png,image/jpeg,image/*"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/documents/{{documentId}}/versions/{{docVersion}}/preview-session/{{previewSessionId}}/pages/{{pageNumber}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "documents",
+                "{{documentId}}",
+                "versions",
+                "{{docVersion}}",
+                "preview-session",
+                "{{previewSessionId}}",
+                "pages",
+                "{{pageNumber}}"
+              ]
+            },
+            "description": "The same session must no longer return a page after revocation. Expected status: 403."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Revoked preview session cannot return pages', function () {",
+                  "  pm.expect(pm.response.code).to.eql(403);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

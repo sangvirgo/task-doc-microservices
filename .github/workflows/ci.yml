@@ -1,0 +1,257 @@
+name: ci
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9.15.9
+
+      # Node 24 LTS (V3 §4).
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Generate Prisma clients
+        run: pnpm backend:db:generate
+
+      - name: Configure local test infrastructure
+        run: |
+          cp backend/.env.example .env
+          cat >> .env <<'EOF'
+          POSTGRES_USER=c17
+          POSTGRES_PASSWORD=c17pass-local-test-000
+          POSTGRES_DB=c17
+          POSTGRES_PORT=5433
+          RABBITMQ_USER=c17
+          RABBITMQ_PASSWORD=c17pass-local-test-000
+          MINIO_ACCESS_KEY=c17pass-local-test-000
+          MINIO_SECRET_KEY=c17pass-local-test-000
+          DOCUMENT_KEK_V1=c17-test-kek-v1
+          DOCUMENT_SIGNATURE_KEY=c17-test-signature-key
+          EOF
+
+      - name: Start test infrastructure
+        run: >-
+          docker compose --env-file .env up -d --remove-orphans
+          postgres redis rabbitmq minio clamav
+          --wait --wait-timeout 180
+
+      - name: Prepare test databases
+        run: pnpm --filter backend db:reset:test
+
+      - name: Lint
+        run: pnpm backend:lint
+
+      - name: Formatting
+        run: pnpm --filter backend format:check
+
+      - name: Unit tests
+        run: pnpm backend:test
+
+      - name: Build all ten applications
+        run: pnpm backend:build
+
+      - name: Start applications for end-to-end tests
+        run: docker compose --env-file .env up -d --build --remove-orphans --wait --wait-timeout 300
+
+      - name: End-to-end tests
+        run: pnpm backend:test:e2e
+
+      - name: Validate Docker Compose
+        run: docker compose --env-file .env.example config --quiet
+
+      - name: Validate EC2 deployment retry script
+        run: bash deploy/ec2/deploy.test.sh
+
+  changes:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: verify
+    runs-on: ubuntu-latest
+    outputs:
+      backend_apps: ${{ steps.affected.outputs.backend_apps }}
+      web_changed: ${{ steps.affected.outputs.web_changed }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # The push event's BEFORE_SHA may be older than the immediate parent
+          # (for example after a batched push), so it must be available locally.
+          fetch-depth: 0
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: Classify affected images
+        id: affected
+        env:
+          BEFORE_SHA: ${{ github.event.before }}
+          CURRENT_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          changed_files=$(mktemp)
+          trap 'rm -f "$changed_files"' EXIT
+
+          if [[ "$BEFORE_SHA" =~ ^0{40}$ ]]; then
+            git diff-tree --no-commit-id --name-only -r "$CURRENT_SHA" > "$changed_files"
+          else
+            git diff --name-only "$BEFORE_SHA" "$CURRENT_SHA" > "$changed_files"
+          fi
+
+          node .github/scripts/affected-services.mjs --github-output "$GITHUB_OUTPUT" < "$changed_files"
+
+  build-backend-images:
+    needs:
+      - verify
+      - changes
+    if: >-
+      github.event_name == 'push' &&
+      github.ref == 'refs/heads/main' &&
+      needs.changes.result == 'success' &&
+      needs.changes.outputs.backend_apps != '[]'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      fail-fast: false
+      matrix:
+        app: ${{ fromJSON(needs.changes.outputs.backend_apps) }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build and push backend image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: backend/infra/Dockerfile
+          build-args: |
+            APP=${{ matrix.app }}
+          push: true
+          tags: |
+            ghcr.io/${{ github.repository }}/${{ matrix.app }}:sha-${{ github.sha }}
+            ghcr.io/${{ github.repository }}/${{ matrix.app }}:latest
+          cache-from: type=gha,scope=${{ matrix.app }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.app }}
+
+  build-web-image:
+    needs:
+      - verify
+      - changes
+    if: >-
+      github.event_name == 'push' &&
+      github.ref == 'refs/heads/main' &&
+      needs.changes.result == 'success' &&
+      needs.changes.outputs.web_changed == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build and push web image
+        uses: docker/build-push-action@v6
+        with:
+          context: ./frontend/web
+          file: ./frontend/web/Dockerfile
+          build-contexts: |
+            root=.
+          build-args: |
+            NEXT_PUBLIC_API_BASE_URL=http://13.229.104.126:3000
+          push: true
+          tags: |
+            ghcr.io/${{ github.repository }}/web:sha-${{ github.sha }}
+            ghcr.io/${{ github.repository }}/web:latest
+          cache-from: type=gha,scope=web
+          cache-to: type=gha,mode=max,scope=web
+
+  deploy-test:
+    if: >-
+      always() &&
+      github.event_name == 'push' &&
+      github.ref == 'refs/heads/main' &&
+      needs.changes.result == 'success' &&
+      (needs.build-backend-images.result == 'success' || needs.build-backend-images.result == 'skipped') &&
+      (needs.build-web-image.result == 'success' || needs.build-web-image.result == 'skipped')
+    needs:
+      - changes
+      - build-backend-images
+      - build-web-image
+    runs-on: ubuntu-latest
+    environment: test
+    concurrency: deploy-test
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Copy deployment files and restart EC2
+        env:
+          EC2_HOST: ${{ secrets.EC2_HOST }}
+          EC2_USER: ${{ secrets.EC2_USER }}
+          EC2_SSH_PRIVATE_KEY: ${{ secrets.EC2_SSH_PRIVATE_KEY }}
+          EC2_KNOWN_HOSTS: ${{ secrets.EC2_KNOWN_HOSTS }}
+          GHCR_USERNAME: ${{ secrets.GHCR_USERNAME }}
+          GHCR_TOKEN: ${{ secrets.GHCR_TOKEN }}
+        run: |
+          set -euo pipefail
+
+          remote_user="${EC2_USER:-ubuntu}"
+          : "${EC2_HOST:?Set the test environment secret EC2_HOST}"
+          : "${EC2_SSH_PRIVATE_KEY:?Set the test environment secret EC2_SSH_PRIVATE_KEY}"
+          : "${EC2_KNOWN_HOSTS:?Set the test environment secret EC2_KNOWN_HOSTS}"
+          : "${GHCR_USERNAME:?Set the test environment secret GHCR_USERNAME}"
+          : "${GHCR_TOKEN:?Set the test environment secret GHCR_TOKEN}"
+
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$EC2_SSH_PRIVATE_KEY" > "$HOME/.ssh/c17-ec2-deploy"
+          printf '%s\n' "$EC2_KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/c17-ec2-deploy" "$HOME/.ssh/known_hosts"
+
+          ssh_opts=(-i "$HOME/.ssh/c17-ec2-deploy" -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes)
+          remote="$remote_user@$EC2_HOST"
+          remote_dir="/home/$remote_user/c17-deploy"
+
+          ssh "${ssh_opts[@]}" "$remote" "mkdir -p '$remote_dir/infra/postgres'"
+          scp "${ssh_opts[@]}" docker-compose.yml deploy/ec2/deploy.sh "$remote:$remote_dir/"
+          scp "${ssh_opts[@]}" infra/postgres/init-databases.sh "$remote:$remote_dir/infra/postgres/"
+          ssh "${ssh_opts[@]}" "$remote" "chmod 700 '$remote_dir' && chmod 700 '$remote_dir/infra' '$remote_dir/infra/postgres' && chmod 700 '$remote_dir/deploy.sh'"
+
+          printf '%s' "$GHCR_TOKEN" | ssh "${ssh_opts[@]}" "$remote" "docker login ghcr.io --username '$GHCR_USERNAME' --password-stdin"
+          ssh "${ssh_opts[@]}" "$remote" "cd '$remote_dir' && IMAGE_PREFIX='ghcr.io/${{ github.repository }}' IMAGE_TAG='latest' ./deploy.sh"

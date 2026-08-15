@@ -1,0 +1,72 @@
+# Local linked worktrees
+.worktrees/
+
+# Dependencies
+node_modules/
+.pnpm-store/
+
+# Build output
+dist/
+build/
+*.tsbuildinfo
+
+# Environment — never commit real secrets (V3 §21)
+.env
+.env.*
+!.env.example
+
+# Keys and certificates — never commit (V3 §21)
+*.pem
+*.key
+*.p12
+*.pfx
+keys/
+
+# Test and coverage output
+coverage/
+.jest-cache/
+junit.xml
+
+# Prisma generated clients
+**/generated/
+prisma/**/generated/
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+pnpm-debug.log*
+
+# Local infrastructure volumes
+.docker-data/
+tmp/
+temp/
+.tmp/
+uploads/tmp/
+*.pid
+*.pid.lock
+
+# Temporary plaintext/ciphertext (test artifacts)
+test-downloads/
+test-uploads/
+*. plaintext
+*. ciphertext
+
+# Editor and OS
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/*
+!.vscode/extensions.json
+
+# CodeGraph local index (machine-local, not project state)
+.codegraph/
+
+# Brainstorming visual companion session files
+.superpowers/
+
+# Generated documentation artifacts
+docs/c17-api-postman-collection.json
+
+# Claude local settings
+.claude/

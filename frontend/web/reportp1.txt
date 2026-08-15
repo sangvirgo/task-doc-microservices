@@ -1,0 +1,54 @@
+# Web Phase 1 Stop Report
+
+## Phase and current branch
+
+- Phase: Phase 1 — Web foundation, design system, and authenticated shell.
+- Branch: feat/web-ui-taskdoc.
+- Date: 2026-08-02 (Asia/Saigon).
+- Final git status: modified pnpm-lock.yaml and pnpm-workspace.yaml; new untracked Web application files under frontend/web/, including this report. No commit, merge, push, or branch operation was performed.
+
+## Pinned packages and security verification
+
+- next 16.2.11 (exact pin), react 19.2.7, react-dom 19.2.7.
+- Tooling: TypeScript 5.9.3; ESLint 9.39.5; eslint-config-next 16.2.11; Vitest 4.0.16; jsdom 27.4.0; React Testing Library 16.3.0; jest-dom 6.9.1; user-event 14.6.1; Playwright 1.57.0.
+- Verification date: 2026-08-02. Source: official Next.js July 2026 Security Release, which identifies 16.2.11 as the Active LTS security patch addressing 4 HIGH and 5 MEDIUM vulnerabilities: https://nextjs.org/blog
+- Root pnpm workspace was extended with frontend/web so this package can use the shared pnpm-lock.yaml. No independent lockfile was created.
+
+## Completed Phase 1 items
+
+- App Router scaffold, strict TypeScript, ESLint, Vitest/RTL, Playwright configuration and required scripts: package.json, tsconfig.json, eslint.config.mjs, vitest.config.ts, playwright.config.ts.
+- Same-origin Gateway rewrite: next.config.ts maps browser-only /gateway/* to ${NEXT_PUBLIC_API_BASE_URL}/api/*; default is the local Gateway at http://localhost:3000.
+- Central typed browser Gateway core with safe correlation IDs and normalized 401/403/404/409/413/415/429/503 messages: src/api/client.ts, src/lib/errors.ts, src/lib/correlation.ts.
+- Browser-only session record in sessionStorage, serialized refresh rotation, atomic clearance on logout/refresh failure/unrecoverable 401, and protected-route UX: src/auth/session.ts, src/auth/auth-gate.tsx, src/api/auth.ts.
+- Login/logout UI, desktop/laptop-first shell, tablet/narrow adaptation, ADMIN-safe navigation, root loading/error/global-error/not-found boundaries, online/offline banner, accessible shared states and project-owned CSS token sheet: src/app/, src/components/, src/features/auth/, src/styles/tokens.css.
+- Visual reference was limited to interaction/information-architecture patterns, not visual copying: Slack's documented layered navigation and customizable sidebar sections (https://slack.com/help/articles/212596808-Adjust-your-sidebar-preferences), and Lark's workspace/module navigation with contextual controls (https://www.larksuite.com/hc/en-US/articles/360048488025-admin-customize-the-navigation-bar-in-lark). The C17 shell translates these into a project-owned workspace identity, grouped navigation, breadcrumb/context bar, role badge, and skip link; it uses none of their names, assets, colors, typography, product copy, or layouts.
+- Tests: tests/session.test.ts, tests/errors.test.ts, tests/gateway-client.test.ts, tests/login-form.test.tsx, tests/app-shell.test.tsx, tests/network-banner.test.tsx; browser smoke: tests/e2e/login.spec.ts.
+
+## Gateway endpoints integrated and assumptions
+
+- Integrated only through rewrite: POST /api/auth/login, POST /api/auth/refresh, POST /api/auth/logout.
+- Current Gateway code confirms /api/auth is public and proxies auth requests; authenticated APIs are prepared to carry Authorization only through the centralized client.
+- The Gateway has no CORS configuration, so components never call it cross-origin or call internal services.
+- No public current-user endpoint is exposed for the shell. Role is decoded from the access-token payload solely for UX/navigation; it is never an authorization source and backend remains authoritative.
+- No live Gateway integration fixture was run because no backend environment was started for this Phase 1 handoff.
+
+## Verification
+
+- pnpm install: dependencies resolved into root pnpm-lock.yaml, but pnpm exits non-zero because the environment policy reports ignored build scripts for pre-existing backend packages (Prisma and related packages).
+- lint: PASS using the pnpm-linked local ESLint binary from frontend/web.
+- typecheck: PASS using the pnpm-linked local TypeScript binary.
+- unit/component tests: PASS — 6 files, 14 tests (session storage, safe Gateway error statuses, one-time refresh rotation after 401, no retry on 403, login error handling, ADMIN navigation boundary, and offline state).
+- test coverage: PASS — Vitest V8 coverage generated; aggregate statement coverage 81.63% (no coverage threshold was specified).
+- build: PASS — Next.js 16.2.11 production build generated /, /login, and /workspace.
+- Playwright: PASS — 4 tests. Google Chrome installed on the workstation was used because the Playwright-managed Chromium download timed out. Desktop (1280px-wide) and tablet-width (900px-wide) projects each verified protected-route redirect to login, keyboard traversal from email to password, and no horizontal overflow on the login page. The initial browser run revealed and prompted a fix for a hydration bug in the client route guard; no browser result is claimed from that failing run.
+- Static security scan: no Web source matches for direct service ports 3001–3009, /internal/, localStorage, IndexedDB, object_key, or console logging. git diff --check passed.
+
+## Deferred scope
+
+- No Phase 2+ task, comment, document, grant, notification, administration, record, transfer package, or Retention/Disposal UI was implemented.
+- No realtime/chat/presence, offline sync, storage links, analytics, PWA behavior, extra UI/state/auth dependencies, backend changes, Docker/infra changes, commits, pushes, merges, or PRs.
+
+## Risks and decisions needed before Phase 2
+
+- Confirm the desired public current-user/profile contract if later UI needs authoritative identity display beyond the role present in the JWT.
+- Establish isolated public-Gateway Playwright fixtures before content workflows; the baseline seed is insufficient for confidential participant/ancestor-oversight and archive-custody cases.

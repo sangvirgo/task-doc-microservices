@@ -1,0 +1,63 @@
+generator client {
+  provider = "prisma-client-js"
+  output   = "../../node_modules/@prisma/client-security-monitoring"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("SECURITY_MONITORING_DATABASE_URL")
+}
+
+model SecurityAlert {
+  id            String    @id @default(uuid())
+  rule_id       String
+  severity      String    @default("MEDIUM")
+  actor_id      String?
+  description   String
+  metadata      Json?
+  status        String    @default("OPEN")
+  resolved_at   DateTime?
+  resolved_by   String?
+  created_at    DateTime  @default(now())
+
+  @@index([actor_id])
+  @@index([rule_id])
+  @@index([status])
+  @@index([created_at])
+}
+
+model SecurityRule {
+  id          String  @id @default(uuid())
+  name        String  @unique
+  description String?
+  rule_type   String
+  threshold   Int     @default(5)
+  window_minutes Int  @default(15)
+  enabled     Boolean @default(true)
+  action      String  @default("ALERT")
+  created_at  DateTime @default(now())
+}
+
+model SecurityEventCounter {
+  id         String   @id @default(uuid())
+  rule_id    String
+  actor_id   String
+  count      Int      @default(0)
+  window_start DateTime
+  created_at DateTime @default(now())
+
+  @@unique([rule_id, actor_id, window_start])
+  @@index([rule_id])
+  @@index([actor_id])
+}
+
+model ConsumedEvent {
+  id           String   @id @default(uuid())
+  event_id     String   @unique
+  event_type   String
+  resource_id  String
+  processed_at DateTime @default(now())
+  metadata     Json?
+
+  @@index([event_type, processed_at])
+}
