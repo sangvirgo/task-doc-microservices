@@ -8,7 +8,7 @@ const ZIP_SIGNATURE = Buffer.from([0x50, 0x4b, 0x03, 0x04]);
 const DOCX_CONTENT_TYPE_MARKER = Buffer.from('[Content_Types].xml');
 
 export function detectPreviewFormat(content: Buffer): PreviewFormat {
-  if (content.subarray(0, PDF_SIGNATURE.length).equals(PDF_SIGNATURE)) return 'pdf';
+  if (startsWithPdfSignature(content)) return 'pdf';
   if (content.subarray(0, PNG_SIGNATURE.length).equals(PNG_SIGNATURE)) return 'png';
   if (content.subarray(0, JPEG_SIGNATURE.length).equals(JPEG_SIGNATURE)) return 'jpeg';
   if (content.subarray(0, DOC_SIGNATURE.length).equals(DOC_SIGNATURE)) return 'doc';
@@ -21,6 +21,16 @@ export function detectPreviewFormat(content: Buffer): PreviewFormat {
   }
 
   return isSafeUtf8Text(content) ? 'text' : 'unsupported';
+}
+
+function startsWithPdfSignature(content: Buffer): boolean {
+  let offset = 0;
+  while (offset < content.length && isPdfLeadingWhitespace(content[offset])) offset += 1;
+  return content.subarray(offset, offset + PDF_SIGNATURE.length).equals(PDF_SIGNATURE);
+}
+
+function isPdfLeadingWhitespace(byte: number): boolean {
+  return byte === 0x09 || byte === 0x0a || byte === 0x0c || byte === 0x0d || byte === 0x20;
 }
 
 function isSafeUtf8Text(content: Buffer): boolean {

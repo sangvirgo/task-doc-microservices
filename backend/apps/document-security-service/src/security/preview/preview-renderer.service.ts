@@ -15,7 +15,7 @@ const execFileAsync = promisify(execFile);
 const DEFAULT_MAX_INPUT_BYTES = 25 * 1024 * 1024;
 const DEFAULT_MAX_PAGES = 200;
 const DEFAULT_MAX_DIMENSION = 2400;
-const DEFAULT_TIMEOUT_MS = 30_000;
+const DEFAULT_TIMEOUT_MS = 60_000;
 const DEFAULT_TEXT_LINES_PER_PAGE = 58;
 const DEFAULT_TEMP_ROOT = join(tmpdir(), 'c17-document-preview');
 
@@ -197,7 +197,7 @@ export class PreviewRenderer {
     const outputPrefix = join(jobDir, 'page');
     await this.commandRunner.run(
       'pdftoppm',
-      ['-png', '-r', '120', sourcePath, outputPrefix],
+      ['-png', '-r', '120', '-scale-to', String(this.options.maxDimension), sourcePath, outputPrefix],
       jobDir,
     );
 

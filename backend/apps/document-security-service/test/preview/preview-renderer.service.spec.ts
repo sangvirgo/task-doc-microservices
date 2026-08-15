@@ -100,6 +100,7 @@ describe('PreviewRenderer', () => {
     const [command, args, cwd] = commandRunner.run.mock.calls[0] || [];
     expect(command).toBe('pdftoppm');
     expect(args).toEqual(expect.arrayContaining(['-png', '-r', '120']));
+    expect(args).toEqual(expect.arrayContaining(['-scale-to', '2400']));
     expect(cwd).toEqual(expect.any(String));
     expect(imageProcessor.watermarkPage.mock.calls).toHaveLength(2);
   });
