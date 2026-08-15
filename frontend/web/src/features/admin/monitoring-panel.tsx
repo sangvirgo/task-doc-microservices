@@ -112,7 +112,7 @@ export function MonitoringPanel() {
       <div><span className={styles.heroEyebrow}>TRUNG TÂM AN TOÀN</span><h1>Giám sát hệ thống</h1><p>Theo dõi cảnh báo, điều chỉnh quy tắc và xử lý các tín hiệu bất thường.</p></div>
       <div className={styles.heroActions}>
         <div ref={exportRef} className={styles.exportWrap}>
-          <button className={styles.exportButton} type="button" aria-haspopup="menu" aria-expanded={exportOpen} onClick={() => setExportOpen(current => !current)}><span className={styles.exportIcon} aria-hidden="true"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="7 10 12 15 17 10" /><line x1="12" y1="15" x2="12" y2="3" /></svg></span> Tải xuống</button>
+          <button className={styles.exportButton} type="button" aria-haspopup="menu" aria-expanded={exportOpen} onClick={() => setExportOpen(current => !current)}><span className={styles.exportIcon} aria-hidden="true"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="7 10 12 15 17 10" /><line x1="12" y1="15" x2="12" y2="3" /></svg></span>             Tải xuống dữ liệu giám sát</button>
           {exportOpen && <div className={styles.exportMenu} role="menu">
             <button type="button" role="menuitem" onClick={() => { exportAlerts(); setExportOpen(false); }}>Xuất cảnh báo (CSV)</button>
             <button type="button" role="menuitem" onClick={() => { exportRules(); setExportOpen(false); }}>Xuất quy tắc (CSV)</button>
