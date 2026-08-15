@@ -10,6 +10,7 @@ import styles from './login-form.module.css';
 const loginErrorMessage = (error: unknown) => {
   if (!(error instanceof GatewayError)) return 'Không thể đăng nhập (Unable to sign in). Vui lòng thử lại.';
   if (error.status === 401 && error.message === 'Account is locked') return 'Tài khoản đã bị khóa. Vui lòng liên hệ quản trị hệ thống để mở khóa.';
+  if (error.status === 401 && error.message === 'Email verification required') return 'Tài khoản chưa xác nhận email. Vui lòng xác nhận để tiếp tục.';
   if (error.status === 401) return 'Email hoặc mật khẩu không đúng.';
   return error.message;
 };
@@ -21,6 +22,10 @@ export function LoginForm() {
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(params.get('reason') === 'session-expired' ? 'Phiên làm việc đã hết hạn. Vui lòng đăng nhập lại.' : null);
   const [showPassword, setShowPassword] = useState(false);
+  const [otpEmail, setOtpEmail] = useState<string | null>(null);
+  const [otpPassword, setOtpPassword] = useState<string | null>(null);
+  const [otpCode, setOtpCode] = useState('');
+  const [otpStatus, setOtpStatus] = useState<string | null>(null);
 
   const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -38,8 +43,9 @@ export function LoginForm() {
     try {
       if (mode === 'register') {
         await authApi.register(email, password);
-        setMode('login');
-        setError('Đã tạo tài khoản. Đăng nhập để tiếp tục.');
+        setOtpEmail(email);
+        setOtpPassword(password);
+        setOtpStatus('Mã xác nhận đã được gửi tới email của bạn.');
         return;
       }
       const tokens = await authApi.login(email, password);
@@ -47,7 +53,56 @@ export function LoginForm() {
       const next = params.get('next');
       router.replace(next?.startsWith('/') ? next : '/workspace');
     } catch (caught) {
+      if (caught instanceof GatewayError && caught.status === 401 && caught.message === 'Email verification required') {
+        setOtpEmail(email);
+        setOtpPassword(password);
+        setOtpStatus('Tài khoản chưa xác nhận email. Mã xác nhận mới đã được gửi.');
+        try { await authApi.resendOtp(email); } catch { /* keep the prompt visible */ }
+        return;
+      }
       setError(mode === 'register' && !(caught instanceof GatewayError) ? 'Không thể tạo tài khoản. Vui lòng thử lại.' : loginErrorMessage(caught));
+    } finally {
+      setPending(false);
+    }
+  };
+
+  const confirmCode = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!otpEmail) return;
+    setPending(true);
+    setError(null);
+    setOtpStatus(null);
+    try {
+      await authApi.verifyEmail(otpEmail, otpCode.trim());
+      setOtpCode('');
+      if (otpPassword) {
+        setOtpStatus('Email đã được xác nhận. Đang đăng nhập...');
+        try {
+          const tokens = await authApi.login(otpEmail, otpPassword);
+          writeSession(tokens);
+          const next = params.get('next');
+          router.replace(next?.startsWith('/') ? next : '/workspace');
+          return;
+        } catch { /* fall back to manual login below */ }
+      }
+      setOtpStatus('Email đã được xác nhận thành công. Bạn có thể đăng nhập.');
+    } catch (caught) {
+      setError(caught instanceof GatewayError ? caught.message : 'Mã xác nhận không hợp lệ. Vui lòng thử lại.');
+    } finally {
+      setPending(false);
+    }
+  };
+
+  const resendCode = async () => {
+    if (!otpEmail) return;
+    setPending(true);
+    setError(null);
+    setOtpStatus(null);
+    try {
+      await authApi.resendOtp(otpEmail);
+      setOtpStatus('Mã xác nhận mới đã được gửi.');
+    } catch (caught) {
+      setError(caught instanceof GatewayError ? caught.message : 'Không thể gửi lại mã. Vui lòng thử lại.');
     } finally {
       setPending(false);
     }
@@ -71,11 +126,30 @@ export function LoginForm() {
         </div>
       </section>
       <section className={styles.card} aria-labelledby="login-title">
+        {otpEmail ? (
+          <div className={styles.cardHeading}>
+            <p className={styles.eyebrow}>Xác nhận email</p>
+            <h1 id="login-title">Nhập mã xác nhận</h1>
+            <p className={styles.copy}>Mã gồm 6 chữ số đã được gửi tới <strong>{otpEmail}</strong>.</p>
+            <form onSubmit={confirmCode} noValidate>
+              <label htmlFor="otpCode">Mã xác nhận
+                <input aria-label="Verification code" id="otpCode" name="otpCode" type="text" inputMode="numeric" autoComplete="one-time-code" required disabled={pending} placeholder="000000" value={otpCode} onChange={event => setOtpCode(event.target.value)} />
+              </label>
+              {error && <p className={styles.error} role="alert">{error}</p>}
+              {otpStatus && <p className={styles.success} role="status">{otpStatus}</p>}
+              <button className={styles.submit} type="submit" disabled={pending}>{pending ? 'Vui lòng chờ…' : 'Xác nhận email'}<span aria-hidden="true">→</span></button>
+              <button className={styles.switch} type="button" onClick={resendCode} disabled={pending}>Gửi lại mã xác nhận</button>
+              <button className={styles.switch} type="button" onClick={() => { setOtpEmail(null); setOtpCode(''); setError(null); setOtpStatus(null); setMode('login'); }}>Quay lại đăng nhập</button>
+            </form>
+          </div>
+        ) : (
         <div className={styles.cardHeading}>
           <p className={styles.eyebrow}>{mode === 'login' ? 'Chào mừng trở lại' : 'Bắt đầu ngay'}</p>
           <h1 id="login-title">{mode === 'login' ? 'Đăng nhập' : 'Tạo tài khoản'}</h1>
           <p className={styles.copy}>{mode === 'login' ? 'Dùng tài khoản tổ chức để tiếp tục.' : 'Tham gia không gian làm việc bằng tài khoản nhân viên.'}</p>
         </div>
+        )}
+        {!otpEmail && <>
         <form onSubmit={submit} noValidate>
           <label htmlFor="email">Địa chỉ email
             <input aria-label="Email address" id="email" name="email" type="email" autoComplete="email" required disabled={pending} placeholder="ban@congty.com" />
@@ -99,6 +173,7 @@ export function LoginForm() {
         <div className={styles.divider}><span>Truy cập bảo mật</span></div>
         <p className={styles.securityNote}><span className={styles.lockIcon} aria-hidden="true">⌁</span> Hoạt động trong không gian của bạn được bảo vệ và kiểm toán.</p>
         <button className={styles.switch} type="button" onClick={() => { setMode(mode === 'login' ? 'register' : 'login'); setError(null); }}>{mode === 'login' ? 'Chưa có tài khoản? Tạo tài khoản' : 'Đã có tài khoản? Đăng nhập'}</button>
+        </>}
       </section>
     </main>
   );

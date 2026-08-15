@@ -23,6 +23,21 @@ const loadDirectory = async () => {
   return sortMembers(members);
 };
 
+const ALL_USERS_CACHE_TTL_MS = 60_000;
+let allUsersCache: { items: Array<{ id: string; email: string }>; expiresAt: number } | null = null;
+let allUsersRequest: Promise<Array<{ id: string; email: string }>> | null = null;
+
+const loadAllUsers = async () => {
+  const users: Array<{ id: string; email: string }> = [];
+  for (let page = 1; page <= 100; page += 1) {
+    const response = await gatewayClient.get<DirectoryPage | Array<{ id: string; email: string }>>(`/users?page=${page}&page_size=100`);
+    if (Array.isArray(response)) return sortMembers(response);
+    users.push(...response.items);
+    if (!response.pagination.has_next) break;
+  }
+  return sortMembers(users);
+};
+
 const invalidateDirectory = () => {
   directoryCache = null;
 };
@@ -45,9 +60,27 @@ export const adminApi = {
     return request;
   },
   invalidateDirectory,
+  allUsers: () => {
+    const now = Date.now();
+    if (allUsersCache && allUsersCache.expiresAt > now) return Promise.resolve(allUsersCache.items);
+    if (allUsersRequest) return allUsersRequest;
+
+    const request = loadAllUsers()
+      .then(items => {
+        allUsersCache = { items, expiresAt: Date.now() + ALL_USERS_CACHE_TTL_MS };
+        return items;
+      })
+      .finally(() => {
+        if (allUsersRequest === request) allUsersRequest = null;
+      });
+    allUsersRequest = request;
+    return request;
+  },
   users: () => gatewayClient.getList<ManagedUser>('/users'),
   user: (id: string) => gatewayClient.get<ManagedUser>(`/users/${encodeURIComponent(id)}`),
   createUser: (input: Pick<ManagedUser, 'id' | 'email' | 'role'>) => gatewayClient.post<ManagedUser>('/users', input),
+  adminRegister: (email: string, password: string, role: 'ADMIN' | 'EMPLOYEE' = 'EMPLOYEE') =>
+    gatewayClient.post<{ id: string; email: string; role: string; email_verified: boolean }>('/auth/admin/register', { email, password, role }),
   lock: (id: string) => gatewayClient.post<ManagedUser>(`/users/${encodeURIComponent(id)}/lock`),
   unlock: (id: string) => gatewayClient.post<ManagedUser>(`/users/${encodeURIComponent(id)}/unlock`),
   grantCapability: (id: string, capability: Capability) => gatewayClient.post<ManagedUser>(`/users/${encodeURIComponent(id)}/capabilities`, { capability }),

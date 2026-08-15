@@ -42,6 +42,8 @@ export function UsersPanel() {
   const [users, setUsers] = useState<ManagedUser[] | null>(null);
   const [failed, setFailed] = useState(false);
   const [status, setStatus] = useState('');
+  const [creating, setCreating] = useState(false);
+  const [creatingOpen, setCreatingOpen] = useState(false);
   const load = () => {
     setUsers(null);
     setFailed(false);
@@ -73,6 +75,22 @@ export function UsersPanel() {
     form.reset();
   };
 
+  const createAccount = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const form = event.currentTarget;
+    const email = String(new FormData(form).get('email')).trim();
+    const password = String(new FormData(form).get('password'));
+    if (!email || password.length < 8) {
+      setStatus('Email không hợp lệ hoặc mật khẩu phải có ít nhất 8 ký tự.');
+      return;
+    }
+    setCreating(true);
+    adminApi.adminRegister(email, password)
+      .then(() => { setStatus('Đã tạo tài khoản nhân viên. Nhân viên có thể đăng nhập bằng mật khẩu này.'); form.reset(); setCreatingOpen(false); load(); })
+      .catch(() => setStatus('Không thể tạo tài khoản. Email có thể đã được dùng.'))
+      .finally(() => setCreating(false));
+  };
+
   return <section className={styles.usersPage}>
     <header className={styles.usersHero}>
       <div>
@@ -101,6 +119,19 @@ export function UsersPanel() {
           </div>
         </article>
       ))}
+    </div>
+
+    <div className={styles.createUserToggle}>
+      <button className={styles.createUserOpenButton} type="button" aria-expanded={creatingOpen} onClick={() => setCreatingOpen(current => !current)}>
+        {creatingOpen ? '− Ẩn biểu mẫu' : '+ Tạo tài khoản nhân viên'}
+      </button>
+      {creatingOpen && <form className={styles.createUserForm} onSubmit={createAccount}>
+        <div className={styles.createUserFields}>
+          <label>Email công việc<input name="email" type="email" required autoComplete="off" placeholder="nhan.vien@congty.vn" /></label>
+          <label>Mật khẩu ban đầu<input name="password" type="password" required minLength={8} autoComplete="new-password" placeholder="Ít nhất 8 ký tự" /></label>
+          <button className={styles.createUserButton} type="submit" disabled={creating}>{creating ? 'Đang tạo…' : 'Tạo tài khoản'}</button>
+        </div>
+      </form>}
     </div>
 
     {status && <p className={styles.statusMessage} role="status">{status}</p>}

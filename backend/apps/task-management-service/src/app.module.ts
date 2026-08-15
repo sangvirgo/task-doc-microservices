@@ -1,4 +1,5 @@
 import { Module } from '@nestjs/common';
+import { ScheduleModule } from '@nestjs/schedule';
 import { z } from 'zod';
 
 import { AppConfigModule, baseEnvSchema } from '@c17/config';
@@ -11,6 +12,7 @@ import { PermissionClient } from './permissions/permission.client';
 import { AuditClient } from './audit/audit.client';
 import { TaskPrismaService } from './prisma/task-prisma.service';
 import { UserRoleClient } from './users/user-role.client';
+import { DeadlineReminderScheduler } from './messaging/deadline-reminder.scheduler';
 import { TaskOutboxRelayService } from './messaging/task-outbox-relay.service';
 import { TaskStatisticsService } from './tasks/task-statistics.service';
 
@@ -33,6 +35,7 @@ export const envSchema = baseEnvSchema.extend({
 
 @Module({
   imports: [
+    ScheduleModule.forRoot(),
     AppConfigModule.forRoot({ serviceName: SERVICE, schema: envSchema }),
     ObservabilityModule,
     MessagingModule.forRoot({
@@ -48,6 +51,7 @@ export const envSchema = baseEnvSchema.extend({
     AuditClient,
     UserRoleClient,
     TaskOutboxRelayService,
+    DeadlineReminderScheduler,
     TaskStatisticsService,
   ],
 })

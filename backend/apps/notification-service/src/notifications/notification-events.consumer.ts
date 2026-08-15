@@ -1,10 +1,12 @@
 import { Injectable, OnApplicationShutdown, OnModuleInit } from '@nestjs/common';
 import { EventType } from '@c17/contracts';
+import { EmailService, deadlineReminderEmail, securityAlertEmail } from '@c17/email';
 import { AmqpEventConsumer, queueName } from '@c17/messaging';
 import { StructuredLogger } from '@c17/observability';
 import type { Prisma } from '@prisma/client-notification';
 
 import { NotificationPrismaService } from '../prisma/notification-prisma.service';
+import { UserDirectoryClient } from './user-directory.client';
 
 @Injectable()
 export class NotificationEventsConsumer implements OnModuleInit, OnApplicationShutdown {
@@ -13,8 +15,14 @@ export class NotificationEventsConsumer implements OnModuleInit, OnApplicationSh
   constructor(
     private readonly prisma: NotificationPrismaService,
     logger: StructuredLogger,
+    private readonly directory: UserDirectoryClient,
+    private readonly emailService: EmailService,
   ) {
     this.consumers = [
+      new AmqpEventConsumer(
+        process.env.RABBITMQ_URL || 'amqp://guest:guest@localhost:5672',
+        logger,
+      ),
       new AmqpEventConsumer(
         process.env.RABBITMQ_URL || 'amqp://guest:guest@localhost:5672',
         logger,
@@ -121,7 +129,7 @@ export class NotificationEventsConsumer implements OnModuleInit, OnApplicationSh
         maxAttempts: 3,
       },
       async (event) => {
-        await this.createNotificationsForEvent({
+        const created = await this.createNotificationsForEvent({
           eventId: event.event_id,
           eventType: event.event_type,
           resourceId: event.resource_id,
@@ -140,6 +148,11 @@ export class NotificationEventsConsumer implements OnModuleInit, OnApplicationSh
             alert_id: event.resource_id,
           },
         });
+
+        // HIGH severity alerts (e.g. repeated failed logins, brute force) also page every admin.
+        if (created && event.payload.severity === 'HIGH') {
+          await this.emailSecurityAlertToAdmins(event);
+        }
       },
     );
 
@@ -248,6 +261,87 @@ export class NotificationEventsConsumer implements OnModuleInit, OnApplicationSh
         });
       },
     );
+
+    this.consumers[6].subscribe(
+      {
+        consumer: 'notification-service',
+        concern: 'deadline-reminder',
+        queue: queueName('notification-service', 'deadline-reminder'),
+        routingKey: EventType.TASK_DEADLINE_REMINDER,
+        retryDelayMs: 1_000,
+        maxAttempts: 3,
+      },
+      async (event) => {
+        const taskId =
+          typeof event.payload.task_id === 'string' ? event.payload.task_id : event.resource_id;
+        const title = typeof event.payload.title === 'string' ? event.payload.title : 'Task';
+        const deadline =
+          typeof event.payload.deadline === 'string' ? event.payload.deadline : null;
+        const assigneeId =
+          typeof event.payload.assignee_id === 'string' ? event.payload.assignee_id : null;
+
+        const created = assigneeId
+          ? await this.createNotificationsForEvent({
+              eventId: event.event_id,
+              eventType: event.event_type,
+              resourceId: event.resource_id,
+              recipientId: assigneeId,
+              channels: { inApp: true, email: false },
+              notificationType: 'TASK_DEADLINE_REMINDER',
+              title: 'Sắp đến hạn',
+              body:
+                deadline
+                  ? `Task "${title}" hết hạn lúc ${new Date(deadline).toLocaleString('vi-VN')}.`
+                  : `Task "${title}" sắp đến hạn.`,
+              metadata: {
+                task_id: taskId,
+                deadline,
+                correlation_id: event.correlation_id,
+              },
+            })
+          : false;
+
+        if (created && assigneeId) {
+          const recipient = await this.directory.resolveUser(assigneeId);
+          if (recipient) {
+            const deadlineLabel = deadline
+              ? new Date(deadline).toLocaleString('vi-VN')
+              : 'thời gian đã định';
+            const taskUrl = process.env.WEB_BASE_URL
+              ? `${process.env.WEB_BASE_URL}/tasks/${taskId}`
+              : undefined;
+            const envelope = deadlineReminderEmail(title, deadlineLabel, taskUrl);
+            await this.emailService
+              .sendMail({ to: recipient.email, ...envelope })
+              .catch(() => undefined);
+          }
+        }
+      },
+    );
+  }
+
+  private async emailSecurityAlertToAdmins(event: {
+    resource_id: string;
+    payload: Record<string, unknown>;
+  }): Promise<void> {
+    const admins = await this.directory.listAdmins();
+    if (admins.length === 0) return;
+
+    const severity = typeof event.payload.severity === 'string' ? event.payload.severity : 'HIGH';
+    const ruleType =
+      typeof event.payload.rule_type === 'string' ? event.payload.rule_type : 'UNKNOWN';
+    const alertsUrl = process.env.WEB_BASE_URL
+      ? `${process.env.WEB_BASE_URL}/admin/alerts`
+      : undefined;
+
+    await Promise.allSettled(
+      admins.map((admin) =>
+        this.emailService.sendMail({
+          to: admin.email,
+          ...securityAlertEmail(severity, ruleType, event.resource_id, alertsUrl),
+        }),
+      ),
+    );
   }
 
   async onApplicationShutdown(): Promise<void> {
@@ -267,13 +361,13 @@ export class NotificationEventsConsumer implements OnModuleInit, OnApplicationSh
     title: string;
     body: string;
     metadata: Record<string, unknown>;
-  }): Promise<void> {
-    await this.prisma.$transaction(async (tx) => {
+  }): Promise<boolean> {
+    return this.prisma.$transaction(async (tx) => {
       const existing = await tx.consumedEvent.findUnique({
         where: { event_id: input.eventId },
       });
       if (existing) {
-        return;
+        return false;
       }
 
       if (input.recipientId) {
@@ -318,6 +412,8 @@ export class NotificationEventsConsumer implements OnModuleInit, OnApplicationSh
           metadata: input.metadata as Prisma.InputJsonValue,
         },
       });
+
+      return true;
     });
   }
 }

@@ -1,7 +1,7 @@
 'use client';
 /* eslint-disable react-hooks/set-state-in-effect */
 
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { auditApi } from '@/api/audit';
 import { readSession } from '@/auth/session';
 import { EmptyState, ErrorState, LoadingState, PermissionDeniedState } from '@/components/common-states';
@@ -96,18 +96,22 @@ export function AuditPanel() {
   const [failed, setFailed] = useState(false);
   const [status, setStatus] = useState('');
   const [filter, setFilter] = useState('ALL');
+  const [page, setPage] = useState(1);
+  const [total, setTotal] = useState(0);
   const [exportOpen, setExportOpen] = useState(false);
   const exportRef = useRef<HTMLDivElement>(null);
 
   const load = () => {
     setEvents(null);
-    setChainHead(null);
     setFailed(false);
-    Promise.all([auditApi.events(), auditApi.chainHead()])
-      .then(([listed, head]) => { setEvents(listed); setChainHead(head); })
+    Promise.all([
+      auditApi.events(page, 50, filter === 'ALL' ? undefined : filter),
+      auditApi.chainHead(),
+    ])
+      .then(([listed, head]) => { setEvents(listed.items); setTotal(listed.pagination.total ?? 0); setChainHead(head); })
       .catch(() => setFailed(true));
   };
-  useEffect(load, []);
+  useEffect(() => { load(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [page, filter]);
 
   useEffect(() => {
     const close = (event: MouseEvent) => {
@@ -116,12 +120,6 @@ export function AuditPanel() {
     document.addEventListener('mousedown', close);
     return () => document.removeEventListener('mousedown', close);
   }, []);
-
-  const filtered = useMemo(() => {
-    if (!events) return [];
-    if (filter === 'ALL') return events;
-    return events.filter(event => event.event_type.startsWith(`${filter}.`));
-  }, [events, filter]);
 
   if (session?.role !== 'ADMIN') return <PermissionDeniedState />;
   if (failed) return <ErrorState message="Không thể tải dữ liệu kiểm toán." onRetry={load} />;
@@ -134,6 +132,9 @@ export function AuditPanel() {
       const result = await auditApi.verify();
       setVerification(result);
       setStatus(result.valid ? 'Chuỗi kiểm toán được xác nhận toàn vẹn.' : `Chuỗi bị phá vỡ tại sự kiện thứ ${result.broken_at ?? 'không xác định'}.`);
+      Promise.all([auditApi.events(page, 50, filter === 'ALL' ? undefined : filter), auditApi.chainHead()])
+        .then(([listed, head]) => { setEvents(listed.items); setTotal(listed.pagination.total ?? 0); setChainHead(head); })
+        .catch(() => undefined);
     } catch {
       setVerification(null);
       setStatus('Máy chủ không thể kiểm tra chuỗi kiểm toán.');
@@ -144,7 +145,7 @@ export function AuditPanel() {
 
   const exportEvents = () => downloadCSV(`c17-audit-events-${dateKey()}.csv`, [
     ['Số thứ tự', 'Loại sự kiện', 'Tên tiếng Việt', 'Loại tài nguyên', 'Thời điểm'],
-    ...filtered.map(event => [
+    ...(events ?? []).map(event => [
       event.sequence_number,
       event.event_type,
       labelOf(event.event_type),
@@ -153,7 +154,8 @@ export function AuditPanel() {
     ]),
   ]);
 
-  const newest = events.length > 0 ? events[0] : null;
+  const totalPages = Math.max(1, Math.ceil(total / 50));
+  const newest = events && events.length > 0 ? events[0] : null;
 
   return <section className={styles.auditPage}>
     <header className={styles.auditHero}>
@@ -166,7 +168,7 @@ export function AuditPanel() {
         <div ref={exportRef} className={styles.exportWrap}>
           <button className={styles.exportButton} type="button" aria-haspopup="menu" aria-expanded={exportOpen} onClick={() => setExportOpen(current => !current)}>
             <span className={styles.exportIcon} aria-hidden="true"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="7 10 12 15 17 10" /><line x1="12" y1="15" x2="12" y2="3" /></svg></span>
-            Tải xuống
+            Tải xuống dữ liệu kiểm toán
           </button>
           {exportOpen && <div className={styles.exportMenu} role="menu">
             <button type="button" role="menuitem" onClick={() => { exportEvents(); setExportOpen(false); }}>Xuất nhật ký sự kiện (CSV)</button>
@@ -196,7 +198,7 @@ export function AuditPanel() {
       </div>
       <div className={styles.adminStats}>
         <article className={styles.adminStat}><span className={styles.statIconBlue}>#</span><div><small>Tổng sự kiện trong chuỗi</small><strong>{chainHead.sequence}</strong><span>Số hiệu mới nhất tại đầu chuỗi</span></div></article>
-        <article className={styles.adminStat}><span className={styles.statIconGreen}>▤</span><div><small>Sự kiện đang hiển thị</small><strong>{events.length}</strong><span>50 sự kiện gần nhất</span></div></article>
+        <article className={styles.adminStat}><span className={styles.statIconGreen}>▤</span><div><small>Sự kiện đang hiển thị</small><strong>{events.length}</strong><span>Trang {page}/{totalPages} · 50 sự kiện/trang</span></div></article>
         <article className={styles.adminStat}><span className={styles.statIconPurple}>◷</span><div><small>Sự kiện gần nhất</small><strong>{newest ? `#${newest.sequence_number}` : '—'}</strong><span>{newest ? formatTime(newest.occurred_at) : 'Chưa có sự kiện'}</span></div></article>
       </div>
       {chainHead.last_event_id && <div className={styles.chainHeadLine}><span>Đầu chuỗi (head)</span><code title={chainHead.last_hash}>{shortId(chainHead.last_event_id)}</code><code title={chainHead.last_hash}>sha256:{chainHead.last_hash.slice(0, 16)}…</code></div>}
@@ -211,7 +213,7 @@ export function AuditPanel() {
       </div>
       <div className={styles.auditHeaderActions}>
         <label className={styles.auditFilter}><span>Lọc theo nhóm</span>
-          <select value={filter} onChange={event => setFilter(event.target.value)} aria-label="Lọc theo nhóm sự kiện">
+          <select value={filter} onChange={event => { setPage(1); setFilter(event.target.value); }} aria-label="Lọc theo nhóm sự kiện">
             <option value="ALL">Tất cả các nhóm</option>
             {Object.entries(DOMAINS).map(([key, label]) => <option key={key} value={key}>{label}</option>)}
           </select>
@@ -219,8 +221,8 @@ export function AuditPanel() {
       </div>
     </div>
 
-    {filtered.length === 0 ? <EmptyState title="Không có sự kiện">Không tìm thấy sự kiện nào trong nhóm này.</EmptyState> : <div className={styles.auditList}>
-      {filtered.map(event => { const tone = toneOf(event.event_type); return <article className={styles.auditRow} key={event.id}>
+    {events.length === 0 ? <EmptyState title="Không có sự kiện">Không tìm thấy sự kiện nào trong nhóm này.</EmptyState> : <div className={styles.auditList}>
+      {events.map(event => { const tone = toneOf(event.event_type); return <article className={styles.auditRow} key={event.id}>
         <span className={`${styles.seqBadge}`} title={`Số thứ tự trong chuỗi: ${event.sequence_number}`}>#{event.sequence_number}</span>
         <span className={`${styles.auditIcon} ${styles[`tone${tone[0].toUpperCase()}${tone.slice(1)}`]}`} aria-hidden="true">▤</span>
         <div className={styles.auditContent}>
@@ -231,5 +233,11 @@ export function AuditPanel() {
         <time className={styles.auditTime} dateTime={event.occurred_at}>{formatTime(event.occurred_at)}</time>
       </article>; })}
     </div>}
+
+    <nav className={styles.auditPager} aria-label="Phân trang nhật ký sự kiện">
+      <button type="button" disabled={page <= 1} onClick={() => setPage(current => Math.max(1, current - 1))}>← Trang trước</button>
+      <span>Trang {page} / {totalPages} · {total} sự kiện</span>
+      <button type="button" disabled={page >= totalPages} onClick={() => setPage(current => Math.min(totalPages, current + 1))}>Trang sau →</button>
+    </nav>
   </section>;
 }

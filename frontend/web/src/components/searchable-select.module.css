@@ -3,9 +3,11 @@
 .control:focus-within,.control.open{border-color:#0c66e4;box-shadow:0 0 0 3px rgb(12 102 228 / 16%)}
 .control input{min-width:0;min-height:38px;flex:1;padding:0 12px;border:0!important;outline:0;background:transparent!important;box-shadow:none!important;color:#172b4d;font:inherit;font-size:.76rem;font-weight:600;line-height:1.2}
 .control input::placeholder{color:#7a869a;font-weight:500}
-.control button{display:grid;flex:0 0 32px;width:32px;height:32px;min-height:32px;margin-right:3px;padding:0;place-items:center;border:1px solid #dfe1e6;border-radius:6px;background:#f7f8fa;color:#42526e;font-size:0}
-.control button::before{width:6px;height:6px;border-right:1.5px solid currentColor;border-bottom:1.5px solid currentColor;content:'';transform:translateY(-2px) rotate(45deg)}
-.control button:hover{background:#ebecf0;color:#172b4d;box-shadow:none;transform:none}
+.control button{display:grid;flex:0 0 34px;width:34px;height:34px;min-height:34px;margin-right:3px;padding:0;place-items:center;border:1px solid #c7ced8;border-radius:7px;background:#eef2f6;color:#172b4d;font-size:0;transition:border-color .15s,background .15s,color .15s}
+.control button::before{width:9px;height:9px;border-right:2.5px solid currentColor;border-bottom:2.5px solid currentColor;content:'';transform:translateY(-3px) rotate(45deg)}
+.control button:hover{background:#0c66e4;color:#fff;box-shadow:none;transform:none}
+.control.open button{background:#0c66e4;color:#fff}
+.control.open button::before{transform:translateY(-3px) rotate(225deg)}
 .control.disabled{cursor:not-allowed;opacity:.6;background:#f1f2f4}
 .control.disabled button{cursor:not-allowed}
 .menu{position:absolute;z-index:120;top:calc(100% + 6px);right:0;left:0;max-height:280px;overflow:auto;padding:6px;border:1px solid #b8c4d4;border-radius:9px;background:#fff;box-shadow:0 12px 28px rgb(9 30 66 / 18%)}

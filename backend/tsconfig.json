@@ -31,6 +31,8 @@
       "@c17/auth-context/*": ["libs/auth-context/src/*"],
       "@c17/config": ["libs/config/src"],
       "@c17/config/*": ["libs/config/src/*"],
+      "@c17/email": ["libs/email/src"],
+      "@c17/email/*": ["libs/email/src/*"],
       "@c17/messaging": ["libs/messaging/src"],
       "@c17/messaging/*": ["libs/messaging/src/*"],
       "@c17/observability": ["libs/observability/src"],

@@ -35,6 +35,7 @@ loadEnv();
 // ── Fixed IDs (idempotent) ──────────────────────────────────────────────────
 const ADMIN_ID = '00000000-0000-4000-a000-000000000001';
 const EMP_ID = '00000000-0000-4000-a000-000000000002';
+const ADMIN2_ID = '00000000-0000-4000-a000-000000000003';
 const TASK_ID = '00000000-0000-4000-b000-000000000001';
 const DOC_ID = '00000000-0000-4000-c000-000000000001';
 const GRANT_ID = '00000000-0000-4000-d000-000000000001';
@@ -43,8 +44,10 @@ const RULE_ID = '00000000-0000-4000-e000-000000000001';
 
 const ADMIN_EMAIL = 'admin@c17.local';
 const EMP_EMAIL = 'employee@c17.local';
+const ADMIN2_EMAIL = 'n22dccn068@student.ptithcm.edu.vn';
 const ADMIN_PASS = hashSync('Admin123!', 10);
 const EMP_PASS = hashSync('Employee123!', 10);
+const ADMIN2_PASS = hashSync('n22dccn068@student.ptithcm.edu.vn', 10);
 
 const NOW = new Date();
 const EXPIRES = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000); // +30 days
@@ -71,16 +74,17 @@ async function seedAuth() {
   const prisma = prismaClient('@prisma/client-auth', 'AUTH_DATABASE_URL');
   try {
     for (const u of [
-      { id: ADMIN_ID, email: ADMIN_EMAIL, password_hash: ADMIN_PASS, role: 'ADMIN' },
-      { id: EMP_ID, email: EMP_EMAIL, password_hash: EMP_PASS, role: 'EMPLOYEE' },
+      { id: ADMIN_ID, email: ADMIN_EMAIL, password_hash: ADMIN_PASS, role: 'ADMIN', email_verified_at: new Date() },
+      { id: EMP_ID, email: EMP_EMAIL, password_hash: EMP_PASS, role: 'EMPLOYEE', email_verified_at: new Date() },
+      { id: ADMIN2_ID, email: ADMIN2_EMAIL, password_hash: ADMIN2_PASS, role: 'ADMIN', email_verified_at: new Date() },
     ]) {
       await prisma.user.upsert({
         where: { email: u.email },
         create: u,
-        update: { password_hash: u.password_hash, role: u.role },
+        update: { password_hash: u.password_hash, role: u.role, email_verified_at: new Date() },
       });
     }
-    console.log('  auth_db: 2 users seeded');
+    console.log('  auth_db: 3 users seeded');
     return prisma;
   } catch (e) {
     console.error('  auth_db ERROR:', e.message);
@@ -94,6 +98,7 @@ async function seedUserRole() {
     for (const u of [
       { id: ADMIN_ID, email: ADMIN_EMAIL, role: 'ADMIN' },
       { id: EMP_ID, email: EMP_EMAIL, role: 'EMPLOYEE' },
+      { id: ADMIN2_ID, email: ADMIN2_EMAIL, role: 'ADMIN' },
     ]) {
       await prisma.user.upsert({
         where: { id: u.id },
@@ -107,7 +112,7 @@ async function seedUserRole() {
       create: { user_id: EMP_ID, capability: 'ARCHIVE_SUBMIT' },
       update: {},
     });
-    console.log('  user_role_db: 2 users + 1 capability seeded');
+    console.log('  user_role_db: 3 users + 1 capability seeded');
     return prisma;
   } catch (e) {
     console.error('  user_role_db ERROR:', e.message);
@@ -372,6 +377,7 @@ async function seedSecurityMonitoring() {
 async function main() {
   console.log('Seeding all 9 databases...');
   console.log(`  Admin:    ${ADMIN_EMAIL} / Admin123!`);
+  console.log(`  Admin2:   ${ADMIN2_EMAIL} / ${ADMIN2_EMAIL}`);
   console.log(`  Employee: ${EMP_EMAIL} / Employee123!`);
   console.log('');
 

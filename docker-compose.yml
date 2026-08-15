@@ -17,6 +17,7 @@ x-service-base: &service-base
     JWT_TTL_SECONDS: ${JWT_TTL_SECONDS:-1800}
     RABBITMQ_URL: amqp://${RABBITMQ_USER:-c17}:${RABBITMQ_PASSWORD:?set RABBITMQ_PASSWORD}@rabbitmq:5672
     MESSAGING_IN_MEMORY: "false"
+    WEB_BASE_URL: ${WEB_BASE_URL:-http://localhost}
   depends_on: &rabbitmq-dependency
     rabbitmq:
       condition: service_healthy
@@ -142,6 +143,10 @@ services:
       AUDIT_SERVICE_URL: http://audit-log-service:3007
       NOTIFICATION_SERVICE_URL: http://notification-service:3008
       SECURITY_MONITORING_SERVICE_URL: http://security-monitoring-service:3009
+      GATEWAY_TIMEOUT_MS: ${GATEWAY_TIMEOUT_MS:-10000}
+      GATEWAY_PREVIEW_TIMEOUT_MS: ${GATEWAY_PREVIEW_TIMEOUT_MS:-120000}
+      STATISTICS_CACHE_TTL_MS: ${STATISTICS_CACHE_TTL_MS:-30000}
+      STATISTICS_CACHE_MAX_ENTRIES: ${STATISTICS_CACHE_MAX_ENTRIES:-200}
       CORS_ORIGINS: "${CORS_ORIGINS:-http://13.229.104.126:3100,http://localhost:3001,http://localhost:3100}"
     depends_on:
       authentication-identity-service:
@@ -179,6 +184,14 @@ services:
       AUTH_DATABASE_URL: postgresql://${POSTGRES_USER:-c17}:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}@postgres:5432/auth_db
       REDIS_URL: redis://redis:6379
       USER_ROLE_SERVICE_URL: http://user-role-management-service:3002
+      MAIL_HOST: ${MAIL_HOST:-smtp.gmail.com}
+      MAIL_PORT: ${MAIL_PORT:-587}
+      MAIL_SECURE: ${MAIL_SECURE:-false}
+      MAIL_USER: ${MAIL_USER:?set MAIL_USER}
+      MAIL_PASS: ${MAIL_PASS:?set MAIL_PASS}
+      MAIL_FROM: ${MAIL_FROM:-}
+      OTP_TTL_SECONDS: ${OTP_TTL_SECONDS:-600}
+      OTP_RESEND_SECONDS: ${OTP_RESEND_SECONDS:-60}
     depends_on:
       <<: *rabbitmq-dependency
       postgres:
@@ -368,6 +381,13 @@ services:
       <<: *service-env
       PORT: 3008
       NOTIFICATION_DATABASE_URL: postgresql://${POSTGRES_USER:-c17}:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}@postgres:5432/notification_db
+      USER_ROLE_SERVICE_URL: http://user-role-management-service:3002
+      MAIL_HOST: ${MAIL_HOST:-smtp.gmail.com}
+      MAIL_PORT: ${MAIL_PORT:-587}
+      MAIL_SECURE: ${MAIL_SECURE:-false}
+      MAIL_USER: ${MAIL_USER:?set MAIL_USER}
+      MAIL_PASS: ${MAIL_PASS:?set MAIL_PASS}
+      MAIL_FROM: ${MAIL_FROM:-}
     depends_on:
       <<: *rabbitmq-dependency
       postgres:

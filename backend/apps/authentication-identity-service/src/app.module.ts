@@ -3,6 +3,7 @@ import { JwtModule } from '@nestjs/jwt';
 import { z } from 'zod';
 
 import { AppConfigModule, baseEnvSchema } from '@c17/config';
+import { EmailModule } from '@c17/email';
 import { MessagingModule } from '@c17/messaging';
 import { ObservabilityModule } from '@c17/observability';
 
@@ -22,11 +23,20 @@ export const envSchema = baseEnvSchema.extend({
   USER_ROLE_SERVICE_URL: z.string().url().default('http://localhost:3002'),
   USER_ROLE_LOOKUP_TIMEOUT_MS: z.coerce.number().int().positive().default(2000),
   RABBITMQ_URL: z.string().url().default('amqp://guest:guest@localhost:5672'),
+  MAIL_HOST: z.string().default('smtp.gmail.com'),
+  MAIL_PORT: z.coerce.number().int().positive().default(587),
+  MAIL_SECURE: z.string().default('false'),
+  MAIL_USER: z.string().min(1),
+  MAIL_PASS: z.string().min(1),
+  MAIL_FROM: z.string().optional(),
+  OTP_TTL_SECONDS: z.coerce.number().int().positive().default(600),
+  OTP_RESEND_SECONDS: z.coerce.number().int().positive().default(60),
 });
 
 @Module({
   imports: [
     AppConfigModule.forRoot({ serviceName: SERVICE, schema: envSchema }),
+    EmailModule,
     ObservabilityModule,
     MessagingModule.forRoot({
       url: process.env.RABBITMQ_URL || 'amqp://guest:guest@localhost:5672',

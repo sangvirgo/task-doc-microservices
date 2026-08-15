@@ -39,6 +39,7 @@
 .submit span { font-size: 1.2rem; font-weight: 400; }
 .card button:disabled { cursor: wait; opacity: .7; }
 .error { margin: 0; padding: 11px 13px; border: 1px solid #ffbdad; border-radius: 7px; color: #ae2e24; background: #fff4f2; font-size: .82rem; line-height: 1.45; }
+.success { margin: 0; padding: 11px 13px; border: 1px solid #4bce97; border-radius: 7px; color: #216e4e; background: #f3fcf6; font-size: .82rem; line-height: 1.45; }
 .divider { display: flex; align-items: center; gap: 12px; margin: 30px 0 12px; color: #8993a5; font-size: .72rem; font-weight: 700; text-transform: uppercase; letter-spacing: .08em; }
 .divider::before, .divider::after { flex: 1; height: 1px; content: ''; background: #e5e7eb; }
 .securityNote { display: flex; align-items: center; justify-content: center; gap: 7px; margin: 0; color: #626f86; font-size: .75rem; }

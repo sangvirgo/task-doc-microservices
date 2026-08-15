@@ -11,8 +11,9 @@ import type { Request, Response } from 'express';
 import { Readable } from 'stream';
 import { pipeline } from 'stream/promises';
 import { getCorrelationId } from '@c17/observability';
+import { JwtService } from '@nestjs/jwt';
 
-import { Public } from '../auth/jwt-auth.guard';
+import { JwtPayload, Public } from '../auth/jwt-auth.guard';
 
 /**
  * Service route configuration for the API Gateway proxy.
@@ -102,6 +103,15 @@ function getRoutes(): ServiceRoute[] {
 }
 
 const DEFAULT_TIMEOUT_MS = Number(process.env.GATEWAY_TIMEOUT_MS || 10_000);
+const PREVIEW_TIMEOUT_MS = Number(process.env.GATEWAY_PREVIEW_TIMEOUT_MS || 120_000);
+
+/**
+ * Server-rendered previews are slow: creating a preview session for an office/PDF
+ * document renders the whole file with LibreOffice/poppler inside the request path
+ * (document-security-service), which can exceed the default 10s gateway timeout.
+ * Allow those routes a much longer budget while keeping fast routes at the default.
+ */
+const PREVIEW_ROUTE = /^\/api\/documents\/[^/]+\/versions\/\d+\/preview-session/;
 
 /**
  * API Gateway controller: proxies /api/* requests to internal services.
@@ -117,10 +127,13 @@ export class GatewayController {
   private readonly logger = new Logger('GatewayController');
   private readonly routes = getRoutes();
 
+  constructor(private readonly jwtService: JwtService) {}
+
   /** Auth endpoints are public — no JWT required */
   @Public()
   @All(['api/auth', 'api/auth/*path'])
   async proxyAuth(@Req() req: Request, @Res() res: Response): Promise<void> {
+    this.authorizeAdminRegister(req);
     await this.proxy(req, res);
   }
 
@@ -237,9 +250,11 @@ export class GatewayController {
         body = JSON.stringify(req.body);
       }
 
-      // Fetch with configurable timeout
+      // Fetch with configurable timeout. Server-rendered preview sessions can take
+      // well over the default timeout, so route them with the preview-specific budget.
       const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), DEFAULT_TIMEOUT_MS);
+      const requestTimeout = PREVIEW_ROUTE.test(requestPath) ? PREVIEW_TIMEOUT_MS : DEFAULT_TIMEOUT_MS;
+      const timeout = setTimeout(() => controller.abort(), requestTimeout);
 
       let response: globalThis.Response;
       try {
@@ -292,6 +307,35 @@ export class GatewayController {
       );
       throw new ServiceUnavailableException('Upstream service unavailable');
     }
+  }
+
+  /**
+   * /api/auth is otherwise public, but creating a pre-verified account must be admin-only.
+   * Verify the Bearer token here (the route bypasses JwtAuthGuard) and reject non-admins.
+   */
+  private authorizeAdminRegister(req: Request): void {
+    const path = req.originalUrl.split('?')[0];
+    if (path !== '/api/auth/admin/register' || req.method !== 'POST') return;
+
+    const authorization = req.headers.authorization;
+    const token = authorization?.startsWith('Bearer ') ? authorization.slice(7) : null;
+    if (!token) throw new ForbiddenException('Administrator role required');
+
+    let payload: JwtPayload;
+    try {
+      payload = this.jwtService.verify<JwtPayload>(token);
+    } catch {
+      throw new ForbiddenException('Administrator role required');
+    }
+    if (payload.role !== 'ADMIN') throw new ForbiddenException('Administrator role required');
+
+    (req as unknown as Record<string, unknown>)['user'] = {
+      userId: payload.sub,
+      email: payload.email,
+      role: payload.role,
+      capabilities: payload.capabilities ?? [],
+      sessionId: '',
+    };
   }
 
   /**

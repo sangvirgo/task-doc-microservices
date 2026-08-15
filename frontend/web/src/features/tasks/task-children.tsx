@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { ReactNode, useEffect, useState } from 'react';
 import Link from 'next/link';
 import type { Task, TaskChildSummary } from '@/types/task';
 import { tasksApi } from '@/api/tasks';
@@ -13,7 +13,7 @@ const formatDeadline = (deadline: string | null, overdue: boolean) => {
 
 type ChildItem = Task | TaskChildSummary;
 
-export function TaskChildren({ parentId, initialChildren }: { parentId: string; initialChildren?: ChildItem[] }) {
+export function TaskChildren({ parentId, initialChildren, createAction }: { parentId: string; initialChildren?: ChildItem[]; createAction?: ReactNode }) {
   const [children, setChildren] = useState<ChildItem[] | null>(initialChildren ?? null);
   const [error, setError] = useState(false);
   const [attempt, setAttempt] = useState(0);
@@ -40,7 +40,7 @@ export function TaskChildren({ parentId, initialChildren }: { parentId: string; 
   }, [initialChildren, parentId, attempt]);
 
   if (children === null && !error) {
-    return <section className={styles.section}>Đang tải sub-task…</section>;
+    return null;
   }
 
   if (error) {
@@ -56,11 +56,11 @@ export function TaskChildren({ parentId, initialChildren }: { parentId: string; 
   }
 
   return (
-    <section className={styles.section} aria-labelledby={`task-children-${parentId}`}>
+    <section className={styles.section} aria-label="Sub-task">
       <div className={styles.heading}>
         <div>
           <p className={styles.eyebrow}>Bên trong task này</p>
-          <h2 id={`task-children-${parentId}`}>Sub-task</h2>
+          <h2>Sub-task</h2>
         </div>
         <span className={styles.count}>{children?.length ?? 0}</span>
       </div>
@@ -82,6 +82,8 @@ export function TaskChildren({ parentId, initialChildren }: { parentId: string; 
       ) : (
         <p className={styles.empty}>Chưa có sub-task trong công việc này.</p>
       )}
+
+      {createAction && <div className={styles.createAction}>{createAction}</div>}
     </section>
   );
 }

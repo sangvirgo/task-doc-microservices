@@ -1,0 +1,1 @@
+import { AlertsPanel } from '@/features/admin/alerts-panel'; export default function AlertsPage(){return <AlertsPanel/>;}

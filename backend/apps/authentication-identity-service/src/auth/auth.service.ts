@@ -1,7 +1,17 @@
-import { Injectable, UnauthorizedException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  HttpException,
+  HttpStatus,
+  Injectable,
+  Logger,
+  UnauthorizedException,
+} from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { compareSync, hashSync } from 'bcryptjs';
-import { createHash, randomUUID } from 'crypto';
+import { createHash, randomInt, randomUUID, timingSafeEqual } from 'crypto';
+
+import { EmailService, verificationCodeEmail } from '@c17/email';
 
 import { AuthPrismaService } from '../prisma/auth-prisma.service';
 import { RedisService } from '../redis/redis.service';
@@ -12,7 +22,7 @@ export class AuthLoginFailedError extends UnauthorizedException {
     message: string,
     readonly email: string,
     readonly userId: string | null,
-    readonly reasonCode: 'INVALID_CREDENTIALS' | 'ACCOUNT_LOCKED',
+    readonly reasonCode: 'INVALID_CREDENTIALS' | 'ACCOUNT_LOCKED' | 'EMAIL_NOT_VERIFIED',
   ) {
     super(message);
   }
@@ -38,11 +48,16 @@ const ACCESS_TOKEN_TTL_SECONDS = 1800;
 
 @Injectable()
 export class AuthService {
+  private readonly logger = new Logger(AuthService.name);
+  private readonly otpTtlSeconds = Number(process.env.OTP_TTL_SECONDS || 600);
+  private readonly otpResendSeconds = Number(process.env.OTP_RESEND_SECONDS || 60);
+
   constructor(
     private readonly jwtService: JwtService,
     private readonly prisma: AuthPrismaService,
     private readonly redis: RedisService,
     private readonly userRoleClient: UserRoleClient,
+    private readonly emailService: EmailService,
   ) {}
 
   hashPassword(password: string): string {
@@ -57,10 +72,17 @@ export class AuthService {
     email: string,
     password: string,
     role: string = 'EMPLOYEE',
-  ): Promise<{ id: string; email: string; role: string }> {
+  ): Promise<{ id: string; email: string; role: string; email_verified: boolean }> {
+    if (await this.prisma.user.findUnique({ where: { email } })) {
+      throw new ConflictException('Email đã tồn tại');
+    }
+
     const passwordHash = this.hashPassword(password);
     const user = await this.prisma.user.create({
       data: { id: randomUUID(), email, password_hash: passwordHash, role },
+    }).catch((error: { code?: string }) => {
+      if (error?.code === 'P2002') throw new ConflictException('Email đã tồn tại');
+      throw error;
     });
 
     try {
@@ -71,7 +93,78 @@ export class AuthService {
       throw error;
     }
 
-    return { id: user.id, email: user.email, role: user.role };
+    // Self-registered accounts must prove the email belongs to them before they can log in.
+    // A failed delivery is not fatal — the user can request a new code via resend-otp.
+    await this.issueVerifyOtp(user.id, user.email).catch((error: unknown) => {
+      this.logger.warn(
+        `OTP email delivery failed for ${user.email} — ${error instanceof Error ? error.message : 'unknown'}`,
+      );
+    });
+
+    return { id: user.id, email: user.email, role: user.role, email_verified: false };
+  }
+
+  async registerVerified(
+    email: string,
+    password: string,
+    role: string = 'EMPLOYEE',
+  ): Promise<{ id: string; email: string; role: string; email_verified: boolean }> {
+    // Accounts provisioned by an administrator are trusted — no OTP confirmation needed.
+    const passwordHash = this.hashPassword(password);
+    const user = await this.prisma.user.create({
+      data: {
+        id: randomUUID(),
+        email,
+        password_hash: passwordHash,
+        role,
+        email_verified_at: new Date(),
+      },
+    }).catch((error: { code?: string }) => {
+      if (error?.code === 'P2002') throw new ConflictException('Email đã tồn tại');
+      throw error;
+    });
+
+    try {
+      await this.userRoleClient.provisionUser({ id: user.id, email: user.email, role: user.role });
+    } catch (error) {
+      await this.prisma.user.delete({ where: { id: user.id } }).catch(() => undefined);
+      throw error;
+    }
+
+    return { id: user.id, email: user.email, role: user.role, email_verified: true };
+  }
+
+  async verifyEmail(email: string, code: string): Promise<{ verified: boolean }> {
+    const user = await this.prisma.user.findUnique({ where: { email } });
+    if (!user) throw new UnauthorizedException('Invalid or expired verification code');
+    if (user.email_verified_at) return { verified: true };
+
+    const expected = await this.redis.getClient().get(`otp:verify:${user.id}`);
+    if (!expected || !this.constantTimeEquals(code, expected)) {
+      throw new UnauthorizedException('Invalid or expired verification code');
+    }
+
+    await this.prisma.user.update({
+      where: { id: user.id },
+      data: { email_verified_at: new Date() },
+    });
+    await this.redis.getClient().del(`otp:verify:${user.id}`);
+    await this.redis.getClient().del(`otp:resend:${user.id}`);
+    return { verified: true };
+  }
+
+  async resendOtp(email: string): Promise<{ sent: boolean }> {
+    const user = await this.prisma.user.findUnique({ where: { email } });
+    if (!user) throw new UnauthorizedException('No pending account for this email');
+    if (user.email_verified_at) throw new BadRequestException('Email is already verified');
+
+    const rateLimitKey = `otp:resend:${user.id}`;
+    if (await this.redis.getClient().get(rateLimitKey)) {
+      throw new HttpException('Please wait before requesting another code', HttpStatus.TOO_MANY_REQUESTS);
+    }
+
+    await this.issueVerifyOtp(user.id, user.email);
+    return { sent: true };
   }
 
   async login(email: string, password: string): Promise<TokenPair> {
@@ -88,6 +181,15 @@ export class AuthService {
 
     if (!this.verifyPassword(password, user.password_hash)) {
       throw new AuthLoginFailedError('Invalid credentials', email, user.id, 'INVALID_CREDENTIALS');
+    }
+
+    if (!user.email_verified_at) {
+      throw new AuthLoginFailedError(
+        'Email verification required',
+        email,
+        user.id,
+        'EMAIL_NOT_VERIFIED',
+      );
     }
 
     return this.issueTokenPair(user.id, user.email, user.role);
@@ -210,5 +312,20 @@ export class AuthService {
 
   private hashToken(token: string): string {
     return createHash('sha256').update(token).digest('hex');
+  }
+
+  private async issueVerifyOtp(userId: string, email: string): Promise<void> {
+    const code = String(randomInt(100000, 999999));
+    await this.redis.getClient().setex(`otp:verify:${userId}`, this.otpTtlSeconds, code);
+    const envelope = verificationCodeEmail(code, Math.round(this.otpTtlSeconds / 60));
+    await this.emailService.sendMail({ to: email, ...envelope });
+    await this.redis.getClient().setex(`otp:resend:${userId}`, this.otpResendSeconds, '1');
+  }
+
+  private constantTimeEquals(left: string, right: string): boolean {
+    const leftBuffer = Buffer.from(left);
+    const rightBuffer = Buffer.from(right);
+    if (leftBuffer.length !== rightBuffer.length) return false;
+    return timingSafeEqual(leftBuffer, rightBuffer);
   }
 }

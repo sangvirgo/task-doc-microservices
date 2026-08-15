@@ -7,18 +7,43 @@ import type { PaginatedResponse, PaginationMeta } from '@/types/pagination';
 let refreshPromise: Promise<TokenPair> | null = null;
 const apiUrl = (path: string) => `/gateway${path}`;
 
+const PUBLIC_AUTH_PATHS = [
+  '/auth/login',
+  '/auth/register',
+  '/auth/refresh',
+  '/auth/verify-email',
+  '/auth/resend-otp',
+];
+const needsAuthHeader = (path: string) => !PUBLIC_AUTH_PATHS.some((p) => path.startsWith(p));
+
+const GET_CACHE_TTL_MS = 3_000;
+const getCache = new Map<string, { expiresAt: number; promise: Promise<unknown> }>();
+
+function cachedGet<T>(path: string, fetcher: () => Promise<T>): Promise<T> {
+  const now = Date.now();
+  const hit = getCache.get(path);
+  if (hit && hit.expiresAt > now) return hit.promise as Promise<T>;
+  if (hit) getCache.delete(path);
+  const promise = fetcher().catch((error) => { getCache.delete(path); throw error; });
+  getCache.set(path, { expiresAt: now + GET_CACHE_TTL_MS, promise });
+  return promise;
+}
+
+const invalidateGetCache = () => getCache.clear();
+
 async function request<T>(path: string, init: RequestInit = {}, retryAfterRefresh = true): Promise<T> {
   const session = readSession();
   const headers = new Headers(init.headers);
   headers.set('x-correlation-id', createCorrelationId());
   headers.set('accept', 'application/json');
-  if (session && !path.startsWith('/auth/')) headers.set('authorization', `Bearer ${session.access_token}`);
+  if (session && needsAuthHeader(path)) headers.set('authorization', `Bearer ${session.access_token}`);
   if (init.body && !(init.body instanceof FormData) && !headers.has('content-type')) headers.set('content-type', 'application/json');
   const response = await fetch(apiUrl(path), { ...init, headers, signal: init.signal });
-  if (response.status === 401 && retryAfterRefresh && session && !path.startsWith('/auth/')) {
+  if (response.status === 401 && retryAfterRefresh && session && needsAuthHeader(path)) {
     try { await refreshSession(session.refresh_token); return request<T>(path, init, false); } catch { clearSession(); window.location.assign('/login?reason=session-expired'); throw new GatewayError(401, 'Your session is no longer valid.'); }
   }
   if (!response.ok) throw await toGatewayError(response);
+  if ((init.method ?? 'GET').toUpperCase() !== 'GET') invalidateGetCache();
   if (response.status === 204) return undefined as T;
   return response.json() as Promise<T>;
 }
@@ -72,9 +97,9 @@ function normalizePage<T>(payload: unknown): PaginatedResponse<T> {
 }
 
 export const gatewayClient = {
-  get: <T>(path: string, signal?: AbortSignal) => request<T>(path, { signal }),
-  getList: async <T>(path: string, signal?: AbortSignal) => normalizeList<T>(await request<unknown>(path, { signal })),
-  getPage: async <T>(path: string, signal?: AbortSignal) => normalizePage<T>(await request<unknown>(path, { signal })),
+  get: <T>(path: string, signal?: AbortSignal) => signal ? request<T>(path, { signal }) : cachedGet<T>(`GET ${path}`, () => request<T>(path, {})),
+  getList: <T>(path: string, signal?: AbortSignal) => signal ? request<unknown>(path, { signal }).then(normalizeList<T>) : cachedGet<T[]>(`LIST ${path}`, () => request<unknown>(path, {}).then(normalizeList<T>)),
+  getPage: <T>(path: string, signal?: AbortSignal) => signal ? request<unknown>(path, { signal }).then(normalizePage<T>) : cachedGet<PaginatedResponse<T>>(`PAGE ${path}`, () => request<unknown>(path, {}).then(normalizePage<T>)),
   post: <T>(path: string, body?: unknown) => request<T>(path, { method: 'POST', body: body === undefined ? undefined : JSON.stringify(body) }),
   patch: <T>(path: string, body: unknown) => request<T>(path, { method: 'PATCH', body: JSON.stringify(body) }),
   put: <T>(path: string, body: unknown) => request<T>(path, { method: 'PUT', body: JSON.stringify(body) }),

@@ -56,6 +56,23 @@ export class UsersService {
     return this.toDto(user);
   }
 
+  async getInternalUser(
+    id: string,
+  ): Promise<{ id: string; email: string; role: string } | null> {
+    return this.prisma.user.findUnique({
+      where: { id },
+      select: { id: true, email: true, role: true },
+    });
+  }
+
+  async listInternalAdmins(): Promise<Array<{ id: string; email: string; role: string }>> {
+    return this.prisma.user.findMany({
+      where: { role: 'ADMIN', locked_at: null },
+      select: { id: true, email: true, role: true },
+      orderBy: { email: 'asc' },
+    });
+  }
+
   async listUsers(
     pagination: PaginationQuery = DEFAULT_PAGINATION,
   ): Promise<PaginatedResponse<UserDto>> {

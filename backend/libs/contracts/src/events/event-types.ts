@@ -22,6 +22,7 @@ export const EventType = {
   // task-management-service
   TASK_CREATED: 'task.created',
   TASK_DEADLINE_CHANGED: 'task.deadline.changed',
+  TASK_DEADLINE_REMINDER: 'task.deadline.reminder',
   TASK_SUBMITTED: 'task.submitted',
   TASK_REVIEWED: 'task.reviewed',
 

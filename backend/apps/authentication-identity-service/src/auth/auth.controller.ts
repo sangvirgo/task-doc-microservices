@@ -3,6 +3,7 @@ import {
   Body,
   Controller,
   ForbiddenException,
+  Headers,
   HttpCode,
   HttpStatus,
   Inject,
@@ -42,6 +43,15 @@ const registerSchema = z.object({
   role: z.enum(['ADMIN', 'EMPLOYEE']).default('EMPLOYEE'),
 });
 
+const verifyEmailSchema = z.object({
+  email: z.string().email(),
+  code: z.string().length(6),
+});
+
+const resendOtpSchema = z.object({
+  email: z.string().email(),
+});
+
 @ApiTags('auth')
 @Controller('auth')
 export class AuthController {
@@ -54,7 +64,7 @@ export class AuthController {
   @ApiOperation({ summary: 'Register a new user' })
   async register(
     @Body() body: z.infer<typeof registerSchema>,
-  ): Promise<{ id: string; email: string; role: string }> {
+  ): Promise<{ id: string; email: string; role: string; email_verified: boolean }> {
     const parsed = registerSchema.safeParse(body);
     if (!parsed.success) {
       throw new BadRequestException(parsed.error.issues);
@@ -63,6 +73,48 @@ export class AuthController {
       throw new ForbiddenException('Public registration is limited to EMPLOYEE accounts');
     }
     return this.authService.register(parsed.data.email, parsed.data.password, parsed.data.role);
+  }
+
+  @Post('admin/register')
+  @ApiOperation({ summary: 'Create a user on behalf of an administrator (email pre-verified)' })
+  async registerAdmin(
+    @Body() body: z.infer<typeof registerSchema>,
+    @Headers('x-user-role') callerRole?: string,
+  ): Promise<{ id: string; email: string; role: string; email_verified: boolean }> {
+    if (callerRole !== 'ADMIN') {
+      throw new ForbiddenException('Administrator role required');
+    }
+    const parsed = registerSchema.safeParse(body);
+    if (!parsed.success) {
+      throw new BadRequestException(parsed.error.issues);
+    }
+    return this.authService.registerVerified(
+      parsed.data.email,
+      parsed.data.password,
+      parsed.data.role,
+    );
+  }
+
+  @Post('verify-email')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Confirm an email address with a one-time code' })
+  async verifyEmail(@Body() body: z.infer<typeof verifyEmailSchema>): Promise<{ verified: boolean }> {
+    const parsed = verifyEmailSchema.safeParse(body);
+    if (!parsed.success) {
+      throw new BadRequestException(parsed.error.issues);
+    }
+    return this.authService.verifyEmail(parsed.data.email, parsed.data.code);
+  }
+
+  @Post('resend-otp')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Resend the email verification code' })
+  async resendOtp(@Body() body: z.infer<typeof resendOtpSchema>): Promise<{ sent: boolean }> {
+    const parsed = resendOtpSchema.safeParse(body);
+    if (!parsed.success) {
+      throw new BadRequestException(parsed.error.issues);
+    }
+    return this.authService.resendOtp(parsed.data.email);
   }
 
   @Post('login')

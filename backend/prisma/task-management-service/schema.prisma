@@ -18,6 +18,7 @@ model Task {
   reviewer_id     String?
   parent_task_id  String?
   deadline        DateTime?
+  deadline_reminded_at DateTime?
   blocked         Boolean   @default(false)
   blocked_reason  String?
   previous_status String?

@@ -214,14 +214,16 @@ function DirectTask({ task, parentContext, participants, submissions, members, r
               <div className={styles.metaRow}><span className={styles.metaIcon}>▣</span><span className={styles.metaLabel}>Hạn hoàn thành</span><strong>{formatDate(task.deadline)}{task.is_overdue ? ' · Quá hạn' : ''}</strong></div>
               <div className={styles.metaRow}><span className={styles.metaIcon}>☷</span><span className={styles.metaLabel}>Mô tả</span><strong className={task.description ? styles.descriptionValue : styles.mutedValue}>{task.description || 'Thêm mô tả cho công việc'}</strong></div>
             </section>
-            <TaskChildren parentId={task.id} initialChildren={task.children} />
+            <TaskChildren
+              parentId={task.id}
+              initialChildren={task.children}
+              createAction={<div>
+                <button className={styles.addRow} type="button" disabled={!canCreateSubtask} aria-expanded={subtaskOpen} onClick={() => { setSubtaskError(''); setSubtaskOpen(value => !value); }}><span>＋</span> Tạo sub-task</button>
+                {!canCreateSubtask && <p className={styles.inlineHint}>Chỉ người tham gia trực tiếp task cha mới có thể tạo sub-task.</p>}
+                {subtaskOpen && <TaskAssignmentDrawer currentUserId={currentUserId ?? ''} members={members} parentTask={{ id: task.id, title: task.title }} submitting={creatingSubtask} error={subtaskError} onSubmit={createSubtask} onClose={() => setSubtaskOpen(false)} />}
+              </div>}
+            />
             <TaskPeople task={task} participants={participants} members={members} canManageParticipants={isCreator} addingParticipant={pendingAction} onAddParticipant={participant} />
-            <TaskCollaboration taskId={task.id} members={members} />
-            <section className={styles.subtaskActionSection}>
-              <button className={styles.addRow} type="button" disabled={!canCreateSubtask} aria-expanded={subtaskOpen} onClick={() => { setSubtaskError(''); setSubtaskOpen(value => !value); }}><span>＋</span> Tạo sub-task</button>
-              {!canCreateSubtask && <p className={styles.inlineHint}>Chỉ người tham gia trực tiếp task cha mới có thể tạo sub-task.</p>}
-              {subtaskOpen && <TaskAssignmentDrawer currentUserId={currentUserId ?? ''} members={members} parentTask={{ id: task.id, title: task.title }} submitting={creatingSubtask} error={subtaskError} onSubmit={createSubtask} onClose={() => setSubtaskOpen(false)} />}
-            </section>
             <TaskDocuments task={task} canUpload={isParticipant} />
             <section className={styles.workflowSection} aria-labelledby="workflow-title">
               <div className={styles.sectionHeading}><div><p className={styles.eyebrow}>Bước tiếp theo</p><h2 id="workflow-title">Xử lý công việc</h2></div><span className={styles.mutedValue}>{nextStep}</span></div>
@@ -231,6 +233,7 @@ function DirectTask({ task, parentContext, participants, submissions, members, r
               </div> : <p className={styles.workflowHint}>{finalState ? 'Workflow đã hoàn tất.' : nextStep}</p>}
               {submissions.length > 0 && <div className={styles.submissionList}><strong>Lịch sử submission</strong>{submissions.slice(0, 3).map(item => <div className={styles.submissionItem} key={item.id}><span>{formatDateTime(item.created_at)}</span><b>{item.status}</b><small>{item.content}</small></div>)}</div>}
             </section>
+            <TaskCollaboration taskId={task.id} members={members} />
           </div>
         </div>
 

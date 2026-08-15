@@ -8,7 +8,7 @@ export default function nextConfig(phase: string): NextConfig {
     // Keep Turbopack development chunks isolated from production build output.
     // Otherwise `next build` while dev is open can invalidate every client route.
     distDir: phase === PHASE_DEVELOPMENT_SERVER ? '.next-dev' : '.next',
-    allowedDevOrigins: ['127.0.0.1', '13.229.104.126'],
+    allowedDevOrigins: ['127.0.0.1', '13.229.104.126', 'task.tansang.dpdns.org'],
     output: 'standalone',
     async rewrites() {
       return [{ source: '/gateway/:path*', destination: `${gatewayBaseUrl}/api/:path*` }];

@@ -61,6 +61,18 @@ export class UsersController {
     return this.userStatisticsService.getOverview({ ...parsed, caller: user });
   }
 
+  @Get('internal/admins')
+  @ApiOperation({ summary: 'List active administrators for internal notification delivery' })
+  getInternalAdmins() {
+    return this.usersService.listInternalAdmins();
+  }
+
+  @Get('internal/:id')
+  @ApiOperation({ summary: 'Resolve a single user for internal notification delivery' })
+  getInternalUser(@Param('id') id: string) {
+    return this.usersService.getInternalUser(id);
+  }
+
   private parsePagination(page?: string, page_size?: string): PaginationQuery {
     const parsed = paginationQuerySchema.safeParse({ page, page_size });
     if (!parsed.success) throw new BadRequestException(parsed.error.issues);

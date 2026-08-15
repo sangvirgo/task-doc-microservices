@@ -57,12 +57,22 @@ export class AuditService {
         };
       }
 
-      // Lock chain head row (upsert ensures it exists on first run)
-      const chainHead = await tx.chainHead.upsert({
+      // Ensure chain head row exists (first run), then lock it so concurrent
+      // appends serialize and cannot observe the same sequence (V3 §5.7, ADR-0002).
+      await tx.chainHead.upsert({
         where: { id: 'singleton' },
         create: { id: 'singleton', last_hash: '', sequence: 0 },
         update: {},
       });
+      await tx.$queryRaw`SELECT "id" FROM "ChainHead" WHERE "id" = 'singleton' FOR UPDATE`;
+
+      // Derive the chain base from the actual latest audit event so the sequence and
+      // hash chain stay contiguous even if ChainHead drifted out of sync with the log.
+      const latest = await tx.auditEvent.findFirst({
+        orderBy: [{ sequence_number: 'desc' }, { id: 'desc' }],
+      });
+      const previousHash = latest?.current_hash ?? '';
+      const sequenceNumber = (latest?.sequence_number ?? 0) + 1;
 
       const canonicalPayload = this.canonicalJSON({
         event_id: event.event_id,
@@ -75,10 +85,8 @@ export class AuditService {
       });
 
       const currentHash = createHash('sha256')
-        .update(canonicalPayload + chainHead.last_hash)
+        .update(canonicalPayload + previousHash)
         .digest('hex');
-
-      const sequenceNumber = chainHead.sequence + 1;
 
       await tx.auditEvent.create({
         data: {
@@ -89,7 +97,7 @@ export class AuditService {
           resource_type: event.resource_type,
           resource_id: event.resource_id,
           payload: event.payload as Prisma.InputJsonValue,
-          previous_hash: chainHead.last_hash,
+          previous_hash: previousHash,
           current_hash: currentHash,
           sequence_number: sequenceNumber,
         },

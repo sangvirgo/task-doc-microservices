@@ -130,7 +130,7 @@ export function AppShell({ session, children }: { session: SessionRecord; childr
   const signOut = async () => { try { await authApi.logout(session.refresh_token); } catch { /* local clearance remains required */ } finally { clearSession(); router.replace('/login'); } };
   const clearSearch = () => { setSearchQuery(''); setSearchResults([]); setSearchOpen(false); };
   const navItems = session.role === 'ADMIN'
-    ? [['Tổng quan', '/workspace', '◈'], ['Người dùng & quyền', '/admin/users', '♙'], ['Giám sát', '/admin/monitoring', '◉'], ['Siêu dữ liệu kiểm toán', '/admin/audit', '▤']]
+    ? [['Tổng quan', '/workspace', '◈'], ['Người dùng & quyền', '/admin/users', '♙'], ['Cảnh báo', '/admin/alerts', '◉'], ['Giám sát', '/admin/monitoring', '◈'], ['Siêu dữ liệu kiểm toán', '/admin/audit', '▤']]
     : [['Tổng quan', '/workspace', '◈'], ['Công việc', '/tasks', '✓'], ['Tài liệu', '/documents', '▧'], ['Quyền tài liệu', '/grants', '⌘'], ['Thông báo', '/notifications', '◌']];
 
   return <div className={styles.frame}><NetworkBanner /><div className={styles.grid}>

@@ -20,8 +20,56 @@ import {
 @Injectable()
 export class StatisticsService {
   private readonly timeoutMs = Number(process.env.GATEWAY_TIMEOUT_MS || 10_000);
+  private readonly cacheTtlMs = Number(process.env.STATISTICS_CACHE_TTL_MS || 30_000);
+  private readonly maxCacheEntries = Number(process.env.STATISTICS_CACHE_MAX_ENTRIES || 200);
+  private readonly overviewCache = new Map<string, { expiresAt: number; promise: Promise<StatisticsOverviewResponse> }>();
 
   async getOverview(
+    query: StatisticsQuery,
+    caller: GatewayUser,
+  ): Promise<StatisticsOverviewResponse> {
+    // ME statistics are per-user; ORGANIZATION statistics are shared by all admins.
+    // Include the date range so different dashboard windows never collide.
+    const cacheKey =
+      query.scope === 'ORGANIZATION'
+        ? `org|${query.from}|${query.to}`
+        : `me|${caller.userId}|${query.from}|${query.to}`;
+
+    const now = Date.now();
+    const existing = this.overviewCache.get(cacheKey);
+    if (existing && existing.expiresAt > now) return existing.promise;
+    if (existing) this.overviewCache.delete(cacheKey);
+
+    // Cache the promise so concurrent loads (multiple tabs / prefetch) collapse into one
+    // upstream fan-out, and drop it on failure so a transient error never sticks.
+    const promise = this.buildOverview(query, caller).catch((error) => {
+      this.overviewCache.delete(cacheKey);
+      throw error;
+    });
+    this.overviewCache.set(cacheKey, { expiresAt: now + this.cacheTtlMs, promise });
+    this.evictExpiredEntries();
+    return promise;
+  }
+
+  private evictExpiredEntries(): void {
+    if (this.overviewCache.size <= this.maxCacheEntries) return;
+    const now = Date.now();
+    let oldestKey: string | undefined;
+    let oldestExpiry = Infinity;
+    for (const [key, entry] of this.overviewCache) {
+      if (entry.expiresAt <= now) {
+        this.overviewCache.delete(key);
+        continue;
+      }
+      if (entry.expiresAt < oldestExpiry) {
+        oldestExpiry = entry.expiresAt;
+        oldestKey = key;
+      }
+    }
+    if (oldestKey) this.overviewCache.delete(oldestKey);
+  }
+
+  private async buildOverview(
     query: StatisticsQuery,
     caller: GatewayUser,
   ): Promise<StatisticsOverviewResponse> {
