@@ -46,11 +46,13 @@ export class SecurityClient {
   private readonly logger = new Logger(SecurityClient.name);
   private readonly securityServiceUrl: string;
   private readonly timeoutMs: number;
+  private readonly previewTimeoutMs: number;
 
   constructor(private readonly configService: ConfigService) {
     this.securityServiceUrl =
       this.configService.get<string>('DOCUMENT_SECURITY_URL') || 'http://localhost:3005';
     this.timeoutMs = this.configService.get<number>('SECURITY_TIMEOUT_MS') || 5000;
+    this.previewTimeoutMs = this.configService.get<number>('PREVIEW_TIMEOUT_MS') || 90000;
   }
 
   async processDocument(params: {
@@ -190,7 +192,7 @@ export class SecurityClient {
     session_id: string;
   }): Promise<SecurityPreviewResult | null> {
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), this.timeoutMs);
+    const timeout = setTimeout(() => controller.abort(), this.previewTimeoutMs);
 
     try {
       const response = await fetch(

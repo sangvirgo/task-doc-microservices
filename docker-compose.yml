@@ -259,6 +259,7 @@ services:
       TASK_LOOKUP_TIMEOUT_MS: ${TASK_LOOKUP_TIMEOUT_MS:-2000}
       AUDIT_TIMEOUT_MS: ${AUDIT_TIMEOUT_MS:-2000}
       SECURITY_TIMEOUT_MS: ${SECURITY_TIMEOUT_MS:-5000}
+      PREVIEW_TIMEOUT_MS: ${PREVIEW_TIMEOUT_MS:-90000}
     depends_on:
       <<: *rabbitmq-dependency
       postgres:
