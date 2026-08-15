@@ -93,53 +93,55 @@ export function DocumentList() {
 
   const allItems = [...groups.taskGroups.flatMap(group => group.items), ...groups.unassigned];
   const visibleItems = [...visibleGroups.taskGroups.flatMap(group => group.items), ...visibleGroups.unassigned];
-  const permissionCount = allItems.reduce((total, item) => total + ('permissions' in item ? item.permissions.length : 0), 0);
-  const expiringCount = groups.taskGroups.flatMap(group => group.items).filter(item => Boolean(item.effective_expires_at)).length;
+  const linkedItems = groups.taskGroups.flatMap(group => group.items);
 
   return <section className={styles.libraryPage}>
     <header className={styles.libraryHeader}>
-      <div><p className={styles.documentEyebrow}>Không gian tài liệu</p><h1>Kho tài liệu</h1><p>Tìm nhanh tài liệu theo task, theo dõi deadline và kiểm tra quyền truy cập hiệu lực.</p></div>
-      <span className={styles.scopeBadge}>{allItems.length} tài liệu</span>
+      <div className={styles.libraryHeaderCopy}>
+        <p className={styles.documentEyebrow}>Không gian tài liệu</p>
+        <div className={styles.libraryTitleRow}><h1>Kho tài liệu</h1><span className={styles.scopeBadge}>{allItems.length} tài liệu</span></div>
+        <p>Tìm nhanh tài liệu theo task, theo dõi deadline và kiểm tra quyền truy cập hiệu lực.</p>
+      </div>
     </header>
 
     <div className={styles.libraryStats}>
-      <article className={styles.libraryStat}><span className={styles.libraryStatIconBlue}>▧</span><div><small>Tổng tài liệu</small><strong>{allItems.length}</strong><em>Trong không gian của bạn</em></div></article>
-      <article className={styles.libraryStat}><span className={styles.libraryStatIconGreen}>✓</span><div><small>Task có tài liệu</small><strong>{groups.taskGroups.length}</strong><em>Đã phân loại theo task</em></div></article>
-      <article className={styles.libraryStat}><span className={styles.libraryStatIconPurple}>⌘</span><div><small>Quyền hiệu lực</small><strong>{permissionCount}</strong><em>{expiringCount ? expiringCount + ' file có thời hạn quyền' : 'Không có thời hạn quyền'}</em></div></article>
+      <article className={styles.libraryStat}><span className={styles.libraryStatIconBlue}>▧</span><div><small>Tổng tài liệu</small><strong>{allItems.length}</strong><em>Tất cả tài liệu bạn có thể xem</em></div></article>
+      <article className={styles.libraryStat}><span className={styles.libraryStatIconGreen}>✓</span><div><small>Đã gắn vào task</small><strong>{linkedItems.length}</strong><em>{groups.taskGroups.length} task đang có tài liệu</em></div></article>
+      <article className={styles.libraryStat}><span className={styles.libraryStatIconPurple}>⌘</span><div><small>Chưa gắn task</small><strong>{groups.unassigned.length}</strong><em>Tài liệu chưa được phân loại</em></div></article>
     </div>
 
     <div className={styles.libraryToolbar}>
-      <label className={styles.documentSearch}><span>⌕</span><input aria-label="Tìm tài liệu hoặc task" placeholder="Tìm theo tên tài liệu hoặc task..." value={query} onChange={event => setQuery(event.target.value)} />{query && <button type="button" aria-label="Xóa tìm kiếm" onClick={() => setQuery('')}>×</button>}</label>
+      <label className={styles.documentSearch}><span aria-hidden="true">⌕</span><input aria-label="Tìm tài liệu hoặc task" placeholder="Tìm theo tên tài liệu hoặc task..." value={query} onChange={event => setQuery(event.target.value)} />{query && <button type="button" aria-label="Xóa tìm kiếm" onClick={() => setQuery('')}>×</button>}</label>
       <span className={styles.resultCount}>{visibleItems.length} / {allItems.length} tài liệu</span>
     </div>
 
     {visibleItems.length > 0 ? <div className={styles.taskGroups}>
       {visibleGroups.taskGroups.map(group => <section className={styles.taskGroup} key={group.task.id}>
         <header className={styles.taskGroupHeader}>
-          <div className={styles.taskHeading}><p className={styles.groupEyebrow}>Task</p><h2>{taskLabel(group.task)}</h2><div className={styles.taskMeta}><span>{group.items.length} tài liệu</span><span className={styles.taskStatus}>{STATUS_LABELS[group.task.status]}</span><span className={group.task.is_overdue ? styles.deadlineDanger : styles.deadlineMeta}>{group.task.is_overdue ? 'Quá hạn · ' : 'Hạn · '}{formatDate(group.task.deadline)}</span></div></div>
+          <div className={styles.taskHeading}><p className={styles.groupEyebrow}>Tài liệu trong task</p><h2>{taskLabel(group.task)}</h2><div className={styles.taskMeta}><span>{group.items.length} tài liệu</span><span className={styles.taskStatus}>{STATUS_LABELS[group.task.status] || group.task.status}</span><span className={group.task.is_overdue ? styles.deadlineDanger : styles.deadlineMeta}>{group.task.is_overdue ? 'Quá hạn · ' : 'Hạn · '}{formatDate(group.task.deadline)}</span></div></div>
           <Link href={'/tasks/' + group.task.id}>Mở task →</Link>
         </header>
-        <div className={styles.documentCards}>{group.items.map(item => <DocumentCard item={item} taskId={group.task.id} key={item.association_id} />)}</div>
+        <div className={styles.documentCards}>{group.items.map(item => <DocumentCard item={item} taskId={group.task.id} taskTitle={taskLabel(group.task)} key={item.association_id} />)}</div>
       </section>)}
       {visibleGroups.unassigned.length > 0 && <section className={styles.taskGroup}>
-        <header className={styles.taskGroupHeader}><div className={styles.taskHeading}><p className={styles.groupEyebrow}>Phân loại</p><h2>Chưa gắn task</h2><div className={styles.taskMeta}><span>{visibleGroups.unassigned.length} tài liệu</span><span className={styles.deadlineMeta}>Chưa có deadline</span></div></div></header>
+        <header className={styles.taskGroupHeader}><div className={styles.taskHeading}><p className={styles.groupEyebrow}>Phân loại</p><h2>Chưa gắn task</h2><div className={styles.taskMeta}><span>{visibleGroups.unassigned.length} tài liệu</span><span className={styles.deadlineMeta}>Chưa có deadline</span></div></div><span className={styles.unassignedHint}>Cần được phân loại</span></header>
         <div className={styles.documentCards}>{visibleGroups.unassigned.map(item => <UnassignedDocumentCard item={item} key={item.id} />)}</div>
       </section>}
     </div> : <EmptyState title={query ? 'Không tìm thấy tài liệu' : 'Chưa có tài liệu'}>{query ? 'Thử tìm bằng tên task, tên file hoặc loại tài liệu khác.' : 'Tài liệu được gắn vào task sẽ xuất hiện tại đây.'}</EmptyState>}
   </section>;
 }
 
-function DocumentCard({ item, taskId }: { item: TaskDocument; taskId: string }) {
+function DocumentCard({ item, taskId, taskTitle }: { item: TaskDocument; taskId: string; taskTitle: string }) {
   const expiry = expiryMeta(item.effective_expires_at);
   return <article className={styles.documentCard}>
-    <div className={styles.documentCardMain}><span className={styles.documentIcon}>▧</span><div><Link href={'/documents/' + item.document_id + '?task_id=' + taskId}><strong>{item.title}</strong></Link><small>{item.document_type} · Phiên bản {item.current_version}</small></div><span className={styles.security}>{item.security_level}</span></div>
-    <footer><div><span className={styles.permissionTitle}>Quyền của bạn</span><div className={styles.permissionList}>{item.permissions.map(permission => <span key={permission}>{PERMISSION_LABELS[permission] || permission}</span>)}</div></div><span className={expiry.tone === 'danger' ? styles.expiryDanger : expiry.tone === 'warning' ? styles.expiryWarning : styles.expiryMeta}>{expiry.label}</span></footer>
+    <div className={styles.documentCardTop}><div className={styles.documentIdentity}><span className={styles.documentIcon}>▧</span><div className={styles.documentCopy}><Link className={styles.documentTitle} href={'/documents/' + item.document_id + '?task_id=' + taskId}>{item.title}</Link><small>{item.document_type} · Phiên bản {item.current_version}</small><div className={styles.documentContext}><span>Nằm trong task</span><Link href={'/tasks/' + taskId}>{taskTitle}</Link></div></div></div><Link className={styles.documentOpen} href={'/documents/' + item.document_id + '?task_id=' + taskId}>Xem tài liệu <span aria-hidden="true">→</span></Link></div>
+    <footer><div><span className={styles.permissionTitle}>Quyền của bạn</span><div className={styles.permissionList}>{item.permissions.length ? item.permissions.map(permission => <span key={permission}>{PERMISSION_LABELS[permission] || permission}</span>) : <span className={styles.permissionEmpty}>Chưa có quyền riêng</span>}</div></div><span className={expiry.tone === 'danger' ? styles.expiryDanger : expiry.tone === 'warning' ? styles.expiryWarning : styles.expiryMeta}>{expiry.label}</span><span className={styles.security}>{item.security_level}</span></footer>
   </article>;
 }
 
 function UnassignedDocumentCard({ item }: { item: Document }) {
   return <article className={styles.documentCard}>
-    <div className={styles.documentCardMain}><span className={styles.documentIcon}>▧</span><div><Link href={'/documents/' + item.id}><strong>{item.title}</strong></Link><small>{item.document_type} · Phiên bản {item.current_version}</small></div><span className={styles.security}>{item.security_level}</span></div>
-    <footer><span className={styles.permissionTitle}>Quyền theo chủ sở hữu</span><span className={styles.expiryMeta}>Chưa gắn vào task</span></footer>
+    <div className={styles.documentCardTop}><div className={styles.documentIdentity}><span className={styles.documentIcon}>▧</span><div className={styles.documentCopy}><Link className={styles.documentTitle} href={'/documents/' + item.id}>{item.title}</Link><small>{item.document_type} · Phiên bản {item.current_version}</small><div className={styles.documentContext}><span>Phân loại</span><strong>Chưa gắn task</strong></div></div></div><Link className={styles.documentOpen} href={'/documents/' + item.id}>Xem tài liệu <span aria-hidden="true">→</span></Link></div>
+    <footer><div><span className={styles.permissionTitle}>Quyền theo chủ sở hữu</span><div className={styles.permissionList}><span className={styles.permissionEmpty}>Đang dùng quyền mặc định</span></div></div><span className={styles.expiryMeta}>Chưa gắn vào task</span><span className={styles.security}>{item.security_level}</span></footer>
   </article>;
 }
