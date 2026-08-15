@@ -162,7 +162,18 @@ export function AuditPanel() {
         <h1>Siêu dữ liệu kiểm toán</h1>
         <p>Theo dõi chuỗi nhật ký bất biến và kiểm tra toàn vẹn từng liên kết băm.</p>
       </div>
-      <span className={styles.auditBadge}><span aria-hidden="true">▤</span>Chỉ đọc · Không ghi được</span>
+      <div className={styles.heroActions}>
+        <div ref={exportRef} className={styles.exportWrap}>
+          <button className={styles.exportButton} type="button" aria-haspopup="menu" aria-expanded={exportOpen} onClick={() => setExportOpen(current => !current)}>
+            <span className={styles.exportIcon} aria-hidden="true"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="7 10 12 15 17 10" /><line x1="12" y1="15" x2="12" y2="3" /></svg></span>
+            Tải xuống
+          </button>
+          {exportOpen && <div className={styles.exportMenu} role="menu">
+            <button type="button" role="menuitem" onClick={() => { exportEvents(); setExportOpen(false); }}>Xuất nhật ký sự kiện (CSV)</button>
+          </div>}
+        </div>
+        <span className={styles.auditBadge}><span aria-hidden="true">▤</span>Chỉ đọc · Không ghi được</span>
+      </div>
     </header>
 
     <div className={styles.auditNotice}>
@@ -199,12 +210,6 @@ export function AuditPanel() {
         <h2>Hoạt động gần đây</h2>
       </div>
       <div className={styles.auditHeaderActions}>
-        <div ref={exportRef} className={styles.exportWrap}>
-          <button className={styles.exportButton} type="button" aria-haspopup="menu" aria-expanded={exportOpen} onClick={() => setExportOpen(current => !current)}><span aria-hidden="true">⬇</span> Tải xuống</button>
-          {exportOpen && <div className={styles.exportMenu} role="menu">
-            <button type="button" role="menuitem" onClick={() => { exportEvents(); setExportOpen(false); }}>Xuất nhật ký sự kiện (CSV)</button>
-          </div>}
-        </div>
         <label className={styles.auditFilter}><span>Lọc theo nhóm</span>
           <select value={filter} onChange={event => setFilter(event.target.value)} aria-label="Lọc theo nhóm sự kiện">
             <option value="ALL">Tất cả các nhóm</option>
