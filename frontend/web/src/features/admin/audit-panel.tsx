@@ -1,10 +1,11 @@
 'use client';
 /* eslint-disable react-hooks/set-state-in-effect */
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { auditApi } from '@/api/audit';
 import { readSession } from '@/auth/session';
 import { EmptyState, ErrorState, LoadingState, PermissionDeniedState } from '@/components/common-states';
+import { dateKey, downloadCSV } from '@/lib/csv';
 import type { AuditChainHead, AuditChainVerification, AuditEventMetadata } from '@/types/audit';
 import styles from './admin.module.css';
 
@@ -95,6 +96,8 @@ export function AuditPanel() {
   const [failed, setFailed] = useState(false);
   const [status, setStatus] = useState('');
   const [filter, setFilter] = useState('ALL');
+  const [exportOpen, setExportOpen] = useState(false);
+  const exportRef = useRef<HTMLDivElement>(null);
 
   const load = () => {
     setEvents(null);
@@ -105,6 +108,14 @@ export function AuditPanel() {
       .catch(() => setFailed(true));
   };
   useEffect(load, []);
+
+  useEffect(() => {
+    const close = (event: MouseEvent) => {
+      if (exportRef.current && !exportRef.current.contains(event.target as Node)) setExportOpen(false);
+    };
+    document.addEventListener('mousedown', close);
+    return () => document.removeEventListener('mousedown', close);
+  }, []);
 
   const filtered = useMemo(() => {
     if (!events) return [];
@@ -130,6 +141,17 @@ export function AuditPanel() {
       setVerifying(false);
     }
   };
+
+  const exportEvents = () => downloadCSV(`c17-audit-events-${dateKey()}.csv`, [
+    ['Số thứ tự', 'Loại sự kiện', 'Tên tiếng Việt', 'Loại tài nguyên', 'Thời điểm'],
+    ...filtered.map(event => [
+      event.sequence_number,
+      event.event_type,
+      labelOf(event.event_type),
+      resourceOf(event.resource_type),
+      new Date(event.occurred_at).toLocaleString('vi-VN'),
+    ]),
+  ]);
 
   const newest = events.length > 0 ? events[0] : null;
 
@@ -176,12 +198,20 @@ export function AuditPanel() {
         <span className={styles.panelEyebrow}>NHẬT KÝ SỰ KIỆN</span>
         <h2>Hoạt động gần đây</h2>
       </div>
-      <label className={styles.auditFilter}><span>Lọc theo nhóm</span>
-        <select value={filter} onChange={event => setFilter(event.target.value)} aria-label="Lọc theo nhóm sự kiện">
-          <option value="ALL">Tất cả các nhóm</option>
-          {Object.entries(DOMAINS).map(([key, label]) => <option key={key} value={key}>{label}</option>)}
-        </select>
-      </label>
+      <div className={styles.auditHeaderActions}>
+        <div ref={exportRef} className={styles.exportWrap}>
+          <button className={styles.exportButton} type="button" aria-haspopup="menu" aria-expanded={exportOpen} onClick={() => setExportOpen(current => !current)}><span aria-hidden="true">⬇</span> Tải xuống</button>
+          {exportOpen && <div className={styles.exportMenu} role="menu">
+            <button type="button" role="menuitem" onClick={() => { exportEvents(); setExportOpen(false); }}>Xuất nhật ký sự kiện (CSV)</button>
+          </div>}
+        </div>
+        <label className={styles.auditFilter}><span>Lọc theo nhóm</span>
+          <select value={filter} onChange={event => setFilter(event.target.value)} aria-label="Lọc theo nhóm sự kiện">
+            <option value="ALL">Tất cả các nhóm</option>
+            {Object.entries(DOMAINS).map(([key, label]) => <option key={key} value={key}>{label}</option>)}
+          </select>
+        </label>
+      </div>
     </div>
 
     {filtered.length === 0 ? <EmptyState title="Không có sự kiện">Không tìm thấy sự kiện nào trong nhóm này.</EmptyState> : <div className={styles.auditList}>

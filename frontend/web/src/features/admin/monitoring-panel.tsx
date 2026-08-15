@@ -7,6 +7,7 @@ import { readSession } from '@/auth/session';
 import { EmptyState, ErrorState, LoadingState, PermissionDeniedState } from '@/components/common-states';
 import type { SecurityAlert, SecurityRule } from '@/types/admin';
 import { SearchableSelect } from '@/components/searchable-select';
+import { dateKey, downloadCSV } from '@/lib/csv';
 import styles from './admin.module.css';
 
 const ruleTypeLabel: Record<string, string> = {
@@ -19,34 +20,6 @@ const severityLabel: Record<string, string> = {
   MEDIUM: 'Trung bình',
   HIGH: 'Cao',
   CRITICAL: 'Nghiêm trọng',
-};
-
-const dateKey = (date = new Date()) => {
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, '0');
-  const day = String(date.getDate()).padStart(2, '0');
-  return `${year}-${month}-${day}`;
-};
-
-const toCSV = (rows: (string | number | null | undefined)[][]) => {
-  const escape = (value: string | number | null | undefined) => {
-    if (value === null || value === undefined) return '';
-    const text = String(value);
-    return /[",\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
-  };
-  return rows.map(row => row.map(escape).join(',')).join('\r\n');
-};
-
-const downloadCSV = (filename: string, rows: (string | number | null | undefined)[][]) => {
-  const blob = new Blob([`\uFEFF${toCSV(rows)}`], { type: 'text/csv;charset=utf-8;' });
-  const url = URL.createObjectURL(blob);
-  const link = document.createElement('a');
-  link.href = url;
-  link.download = filename;
-  document.body.appendChild(link);
-  link.click();
-  document.body.removeChild(link);
-  URL.revokeObjectURL(url);
 };
 
 export function MonitoringPanel() {
