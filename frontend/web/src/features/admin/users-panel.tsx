@@ -5,30 +5,7 @@ import { adminApi } from '@/api/admin';
 import { EmptyState, ErrorState, LoadingState, PermissionDeniedState } from '@/components/common-states';
 import { readSession } from '@/auth/session';
 import type { ManagedUser } from '@/types/admin';
-import { CAPABILITIES, type Capability } from '@/types/capability';
 import styles from './admin.module.css';
-import { SearchableSelect } from '@/components/searchable-select';
-
-const capabilityClass: Record<Capability, string> = {
-  ARCHIVE_SUBMIT: styles.capabilityTeal,
-  ARCHIVE_RECEIVE: styles.capabilityPurple,
-  DISPOSAL_APPROVE: styles.capabilityAmber,
-};
-
-const capabilityMeta: Record<Capability, { label: string; description: string }> = {
-  ARCHIVE_SUBMIT: {
-    label: 'Nộp hồ sơ lưu trữ',
-    description: 'Tạo và gửi hồ sơ vào quy trình lưu trữ của tổ chức.',
-  },
-  ARCHIVE_RECEIVE: {
-    label: 'Tiếp nhận hồ sơ lưu trữ',
-    description: 'Nhận và xử lý các hồ sơ được gửi đến kho lưu trữ.',
-  },
-  DISPOSAL_APPROVE: {
-    label: 'Phê duyệt hủy hồ sơ',
-    description: 'Phê duyệt việc hủy bỏ hồ sơ đã hết thời gian lưu giữ.',
-  },
-};
 
 const roleLabel: Record<string, string> = {
   ADMIN: 'Quản trị viên',
@@ -66,15 +43,6 @@ export function UsersPanel() {
     }
   };
 
-  const grant = (event: FormEvent<HTMLFormElement>, userId: string) => {
-    event.preventDefault();
-    const form = event.currentTarget;
-    const value = String(new FormData(form).get('capability'));
-    if (!CAPABILITIES.includes(value as Capability)) return;
-    void change(() => adminApi.grantCapability(userId, value as Capability), 'Đã cấp quyền hệ thống.');
-    form.reset();
-  };
-
   const createAccount = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     const form = event.currentTarget;
@@ -95,31 +63,13 @@ export function UsersPanel() {
     <header className={styles.usersHero}>
       <div>
         <span className={styles.heroEyebrow}>QUẢN LÝ TRUY CẬP</span>
-        <h1>Người dùng &amp; quyền</h1>
-        <p>Quản lý trạng thái tài khoản và quyền hệ thống của nhân sự.</p>
+        <h1>Người dùng</h1>
+        <p>Quản lý tài khoản và trạng thái truy cập của nhân sự.</p>
       </div>
       <span className={styles.userCount}>{users.length} người dùng</span>
     </header>
 
-    <div className={styles.usersNotice}>
-      <span className={styles.noticeIcon} aria-hidden="true">i</span>
-      <div>
-        <strong>Quyền hệ thống là gì?</strong>
-        <p>Quyền hệ thống (capability) là những khả năng đặc biệt được cấp riêng cho tài khoản nhân viên, ngoài quyền mặc định của họ. Hãy cấp đúng quyền để nhân sự thực hiện nhiệm vụ của mình và thu hồi khi không còn cần thiết. Tài khoản quản trị viên có toàn quyền nên không nhận các quyền này.</p>
-      </div>
-    </div>
 
-    <div className={styles.capabilityLegend}>
-      {CAPABILITIES.map(cap => (
-        <article className={styles.legendItem} key={cap}>
-          <span className={`${styles.legendDot} ${capabilityClass[cap]}`} aria-hidden="true" />
-          <div>
-            <strong>{capabilityMeta[cap].label}</strong>
-            <small>{capabilityMeta[cap].description}</small>
-          </div>
-        </article>
-      ))}
-    </div>
 
     <div className={styles.createUserToggle}>
       <button className={styles.createUserOpenButton} type="button" aria-expanded={creatingOpen} onClick={() => setCreatingOpen(current => !current)}>
@@ -150,23 +100,6 @@ export function UsersPanel() {
         <div className={styles.cardMeta}>
           <span className={styles.rolePill}>{roleLabel[user.role] ?? user.role}</span>
           <span>Tham gia {new Date(user.created_at).toLocaleDateString('vi-VN')}</span>
-        </div>
-        <div className={styles.capabilitySection}>
-          <div className={styles.capabilityHeading}><h2>Quyền hệ thống</h2><span>{user.capabilities.length}</span></div>
-          <div className={styles.chips}>
-            {user.capabilities.length === 0 && <span className={styles.noCapability}>Chưa được cấp quyền</span>}
-            {user.capabilities.map(cap => <span className={`${styles.capabilityChip} ${capabilityClass[cap]}`} key={cap} title={capabilityMeta[cap].description}>
-              {capabilityMeta[cap].label}
-              <button type="button" aria-label={`Thu hồi ${capabilityMeta[cap].label}`} title={`Thu hồi ${capabilityMeta[cap].label}`} onClick={() => change(() => adminApi.revokeCapability(user.id, cap), 'Đã thu hồi quyền hệ thống.')}>×</button>
-            </span>)}
-          </div>
-          {user.role !== 'ADMIN' && <form className={styles.capabilityForm} onSubmit={event => grant(event, user.id)}>
-            <SearchableSelect name="capability" aria-label={`Quyền mới cho ${user.email}`} defaultValue="" required>
-              <option value="" disabled>Chọn quyền cần cấp</option>
-              {CAPABILITIES.map(cap => <option key={cap} value={cap} disabled={user.capabilities.includes(cap)}>{capabilityMeta[cap].label}</option>)}
-            </SearchableSelect>
-            <button disabled={user.capabilities.length === CAPABILITIES.length}>+ Thêm</button>
-          </form>}
         </div>
         <footer className={styles.cardFooter}>
           <span>{user.locked_at ? 'Tài khoản không thể đăng nhập' : 'Tài khoản đang được phép truy cập'}</span>
