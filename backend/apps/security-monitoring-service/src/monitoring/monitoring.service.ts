@@ -35,6 +35,7 @@ export interface SecurityRuleDto {
   window_minutes: number;
   enabled: boolean;
   action: string;
+  send_alert_email: boolean;
   created_at: string;
 }
 
@@ -134,6 +135,7 @@ export class MonitoringService {
     threshold?: number;
     window_minutes?: number;
     action?: string;
+    send_alert_email?: boolean;
   }): Promise<SecurityRuleDto> {
     const rule = await this.prisma.securityRule.create({
       data: {
@@ -143,9 +145,21 @@ export class MonitoringService {
         threshold: data.threshold ?? 5,
         window_minutes: data.window_minutes ?? 15,
         action: data.action ?? 'ALERT',
+        send_alert_email: data.send_alert_email ?? true,
       },
     });
     return this.toRuleDto(rule);
+  }
+
+  async setRuleEmail(id: string, send_alert_email: boolean): Promise<SecurityRuleDto> {
+    const rule = await this.prisma.securityRule.findUnique({ where: { id } });
+    if (!rule) throw new NotFoundException('Rule not found');
+
+    const updated = await this.prisma.securityRule.update({
+      where: { id },
+      data: { send_alert_email },
+    });
+    return this.toRuleDto(updated);
   }
 
   async listRules(
@@ -162,6 +176,15 @@ export class MonitoringService {
       items: rules.map((r) => this.toRuleDto(r)),
       pagination: createPaginationMeta(pagination.page, pagination.page_size, total),
     };
+  }
+
+  async deleteRule(id: string): Promise<void> {
+    const rule = await this.prisma.securityRule.findUnique({ where: { id } });
+    if (!rule) throw new NotFoundException("Rule not found");
+    await this.prisma.$transaction([
+      this.prisma.securityEventCounter.deleteMany({ where: { rule_id: id } }),
+      this.prisma.securityRule.delete({ where: { id } }),
+    ]);
   }
 
   async toggleRule(id: string, enabled: boolean): Promise<SecurityRuleDto> {
@@ -282,6 +305,7 @@ export class MonitoringService {
                 alertId: existingAlert.id,
                 severity: existingAlert.severity,
                 shouldBlock: true,
+                created: false,
               }
             : null;
         }
@@ -308,6 +332,7 @@ export class MonitoringService {
           alertId: alert.id,
           severity: alert.severity,
           shouldBlock: rule.action === 'BLOCK',
+          created: true,
         };
       });
 
@@ -315,29 +340,36 @@ export class MonitoringService {
         continue;
       }
 
-      if (outcome.shouldBlock) {
-        await this.authAdminClient.revokeAllSessions(input.actorId);
+      // Publish only for a newly raised alert — repeated events while an alert is already OPEN
+      // must not page admins again. Publish first: admins must be paged even if session
+      // revocation is unavailable.
+      if (outcome.created) {
+        void this.eventPublisher
+          ?.publish(
+            buildEventEnvelope({
+              event_id: randomUUID(),
+              event_type: EventType.SECURITY_ALERT_CREATED,
+              occurred_at: new Date().toISOString(),
+              producer: Producer.SECURITY_MONITORING_SERVICE,
+              correlation_id: input.correlationId,
+              actor_id: input.actorId,
+              resource_type: 'SECURITY_ALERT',
+              resource_id: outcome.alertId,
+              payload: {
+                severity: outcome.severity,
+                rule_type: input.ruleType,
+                status: 'OPEN',
+                notify_admins: rule.send_alert_email,
+              },
+            }),
+          )
+          .catch(() => undefined);
       }
 
-      void this.eventPublisher
-        ?.publish(
-          buildEventEnvelope({
-            event_id: randomUUID(),
-            event_type: EventType.SECURITY_ALERT_CREATED,
-            occurred_at: new Date().toISOString(),
-            producer: Producer.SECURITY_MONITORING_SERVICE,
-            correlation_id: input.correlationId,
-            actor_id: input.actorId,
-            resource_type: 'SECURITY_ALERT',
-            resource_id: outcome.alertId,
-            payload: {
-              severity: outcome.severity,
-              rule_type: input.ruleType,
-              status: 'OPEN',
-            },
-          }),
-        )
-        .catch(() => undefined);
+      if (outcome.shouldBlock) {
+        // Best-effort mitigation: revocation must never fail the alert pipeline.
+        await this.authAdminClient.revokeAllSessions(input.actorId).catch(() => undefined);
+      }
     }
   }
 
@@ -376,6 +408,7 @@ export class MonitoringService {
     window_minutes: number;
     enabled: boolean;
     action: string;
+    send_alert_email: boolean;
     created_at: Date;
   }): SecurityRuleDto {
     return {
@@ -387,6 +420,7 @@ export class MonitoringService {
       window_minutes: rule.window_minutes,
       enabled: rule.enabled,
       action: rule.action,
+      send_alert_email: rule.send_alert_email,
       created_at: rule.created_at.toISOString(),
     };
   }

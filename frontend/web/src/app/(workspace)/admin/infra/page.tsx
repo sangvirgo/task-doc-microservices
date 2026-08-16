@@ -1,0 +1,1 @@
+import { InfraPanel } from '@/features/admin/infra-panel'; export default function InfraPage(){return <InfraPanel/>;}

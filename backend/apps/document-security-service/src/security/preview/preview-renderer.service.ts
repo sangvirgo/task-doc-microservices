@@ -1,5 +1,5 @@
 import { execFile } from 'child_process';
-import { mkdtemp, mkdir, readFile, readdir, rm, writeFile } from 'fs/promises';
+import { mkdtemp, mkdir, readFile, readdir, rm, stat, writeFile } from 'fs/promises';
 import { promisify } from 'util';
 import { tmpdir } from 'os';
 import { join } from 'path';
@@ -165,8 +165,12 @@ export class PreviewRenderer {
       [
         `-env:UserInstallation=${pathToFileURL(libreOfficeProfile).href}`,
         '--headless',
+        '--norestore',
+        '--nodefault',
+        '--nolockcheck',
+        '--nofirststartwizard',
         '--convert-to',
-        'pdf',
+        'pdf:writer_pdf_Export',
         '--outdir',
         jobDir,
         sourcePath,
@@ -175,6 +179,11 @@ export class PreviewRenderer {
     );
 
     const pdfPath = join(jobDir, 'source.pdf');
+    try {
+      await stat(pdfPath);
+    } catch {
+      throw new PreviewUnavailableError('Office document could not be converted to PDF');
+    }
     return this.renderPdfPagesFromFile(pdfPath, watermark, jobDir);
   }
 

@@ -90,10 +90,10 @@ export class TaskDocumentsService {
     caller: AuthContext,
   ): Promise<TaskDocumentGrantResult> {
     const context = await this.taskContextClient.getContext(taskId);
-    await this.assertDirectParticipant(context, caller, taskId, 'TASK_DOCUMENT_ATTACH_DENIED');
+    await this.assertDirectParticipantOrParent(context, caller, taskId, 'TASK_DOCUMENT_ATTACH_DENIED');
 
     const document = await this.documentsService.getDocument(documentId);
-    await this.assertCanShare(document, caller, taskId);
+    await this.assertCanShare(document, caller, taskId, context.task.parent_task_id);
     await this.validateGrantInputs(context, taskId, documentId, grants, caller, document);
 
     const association = await this.documentsService.attachDocumentToTask({
@@ -212,7 +212,7 @@ export class TaskDocumentsService {
     caller: AuthContext,
   ): Promise<PermissionGrantSummary> {
     const context = await this.taskContextClient.getContext(taskId);
-    await this.assertDirectParticipant(context, caller, taskId, 'TASK_DOCUMENT_GRANT_DENIED');
+    await this.assertDirectParticipantOrParent(context, caller, taskId, 'TASK_DOCUMENT_GRANT_DENIED');
 
     const association = await this.documentsService.getTaskDocument(taskId, documentId);
     if (!association) {
@@ -223,7 +223,7 @@ export class TaskDocumentsService {
       throw new NotFoundException('Task-document association not found');
     }
 
-    await this.assertCanShare(association.document, caller, taskId);
+    await this.assertCanShare(association.document, caller, taskId, context.task.parent_task_id);
     await this.validateGrantInputs(
       context,
       taskId,
@@ -273,7 +273,7 @@ export class TaskDocumentsService {
     await this.assertDirectParticipant(context, caller, taskId, 'TASK_DOCUMENT_GRANT_LIST_DENIED');
     const association = await this.documentsService.getTaskDocument(taskId, documentId);
     if (!association) throw new NotFoundException('Task-document association not found');
-    await this.assertCanShare(association.document, caller, taskId);
+    await this.assertCanShare(association.document, caller, taskId, context.task.parent_task_id);
     return this.permissionClient.listTaskDocumentGrants({
       task_id: taskId,
       resource_id: documentId,
@@ -299,7 +299,7 @@ export class TaskDocumentsService {
     );
     const association = await this.documentsService.getTaskDocument(taskId, documentId);
     if (!association) throw new NotFoundException('Task-document association not found');
-    await this.assertCanShare(association.document, caller, taskId);
+    await this.assertCanShare(association.document, caller, taskId, context.task.parent_task_id);
 
     if (update.permissions) {
       this.assertDocumentPermissions(update.permissions);
@@ -346,7 +346,7 @@ export class TaskDocumentsService {
     );
     const association = await this.documentsService.getTaskDocument(taskId, documentId);
     if (!association) throw new NotFoundException('Task-document association not found');
-    await this.assertCanShare(association.document, caller, taskId);
+    await this.assertCanShare(association.document, caller, taskId, context.task.parent_task_id);
 
     const revoked = await this.permissionClient.revokeTaskDocumentGrant({
       task_id: taskId,
@@ -378,7 +378,7 @@ export class TaskDocumentsService {
       throw new NotFoundException('Task-document association not found');
     }
 
-    await this.assertCanShare(association.document, caller, taskId);
+    await this.assertCanShare(association.document, caller, taskId, context.task.parent_task_id);
 
     // Removing the association first is fail-closed: even if the external revoke call is
     // unavailable, Permission Service will reject the now-orphaned task-scoped grants.
@@ -451,17 +451,30 @@ export class TaskDocumentsService {
 
       if (!callerOwnsDocument) {
         for (const permission of grant.permissions) {
-          const decision = await this.permissionClient.check({
+          let decision = await this.permissionClient.check({
             actor_id: caller.userId,
             actor_role: caller.role,
             resource_type: ResourceType.DOCUMENT,
             resource_id: documentId,
             action: permission as PermissionAction,
-            task_id: null,
+            task_id: taskId,
             owner_id: document.owner_id,
             creator_id: document.creator_id,
             correlation_id: randomUUID(),
           });
+          if (!decision.allowed && context.task.parent_task_id) {
+            decision = await this.permissionClient.check({
+              actor_id: caller.userId,
+              actor_role: caller.role,
+              resource_type: ResourceType.DOCUMENT,
+              resource_id: documentId,
+              action: permission as PermissionAction,
+              task_id: context.task.parent_task_id,
+              owner_id: document.owner_id,
+              creator_id: document.creator_id,
+              correlation_id: randomUUID(),
+            });
+          }
           if (!decision.allowed) {
             await this.recordDenied('TASK_DOCUMENT_GRANT_DENIED', caller.userId, documentId, {
               task_id: taskId,
@@ -498,10 +511,40 @@ export class TaskDocumentsService {
     document: DocumentDto,
     caller: AuthContext,
     taskId: string,
+    fallbackTaskId?: string | null,
   ): Promise<void> {
     if (document.owner_id === caller.userId || document.creator_id === caller.userId) return;
 
-    const decision = await this.permissionClient.check({
+    let decision = await this.permissionClient.check({
+      actor_id: caller.userId,
+      actor_role: caller.role,
+      resource_type: ResourceType.DOCUMENT,
+      resource_id: document.id,
+      action: PermissionAction.SHARE,
+      task_id: taskId,
+      owner_id: document.owner_id,
+      creator_id: document.creator_id,
+      correlation_id: randomUUID(),
+    });
+
+    if (decision.allowed) return;
+
+    if (fallbackTaskId && fallbackTaskId !== taskId) {
+      decision = await this.permissionClient.check({
+        actor_id: caller.userId,
+        actor_role: caller.role,
+        resource_type: ResourceType.DOCUMENT,
+        resource_id: document.id,
+        action: PermissionAction.SHARE,
+        task_id: fallbackTaskId,
+        owner_id: document.owner_id,
+        creator_id: document.creator_id,
+        correlation_id: randomUUID(),
+      });
+      if (decision.allowed) return;
+    }
+
+    decision = await this.permissionClient.check({
       actor_id: caller.userId,
       actor_role: caller.role,
       resource_type: ResourceType.DOCUMENT,
@@ -512,7 +555,6 @@ export class TaskDocumentsService {
       creator_id: document.creator_id,
       correlation_id: randomUUID(),
     });
-
     if (decision.allowed) return;
 
     await this.recordDenied('TASK_DOCUMENT_ATTACH_DENIED', caller.userId, document.id, {
@@ -531,7 +573,7 @@ export class TaskDocumentsService {
     let effectiveExpiresAt: string | null = null;
 
     for (const action of DOCUMENT_ACCESS_ACTIONS) {
-      const decision = await this.permissionClient.check({
+      let decision = await this.permissionClient.check({
         actor_id: caller.userId,
         actor_role: caller.role,
         resource_type: ResourceType.DOCUMENT,
@@ -554,6 +596,26 @@ export class TaskDocumentsService {
     }
 
     return { permissions, effective_expires_at: effectiveExpiresAt };
+  }
+
+  private async assertDirectParticipantOrParent(
+    context: TaskContext,
+    caller: AuthContext,
+    taskId: string,
+    eventType: string,
+  ): Promise<void> {
+    if (this.isDirectParticipant(context, caller.userId)) return;
+
+    if (context.task.parent_task_id) {
+      const parentContext = await this.taskContextClient.getContext(context.task.parent_task_id);
+      if (this.isDirectParticipant(parentContext, caller.userId)) return;
+    }
+
+    await this.recordDenied(eventType, caller.userId, taskId, {
+      task_id: taskId,
+      reason_code: 'NOT_A_DIRECT_TASK_PARTICIPANT',
+    });
+    throw new ForbiddenException('Direct task participation is required');
   }
 
   private async assertDirectParticipant(

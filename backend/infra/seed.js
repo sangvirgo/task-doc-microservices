@@ -42,7 +42,7 @@ const GRANT_ID = '00000000-0000-4000-d000-000000000001';
 const RECORD_ID = '00000000-0000-4000-c000-000000000010';
 const RULE_ID = '00000000-0000-4000-e000-000000000001';
 
-const ADMIN_EMAIL = 'admin@c17.local';
+const ADMIN_EMAIL = 'n22dccn088@student.ptithcm.edu.vn';
 const EMP_EMAIL = 'employee@c17.local';
 const ADMIN2_EMAIL = 'n22dccn068@student.ptithcm.edu.vn';
 const ADMIN_PASS = hashSync('Admin123!', 10);

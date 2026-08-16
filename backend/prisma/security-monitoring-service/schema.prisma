@@ -35,6 +35,7 @@ model SecurityRule {
   window_minutes Int  @default(15)
   enabled     Boolean @default(true)
   action      String  @default("ALERT")
+  send_alert_email Boolean @default(true)
   created_at  DateTime @default(now())
 }
 

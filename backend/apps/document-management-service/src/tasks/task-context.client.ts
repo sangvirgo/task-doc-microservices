@@ -5,6 +5,7 @@ export interface TaskContext {
   task: {
     id: string;
     creator_id: string;
+    parent_task_id: string | null;
     assignee_id: string | null;
     deadline: string | null;
   };

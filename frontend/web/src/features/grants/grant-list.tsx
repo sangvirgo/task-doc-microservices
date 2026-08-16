@@ -1,5 +1,5 @@
 'use client';
-import { FormEvent, useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { grantsApi } from '@/api/grants';
 import { documentsApi } from '@/api/documents';
@@ -12,7 +12,6 @@ import type { Document } from '@/types/document';
 import type { Task } from '@/types/task';
 import type { MemberOption } from '@/types/admin';
 import styles from './grants.module.css';
-import { SearchableSelect } from '@/components/searchable-select';
 
 type GrantView = 'issued' | 'received';
 
@@ -38,7 +37,6 @@ export function GrantList() {
   const [members, setMembers] = useState<MemberOption[]>([]);
   const [view, setView] = useState<GrantView>('issued');
   const [error, setError] = useState(false);
-  const [status, setStatus] = useState('');
 
   const loading = useRef(false);
 
@@ -82,29 +80,6 @@ export function GrantList() {
   const activeCount = visibleGrants.filter(grant => grant.status === 'ACTIVE').length;
   const revokedCount = visibleGrants.filter(grant => grant.status === 'REVOKED').length;
 
-  const create = async (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-    const formElement = event.currentTarget;
-    const form = new FormData(formElement);
-    const taskId = String(form.get('task_id'));
-    const documentId = String(form.get('resource_id'));
-    const permissions = String(form.get('permissions')).split(',').map(value => value.trim()).filter(Boolean);
-    setStatus('Đang cấp quyền...');
-    try {
-      await documentsApi.addGrant(taskId, documentId, {
-        actor_id: String(form.get('actor_id')),
-        permissions,
-        expires_at: new Date(String(form.get('expires_at'))).toISOString(),
-      });
-      setStatus('Đã cấp quyền cho người nhận.');
-      formElement.reset();
-      setView('issued');
-      load();
-    } catch {
-      setStatus('Không thể cấp quyền. Hãy chắc chắn tài liệu đã được gắn vào task và người nhận là thành viên trực tiếp.');
-    }
-  };
-
   return <section className={styles.grantsPage}>
     <header className={styles.grantsHeader}><div><p className={styles.grantsEyebrow}>Quản trị quyền truy cập</p><h1>Quyền tài liệu</h1><p>Theo dõi tài liệu bạn đã cấp, tài liệu được cấp cho bạn và thời hạn hiệu lực.</p></div><span className={styles.grantsBadge}>{issued.length + received.length} bản ghi quyền</span></header>
 
@@ -117,9 +92,9 @@ export function GrantList() {
     <form className={styles.grantForm} onSubmit={create}>
       <div className={styles.formHeading}><div><p>CẤP QUYỀN MỚI</p><h2>Chia sẻ tài liệu cho thành viên trong task</h2></div><span>Quyền sẽ bị giới hạn bởi deadline task</span></div>
       <div className={styles.formGrid}>
-        <label>Người nhận<SearchableSelect name="actor_id" required defaultValue=""><option value="" disabled>Chọn nhân viên</option>{members.map(member => <option key={member.id} value={member.id}>{member.email}</option>)}</SearchableSelect></label>
-        <label>Tài liệu<SearchableSelect name="resource_id" required defaultValue=""><option value="" disabled>Chọn tài liệu</option>{documents.map(document => <option key={document.id} value={document.id}>{document.title}</option>)}</SearchableSelect></label>
-        <label>Công việc<SearchableSelect name="task_id" required defaultValue=""><option value="" disabled>Chọn công việc</option>{tasks.map(task => <option key={task.id} value={task.id}>{task.title}</option>)}</SearchableSelect></label>
+        <label>Người nhận<SearchableSelect name="actor_id" required defaultValue="" disabled={!selectedTaskId || taskDocumentsLoading}><option value="" disabled>Chọn nhân viên</option>{eligibleMembers.map(member => <option key={member.id} value={member.id}>{member.email}</option>)}</SearchableSelect></label>
+        <label>Tài liệu<SearchableSelect name="resource_id" required defaultValue="" disabled={!selectedTaskId || taskDocumentsLoading}><option value="" disabled>{taskDocumentsLoading ? "Đang tải tài liệu…" : selectedTaskId ? "Chọn tài liệu trong task" : "Chọn task trước"}</option>{taskDocuments.map(document => <option key={document.document_id} value={document.document_id}>{document.title}</option>)}</SearchableSelect></label>
+        <label>Công việc<SearchableSelect name="task_id" required value={selectedTaskId} onChange={event => loadTaskDocuments(event.target.value)}><option value="" disabled>Chọn công việc</option>{tasks.map(task => <option key={task.id} value={task.id}>{task.title}</option>)}</SearchableSelect></label>
         <label>Quyền truy cập <span>Phân tách bằng dấu phẩy</span><input name="permissions" required placeholder="PREVIEW, DOWNLOAD" /></label>
         <label>Thời hạn<input name="expires_at" type="datetime-local" required /></label>
         <div className={styles.formActions}><button type="submit">Cấp quyền</button>{status && <p role="status">{status}</p>}</div>

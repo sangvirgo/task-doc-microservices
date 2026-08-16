@@ -3,10 +3,12 @@ import { APP_GUARD } from '@nestjs/core';
 import { JwtModule } from '@nestjs/jwt';
 import { z } from 'zod';
 
-import { AppConfigModule, baseEnvSchema } from '@c17/config';
+import { AppConfigModule, baseEnvSchema, objectStorageEnvFragment } from '@c17/config';
 import { ObservabilityModule } from '@c17/observability';
 
 import { JwtAuthGuard } from './auth/jwt-auth.guard';
+import { InfraController } from './infra/infra.controller';
+import { InfraService } from './infra/infra.service';
 import { GatewayController } from './proxy/gateway.controller';
 import { RateLimitGuard } from './rate-limit/rate-limit.guard';
 import { StatisticsController } from './statistics/statistics.controller';
@@ -15,6 +17,7 @@ import { StatisticsService } from './statistics/statistics.service';
 export const SERVICE = 'api-gateway';
 
 export const envSchema = baseEnvSchema.extend({
+  ...objectStorageEnvFragment.shape,
   JWT_SECRET: z.string().min(32),
   JWT_TTL_SECONDS: z.coerce.number().int().positive().default(1800),
   GATEWAY_TIMEOUT_MS: z.coerce.number().int().positive().default(10_000),
@@ -43,13 +46,14 @@ export const envSchema = baseEnvSchema.extend({
       signOptions: { expiresIn: Number(process.env.JWT_TTL_SECONDS ?? 1800) },
     }),
   ],
-  controllers: [GatewayController, StatisticsController],
+  controllers: [GatewayController, StatisticsController, InfraController],
   providers: [
     { provide: APP_GUARD, useClass: RateLimitGuard },
     { provide: APP_GUARD, useClass: JwtAuthGuard },
     JwtAuthGuard,
     RateLimitGuard,
     StatisticsService,
+    InfraService,
   ],
 })
 export class AppModule {}

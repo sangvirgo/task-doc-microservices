@@ -38,7 +38,7 @@ export const tasksApi = {
   childrenPage: (parentTaskId: string, page = 1, pageSize = 20) => gatewayClient.getPage<Task>(`/tasks?parent_task_id=${encodeURIComponent(parentTaskId)}&${pageQuery(page, pageSize)}`),
   get: (id: string) => gatewayClient.get<Task | AncestorTaskSummary>(`/tasks/${encodeURIComponent(id)}`),
   create: (input: CreateTaskInput) => gatewayClient.post<Task>('/tasks', input),
-  update: (id: string, input: Partial<Pick<CreateTaskInput, 'title' | 'description' | 'deadline'>>) => gatewayClient.patch<Task>(`/tasks/${encodeURIComponent(id)}`, input),
+  update: (id: string, input: Partial<Pick<CreateTaskInput, 'title'> & { description?: string | null; deadline?: string | null }>) => gatewayClient.patch<Task>(`/tasks/${encodeURIComponent(id)}`, input),
   assign: (id: string, assignee_id: string) => gatewayClient.post<Task>(`/tasks/${encodeURIComponent(id)}/assign`, { assignee_id }),
   reviewer: (id: string, reviewer_id: string) => gatewayClient.put<Task>(`/tasks/${encodeURIComponent(id)}/reviewer`, { reviewer_id }),
   addParticipant: (id: string, user_id: string, role?: string) => gatewayClient.post<Participant>(`/tasks/${encodeURIComponent(id)}/participants`, { user_id, ...(role ? { role } : {}) }),

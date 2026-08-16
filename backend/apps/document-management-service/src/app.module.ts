@@ -38,6 +38,7 @@ export const envSchema = baseEnvSchema.extend({
   TASK_SERVICE_URL: z.string().url().default('http://localhost:3003'),
   TASK_LOOKUP_TIMEOUT_MS: z.coerce.number().int().positive().default(2000),
   SECURITY_TIMEOUT_MS: z.coerce.number().int().positive().default(5000),
+  SECURITY_UPLOAD_TIMEOUT_MS: z.coerce.number().int().positive().default(120000),
   PREVIEW_TIMEOUT_MS: z.coerce.number().int().positive().default(90000),
   RABBITMQ_URL: z.string().url().default('amqp://guest:guest@localhost:5672'),
   OUTBOX_POLL_INTERVAL_MS: z.coerce.number().int().positive().default(1000),

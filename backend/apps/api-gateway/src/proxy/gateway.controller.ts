@@ -390,8 +390,8 @@ export class GatewayController {
         (path === '/api/users' || path.startsWith('/api/users/'))) ||
       path.startsWith('/api/monitoring/') ||
       path === '/api/monitoring' ||
-      path.startsWith('/api/audit/') ||
-      path === '/api/audit'
+      path === '/api/audit/chain/head' ||
+      path === '/api/audit/chain/verify'
     ) {
       if (!isAdmin) throw new ForbiddenException('Administrator role required');
     }

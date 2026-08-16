@@ -12,11 +12,22 @@ type NotificationTone = 'danger' | 'success' | 'purple' | 'info' | 'teal';
 
 function presentation(type: string): { tone: NotificationTone; icon: string; label: string } {
   const normalized = type.toLowerCase();
-  if (/security|session|revoke|lock|alert/.test(normalized)) return { tone: 'danger', icon: '!', label: 'Security' };
-  if (/password|account|auth|login/.test(normalized)) return { tone: 'purple', icon: '⌁', label: 'Account' };
-  if (/document|file|grant|share/.test(normalized)) return { tone: 'info', icon: '▧', label: 'Documents' };
-  if (/task|approve|complete|success/.test(normalized)) return { tone: 'success', icon: '✓', label: 'Workflow' };
+  if (/security|session|revoke|lock|alert/.test(normalized)) return { tone: 'danger', icon: '!', label: 'An toàn' };
+  if (/password|account|auth|login/.test(normalized)) return { tone: 'purple', icon: '⌁', label: 'Tài khoản' };
+  if (/document|file|grant|share/.test(normalized)) return { tone: 'info', icon: '▧', label: 'Tài liệu' };
+  if (/task|approve|complete|success/.test(normalized)) return { tone: 'success', icon: '✓', label: 'Công việc' };
   return { tone: 'teal', icon: '◌', label: type.replaceAll('_', ' ') };
+}
+
+function localizedCopy(item: Notification): { title: string; body: string } {
+  if (item.type === 'TASK_ASSIGNED') return { title: 'Được giao công việc', body: 'Bạn được giao một công việc mới.' };
+  if (item.type === 'SECURITY_SESSION_REVOKED') return { title: 'Phiên đăng nhập đã bị thu hồi', body: 'Phiên đăng nhập của bạn đã bị thu hồi vì lý do bảo mật.' };
+  if (item.type === 'SECURITY_ALERT') return { title: 'Cảnh báo an toàn', body: 'Hệ thống phát hiện một cảnh báo an toàn liên quan đến hoạt động tài khoản.' };
+  if (item.type === 'GRANT_EXPIRED') return { title: 'Quyền truy cập tài liệu đã hết hạn', body: 'Một quyền truy cập tài liệu đã hết hạn.' };
+  if (item.type === 'TASK_SUBMITTED_FOR_REVIEW') return { title: 'Submission đang chờ phê duyệt', body: 'Một submission công việc đang chờ bạn phê duyệt.' };
+  if (item.type === 'TASK_REVIEWED') return { title: 'Kết quả submission đã được cập nhật', body: 'Submission của bạn đã được người review xử lý.' };
+  if (item.type === 'TASK_DEADLINE_REMINDER') return { title: 'Công việc sắp đến hạn', body: 'Một công việc bạn phụ trách sắp đến hạn.' };
+  return { title: item.title, body: item.body };
 }
 
 export function NotificationList() {
@@ -38,7 +49,7 @@ export function NotificationList() {
   };
   useEffect(load, [userId, unreadOnly]);
 
-  if (!userId) return <ErrorState message="A session identity hint is unavailable. Please sign in again." />;
+  if (!userId) return <ErrorState message="Không có thông tin phiên đăng nhập. Vui lòng đăng nhập lại." />;
 
   const markRead = async (id: string) => {
     try {
@@ -68,7 +79,7 @@ export function NotificationList() {
     }
   };
 
-  if (error) return <ErrorState message="Notifications could not be loaded." onRetry={load} />;
+  if (error) return <ErrorState message="Không thể tải thông báo." onRetry={load} />;
   if (!items || !preferences) return <LoadingState />;
   const unreadCount = items.filter(item => item.read_at === null).length;
 
@@ -82,8 +93,8 @@ export function NotificationList() {
     </header>
     {message && <p className={styles.feedback} role="status"><span aria-hidden="true">✓</span>{message}</p>}
     <section className={styles.inbox} aria-label="Danh sách thông báo">
-      {items.length === 0 ? <div className={styles.empty}><span aria-hidden="true">◌</span><h2>No notifications</h2><p>{unreadOnly ? 'Không còn thông báo chưa đọc.' : 'Thông báo dành cho phiên làm việc này sẽ xuất hiện tại đây.'}</p></div> : <ul className={styles.list}>
-        {items.map(item => { const visual = presentation(item.type); const unread = item.read_at === null; return <li className={`${styles.item} ${unread ? styles.unread : ''}`} key={item.id}><span className={`${styles.eventIcon} ${styles[visual.tone]}`} aria-hidden="true">{visual.icon}</span><div className={styles.itemContent}><Link className={styles.itemLink} href={`/notifications/${item.id}`}><div className={styles.itemHeading}><h2>{item.title}</h2><time dateTime={item.created_at}>{new Date(item.created_at).toLocaleString('vi-VN')}</time></div><p>{item.body}</p></Link><div className={styles.itemFooter}><span className={`${styles.typeChip} ${styles[visual.tone]}`}>{visual.label}</span>{unread && <button type="button" onClick={() => markRead(item.id)}><span aria-hidden="true">✓</span> Đánh dấu đã đọc</button>}</div></div>{unread && <span className={styles.unreadDot} aria-label="Chưa đọc" />}</li>; })}
+      {items.length === 0 ? <div className={styles.empty}><span aria-hidden="true">◌</span><h2>Chưa có thông báo</h2><p>{unreadOnly ? 'Không còn thông báo chưa đọc.' : 'Thông báo dành cho phiên làm việc này sẽ xuất hiện tại đây.'}</p></div> : <ul className={styles.list}>
+        {items.map(item => { const visual = presentation(item.type); const copy = localizedCopy(item); const unread = item.read_at === null; return <li className={`${styles.item} ${unread ? styles.unread : ''}`} key={item.id}><span className={`${styles.eventIcon} ${styles[visual.tone]}`} aria-hidden="true">{visual.icon}</span><div className={styles.itemContent}><Link className={styles.itemLink} href={`/notifications/${item.id}`}><div className={styles.itemHeading}><h2>{copy.title}</h2><time dateTime={item.created_at}>{new Date(item.created_at).toLocaleString('vi-VN')}</time></div><p>{copy.body}</p></Link><div className={styles.itemFooter}><span className={`${styles.typeChip} ${styles[visual.tone]}`}>{visual.label}</span>{unread && <button type="button" onClick={() => markRead(item.id)}><span aria-hidden="true">✓</span> Đánh dấu đã đọc</button>}</div></div>{unread && <span className={styles.unreadDot} aria-label="Chưa đọc" />}</li>; })}
       </ul>}
     </section>
     <section className={styles.preferences} aria-labelledby="preferences-title">

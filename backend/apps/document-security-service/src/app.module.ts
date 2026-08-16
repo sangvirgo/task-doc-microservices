@@ -32,6 +32,11 @@ export const envSchema = baseEnvSchema
     DOCUMENT_SIGNATURE_KEY: z.string().min(1),
     DOCUMENT_SECURITY_TMP_DIR: z.string().min(1).optional(),
     CLAMAV_TIMEOUT_MS: z.coerce.number().int().positive().default(10_000),
+    PREVIEW_RENDER_TIMEOUT_MS: z.coerce.number().int().positive().default(180_000),
+    PREVIEW_MAX_INPUT_BYTES: z.coerce.number().int().positive().default(25 * 1024 * 1024),
+    PREVIEW_MAX_PAGES: z.coerce.number().int().positive().default(200),
+    PREVIEW_MAX_DIMENSION: z.coerce.number().int().positive().default(2400),
+    PREVIEW_TEMP_ROOT: z.string().min(1).optional(),
   });
 
 @Module({
@@ -49,7 +54,14 @@ export const envSchema = baseEnvSchema
     DocumentSignatureService,
     {
       provide: PreviewRenderer,
-      useFactory: () => new PreviewRenderer(),
+      useFactory: () =>
+        new PreviewRenderer({
+          tempRoot: process.env.PREVIEW_TEMP_ROOT || undefined,
+          maxInputBytes: Number(process.env.PREVIEW_MAX_INPUT_BYTES || 25 * 1024 * 1024),
+          maxPages: Number(process.env.PREVIEW_MAX_PAGES || 200),
+          maxDimension: Number(process.env.PREVIEW_MAX_DIMENSION || 2400),
+          timeoutMs: Number(process.env.PREVIEW_RENDER_TIMEOUT_MS || 180_000),
+        }),
     },
   ],
 })

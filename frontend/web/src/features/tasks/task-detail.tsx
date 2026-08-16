@@ -24,6 +24,12 @@ const isSummary = (value: Task | AncestorTaskSummary): value is AncestorTaskSumm
 const message = (error: unknown, fallback: string) => error instanceof GatewayError && error.status === 409 ? 'Công việc đã thay đổi. Tải lại và thử lại.' : fallback;
 const formatDate = (value: string | null) => value ? new Date(value).toLocaleDateString('vi-VN', { day: '2-digit', month: 'short', year: 'numeric' }) : 'Chưa đặt';
 const formatDateTime = (value: string) => new Date(value).toLocaleString('vi-VN');
+const toLocalInput = (value: string | null) => {
+  if (!value) return '';
+  const date = new Date(value);
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
+};
 
 export function TaskDetail({ id }: { id: string }) {
   const [task, setTask] = useState<Task | AncestorTaskSummary | null>(null);
@@ -91,6 +97,11 @@ function DirectTask({ task, parentContext, participants, submissions, members, r
   const [blockFormOpen, setBlockFormOpen] = useState(false);
   const [blockReason, setBlockReason] = useState('');
   const [blockValidation, setBlockValidation] = useState('');
+  const [editFormOpen, setEditFormOpen] = useState(false);
+  const [editTitle, setEditTitle] = useState('');
+  const [editDescription, setEditDescription] = useState('');
+  const [editDeadline, setEditDeadline] = useState('');
+  const [editValidation, setEditValidation] = useState('');
   const [subtaskOpen, setSubtaskOpen] = useState(false);
   const [creatingSubtask, setCreatingSubtask] = useState(false);
   const [subtaskError, setSubtaskError] = useState('');
@@ -123,9 +134,32 @@ function DirectTask({ task, parentContext, participants, submissions, members, r
       const created = await tasksApi.create({ ...input, parent_task_id: task.id });
       const attachments = await uploadTaskAttachments(form, created, currentUserId ?? '');
       setSubtaskOpen(false);
-      setNotice(attachments.skipped ? `Đã tạo sub-task, nhưng ${attachments.skipped} tệp chưa thể tải lên.` : 'Đã tạo sub-task trong công việc này.');
+      setNotice(attachments.skipped ? 'Đã tạo sub-task, nhưng ' + attachments.skipped + ' tệp chưa thể tải lên' + (attachments.error ? ' (' + attachments.error + ').' : '.') : 'Đã tạo sub-task trong công việc này.');
       reload();
     } catch { setSubtaskError('Không thể tạo sub-task. Kiểm tra thông tin và thử lại.'); } finally { setCreatingSubtask(false); }
+  };
+  const openEdit = () => {
+    setEditTitle(task.title);
+    setEditDescription(task.description ?? '');
+    setEditDeadline(toLocalInput(task.deadline));
+    setEditValidation('');
+    setEditFormOpen(true);
+    setActionMenuOpen(false);
+  };
+  const submitEdit = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const title = editTitle.trim();
+    if (!title) { setEditValidation('Tiêu đề không được bỏ trống.'); return; }
+    void act(
+      () => tasksApi.update(task.id, {
+        title,
+        ...(editDescription.trim() ? { description: editDescription.trim() } : { description: null }),
+        ...(editDeadline ? { deadline: new Date(editDeadline).toISOString() } : { deadline: null }),
+      }),
+      'Đã cập nhật thông tin công việc.',
+      'Không thể cập nhật thông tin công việc.',
+      () => { setEditFormOpen(false); setEditTitle(''); setEditDescription(''); setEditDeadline(''); setEditValidation(''); },
+    );
   };
 
   const assignee = members.find(member => member.id === task.assignee_id);
@@ -177,6 +211,24 @@ function DirectTask({ task, parentContext, participants, submissions, members, r
     };
   }, [blockFormOpen]);
 
+  useEffect(() => {
+    if (!editFormOpen) return;
+
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return;
+      setEditFormOpen(false);
+      setEditValidation('');
+    };
+
+    document.addEventListener('keydown', closeOnEscape);
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      document.removeEventListener('keydown', closeOnEscape);
+    };
+  }, [editFormOpen]);
+
   return <section className={styles.page}>
     <div className={styles.drawer}>
       <header className={styles.topBar}>
@@ -195,7 +247,7 @@ function DirectTask({ task, parentContext, participants, submissions, members, r
         </nav>
 
         <header className={styles.taskHeader}>
-          <div className={styles.titleRow}><h1>{task.title}</h1><div className={styles.titleControls}><span className={`${styles.statusBadge} ${styles[taskStatusClass(task.status)]}`}>{task.blocked ? 'Bị chặn' : taskStatusLabel(task.status)}</span>{hasTaskActions && <div className={styles.actionMenuWrap} ref={actionMenuRef}><button className={styles.actionMenuButton} type="button" aria-label="Thao tác" aria-haspopup="menu" aria-expanded={actionMenuOpen} aria-controls={`task-actions-${task.id}`} onClick={() => setActionMenuOpen(open => !open)}><span aria-hidden="true">⋯</span><span>Thao tác</span></button>{actionMenuOpen && <div id={`task-actions-${task.id}`} className={styles.actionMenu} role="menu" aria-label="Thao tác với công việc">{canModifyTask && !task.blocked && !finalState && <button type="button" role="menuitem" onClick={() => { setActionMenuOpen(false); setBlockValidation(''); setBlockFormOpen(true); }}><span aria-hidden="true">⚠</span> Báo cáo vấn đề / Chặn công việc</button>}{canModifyTask && task.blocked && <button type="button" role="menuitem" onClick={() => { setActionMenuOpen(false); void act(() => tasksApi.unblock(task.id), 'Đã bỏ chặn công việc.', 'Không thể bỏ chặn công việc.'); }}><span aria-hidden="true">✓</span> Bỏ chặn công việc</button>}{canCancelTask && !task.blocked && <button type="button" role="menuitem" onClick={cancelTask}><span aria-hidden="true">×</span> Hủy công việc</button>}</div>}</div>}</div></div>
+          <div className={styles.titleRow}><h1>{task.title}</h1><div className={styles.titleControls}><span className={`${styles.statusBadge} ${styles[taskStatusClass(task.status)]}`}>{task.blocked ? 'Bị chặn' : taskStatusLabel(task.status)}</span>{hasTaskActions && <div className={styles.actionMenuWrap} ref={actionMenuRef}><button className={styles.actionMenuButton} type="button" aria-label="Thao tác" aria-haspopup="menu" aria-expanded={actionMenuOpen} aria-controls={`task-actions-${task.id}`} onClick={() => setActionMenuOpen(open => !open)}><span aria-hidden="true">⋯</span><span>Thao tác</span></button>{actionMenuOpen && <div id={`task-actions-${task.id}`} className={styles.actionMenu} role="menu" aria-label="Thao tác với công việc">{isCreator && <button type="button" role="menuitem" onClick={openEdit}><span aria-hidden="true">✎</span> Chỉnh sửa thông tin</button>}{canModifyTask && !task.blocked && !finalState && <button type="button" role="menuitem" onClick={() => { setActionMenuOpen(false); setBlockValidation(''); setBlockFormOpen(true); }}><span aria-hidden="true">⚠</span> Báo cáo vấn đề / Chặn công việc</button>}{canModifyTask && task.blocked && <button type="button" role="menuitem" onClick={() => { setActionMenuOpen(false); void act(() => tasksApi.unblock(task.id), 'Đã bỏ chặn công việc.', 'Không thể bỏ chặn công việc.'); }}><span aria-hidden="true">✓</span> Bỏ chặn công việc</button>}{canCancelTask && !task.blocked && <button type="button" role="menuitem" onClick={cancelTask}><span aria-hidden="true">×</span> Hủy công việc</button>}</div>}</div>}</div></div>
           <p className={styles.taskId}>ID: {task.id}</p>
         </header>
         <TaskProgress
@@ -224,7 +276,7 @@ function DirectTask({ task, parentContext, participants, submissions, members, r
               </div>}
             />
             <TaskPeople task={task} participants={participants} members={members} canManageParticipants={isCreator} addingParticipant={pendingAction} onAddParticipant={participant} />
-            <TaskDocuments task={task} canUpload={isParticipant} />
+            <TaskDocuments task={task} canUpload={isParticipant} members={members} participants={participants} childTasks={task.children} />
             <section className={styles.workflowSection} aria-labelledby="workflow-title">
               <div className={styles.sectionHeading}><div><p className={styles.eyebrow}>Bước tiếp theo</p><h2 id="workflow-title">Xử lý công việc</h2></div><span className={styles.mutedValue}>{nextStep}</span></div>
               {(canSubmit || canReview) ? <div className={styles.workflowGrid}>
@@ -238,6 +290,8 @@ function DirectTask({ task, parentContext, participants, submissions, members, r
         </div>
 
         {blockFormOpen && <div className={styles.blockDialog} role="dialog" aria-modal="true" aria-labelledby={`block-title-${task.id}`} aria-describedby={`block-description-${task.id}`}><form onSubmit={submitBlock}><div className={styles.blockDialogHeader}><div><p className={styles.eyebrow}>Cần thông báo cho mọi người</p><h2 id={`block-title-${task.id}`}>Báo cáo vấn đề / Chặn công việc</h2></div><button type="button" className={styles.dialogClose} aria-label="Đóng biểu mẫu chặn công việc" onClick={() => { setBlockFormOpen(false); setBlockReason(''); setBlockValidation(''); }}>×</button></div><p id={`block-description-${task.id}`}>Công việc sẽ tạm dừng. Hãy ghi rõ lý do để người liên quan biết cần xử lý gì.</p><label htmlFor={`block-reason-${task.id}`}>Lý do</label><textarea id={`block-reason-${task.id}`} value={blockReason} onChange={event => { setBlockReason(event.target.value); setBlockValidation(''); }} placeholder="Ví dụ: Chưa nhận được tài liệu từ khách hàng" aria-invalid={Boolean(blockValidation)} aria-describedby={blockValidation ? `block-validation-${task.id}` : undefined} /><span className={styles.blockHint}>Bắt buộc nhập lý do.</span>{blockValidation && <p id={`block-validation-${task.id}`} className={styles.blockValidation} role="alert">{blockValidation}</p>}<div className={styles.blockDialogActions}><button type="button" className={styles.secondaryButton} onClick={() => { setBlockFormOpen(false); setBlockReason(''); setBlockValidation(''); }}>Hủy</button><button type="submit" className={styles.dangerButton} disabled={pendingAction}>Xác nhận chặn công việc</button></div></form></div>}
+
+        {editFormOpen && <div className={styles.editDialog} role="dialog" aria-modal="true" aria-labelledby={`edit-title-${task.id}`}><form onSubmit={submitEdit}><div className={styles.editDialogHeader}><div><p className={styles.eyebrow}>Chỉ người tạo task được sửa</p><h2 id={`edit-title-${task.id}`}>Chỉnh sửa thông tin công việc</h2></div><button type="button" className={styles.dialogClose} aria-label="Đóng biểu mẫu chỉnh sửa" onClick={() => { setEditFormOpen(false); setEditValidation(''); }}>×</button></div><label htmlFor={`edit-task-title-${task.id}`}>Tiêu đề</label><input id={`edit-task-title-${task.id}`} value={editTitle} onChange={event => { setEditTitle(event.target.value); setEditValidation(''); }} aria-invalid={Boolean(editValidation)} aria-describedby={editValidation ? `edit-validation-${task.id}` : undefined} /><label htmlFor={`edit-task-description-${task.id}`}>Mô tả <span className={styles.optionalLabel}>Tùy chọn</span></label><textarea id={`edit-task-description-${task.id}`} value={editDescription} onChange={event => setEditDescription(event.target.value)} rows={4} placeholder="Bối cảnh, kết quả mong đợi, tiêu chí hoàn thành…" /><label htmlFor={`edit-task-deadline-${task.id}`}>Hạn hoàn thành <span className={styles.optionalLabel}>Bỏ trống để xóa hạn</span></label><input id={`edit-task-deadline-${task.id}`} type="datetime-local" value={editDeadline} onChange={event => setEditDeadline(event.target.value)} />{editValidation && <p id={`edit-validation-${task.id}`} className={styles.editValidation} role="alert">{editValidation}</p>}<div className={styles.editDialogActions}><button type="button" className={styles.secondaryButton} onClick={() => { setEditFormOpen(false); setEditValidation(''); }}>Hủy</button><button type="submit" className={styles.primaryButton} disabled={pendingAction}>{pendingAction ? 'Đang lưu…' : 'Lưu thay đổi'}</button></div></form></div>}
       </main>
     </div>
   </section>;

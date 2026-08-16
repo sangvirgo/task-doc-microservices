@@ -3,7 +3,7 @@
 import { ChangeEvent, FormEvent, useCallback, useEffect, useRef, useState } from 'react';
 import { documentsApi } from '@/api/documents';
 import { DocumentPreview } from '@/features/documents/document-preview';
-import type { Task } from '@/types/task';
+import type { Task, TaskChildSummary } from '@/types/task';
 import type { Participant } from '@/types/task';
 import type { MemberOption } from '@/types/admin';
 import type { TaskDocument } from '@/types/document';
@@ -17,14 +17,14 @@ const permissionLabel: Record<string, string> = { PREVIEW: 'Xem', DOWNLOAD: 'T�
 const isFutureExpiry = (value: string) => new Date(value).getTime() > Date.now();
 const defaultExpiry = () => { const date = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000); const pad = (n: number) => String(n).padStart(2, '0'); return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`; };
 
-export function TaskDocuments({ task, canUpload = false, members = [], participants = [] }: { task: Task; canUpload?: boolean; members?: MemberOption[]; participants?: Participant[] }) {
+export function TaskDocuments({ task, canUpload = false, members = [], participants = [], childTasks = [] }: { task: Task; canUpload?: boolean; members?: MemberOption[]; participants?: Participant[]; childTasks?: TaskChildSummary[] }) {
   const [items, setItems] = useState<TaskDocument[] | null>(null);
   const [loadFailed, setLoadFailed] = useState(false);
   const [status, setStatus] = useState('');
   const [preview, setPreview] = useState<{ documentId: string; version: number }>();
   const [uploading, setUploading] = useState(false);
   const [uploadOpen, setUploadOpen] = useState(false);
-  const [detachingId, setDetachingId] = useState<string>();
+  const [detachingId, setDetachingId] = useState<string>(); const [childTaskId, setChildTaskId] = useState(''); const [sharingToChild, setSharingToChild] = useState(false);
   const [shareFor, setShareFor] = useState<TaskDocument>();
   const [shareActorId, setShareActorId] = useState('');
   const [sharePermissions, setSharePermissions] = useState<string[]>(['PREVIEW', 'DOWNLOAD']);
@@ -71,12 +71,12 @@ export function TaskDocuments({ task, canUpload = false, members = [], participa
   };
   const detachDocument = async (item: TaskDocument) => {
     if (detachingId) return;
-    if (!window.confirm('Detach this document from the task?')) return;
+    if (!window.confirm('Xóa tài liệu khỏi task này?')) return;
     setDetachingId(item.document_id);
-    setStatus('Detaching document…');
+    setStatus('Đang xóa tài liệu khỏi task…');
     try {
       await documentsApi.detachFromTask(task.id, item.document_id);
-      setStatus('Document detached from this task.');
+      setStatus('Đã xóa tài liệu khỏi task.');
       await load();
     } catch {
       setStatus('Không thể detach tài liệu. Kiểm tra quyền task và thử lại.');
@@ -85,6 +85,7 @@ export function TaskDocuments({ task, canUpload = false, members = [], participa
     }
   };
 
+  const shareToChild = async (item: TaskDocument) => { const child = childTasks.find(candidate => candidate.id === childTaskId); if (!child) { setStatus('Chọn sub-task trước khi gắn tài liệu.'); return; } const actorIds = Array.from(new Set([child.creator_id, child.assignee_id, child.reviewer_id].filter((value): value is string => Boolean(value)))); if (actorIds.length === 0) { setStatus('Sub-task chưa có người nhận quyền.'); return; } const expiresAt = child.deadline && new Date(child.deadline).getTime() > Date.now() ? child.deadline : new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(); setSharingToChild(true); setStatus('Đang gắn tài liệu vào sub-task…'); try { await documentsApi.attachToTask(child.id, item.document_id, actorIds.map(actor_id => ({ actor_id, permissions: ['PREVIEW', 'DOWNLOAD'], expires_at: expiresAt }))); setStatus('Đã gắn tài liệu vào sub-task.'); setChildTaskId(''); } catch (reason) { setStatus(reason instanceof GatewayError ? 'Không thể gắn tài liệu (' + reason.status + '). Kiểm tra quyền SHARE và thành viên sub-task.' : 'Không thể gắn tài liệu vào sub-task.'); } finally { setSharingToChild(false); } };
   const uploadDocument = async (event: ChangeEvent<HTMLFormElement>) => {
     event.preventDefault();
     const form = event.currentTarget;
@@ -180,7 +181,7 @@ export function TaskDocuments({ task, canUpload = false, members = [], participa
     {status && <p className={styles.status} role="status">{status}</p>}
     {preview && <DocumentPreview documentId={preview.documentId} version={preview.version} taskId={task.id} onClose={() => setPreview(undefined)} />}
     {loadFailed ? <div className={styles.loadError} role="alert"><span aria-hidden="true">!</span><div><strong>Không tải được tài liệu</strong><p>Đây là lỗi tải dữ liệu, không phải trạng thái “0 tệp”. Hãy thử tải lại.</p></div><button type="button" onClick={() => void load()}>Tải lại</button></div> : <div className={styles.documentGrid}>
-      {items?.map(item => <article className={styles.documentCard} key={item.association_id}><span className={styles.documentIcon}>▧</span><div>{item.permissions.includes('PREVIEW') ? <button type="button" className={styles.documentTitle} onClick={() => openPreview(item)}>{item.title}</button> : <strong className={styles.documentTitleDisabled}>{item.title}</strong>}<small>{item.document_type} · v{item.current_version}</small></div><span className={styles.security}>{item.security_level}</span><footer className={styles.documentFooter} role="group" aria-label={`Thao tác với tệp ${item.title}`}><span>{item.permissions.join(' · ')}</span><div className={styles.documentActions}>{item.permissions.includes('PREVIEW') && <button type="button" onClick={() => openPreview(item)}>Xem trước</button>}<button type="button" className={styles.downloadButton} disabled={!item.permissions.includes('DOWNLOAD')} title={!item.permissions.includes('DOWNLOAD') ? 'Bạn không có quyền DOWNLOAD' : undefined} onClick={() => void downloadDocument(item)}>Tải xuống</button>{canUpload && <button type="button" className={styles.shareButton} onClick={() => openShare(item)}>Chia sẻ quyền</button>}{item.permissions.includes('SHARE') && <button type="button" className={styles.detachButton} disabled={detachingId === item.document_id} onClick={() => void detachDocument(item)}>Detach</button>}{!item.permissions.includes('PREVIEW') && !item.permissions.includes('DOWNLOAD') && <span className={styles.noAction}>Bạn không có quyền thao tác</span>}</div></footer></article>)}
+      {items?.map(item => <article className={styles.documentCard} key={item.association_id}><span className={styles.documentIcon}>▧</span><div>{item.permissions.includes('PREVIEW') ? <button type="button" className={styles.documentTitle} onClick={() => openPreview(item)}>{item.title}</button> : <strong className={styles.documentTitleDisabled}>{item.title}</strong>}<small>{item.document_type} · v{item.current_version}</small></div><span className={styles.security}>{item.security_level}</span>{item.permissions.includes("SHARE") && childTasks.length > 0 && <div className={styles.childShare}><label>Gắn vào sub-task<select value={childTaskId} onChange={event => setChildTaskId(event.target.value)}><option value="">Chọn sub-task</option>{childTasks.map(child => <option key={child.id} value={child.id}>{child.title}</option>)}</select></label><button type="button" disabled={!childTaskId || sharingToChild} onClick={() => void shareToChild(item)}>{sharingToChild ? "Đang gắn…" : "Gắn vào sub-task"}</button></div>}<footer className={styles.documentFooter} role="group" aria-label={`Thao tác với tệp ${item.title}`}><span>{item.permissions.join(' · ')}</span><div className={styles.documentActions}>{item.permissions.includes('PREVIEW') && <button type="button" onClick={() => openPreview(item)}>Xem trước</button>}<button type="button" className={styles.downloadButton} disabled={!item.permissions.includes('DOWNLOAD')} title={!item.permissions.includes('DOWNLOAD') ? 'Bạn không có quyền DOWNLOAD' : undefined} onClick={() => void downloadDocument(item)}>Tải xuống</button>{item.permissions.includes("SHARE") && <button type="button" className={styles.shareButton} onClick={() => openShare(item)}>Chia sẻ quyền</button>}{item.permissions.includes('SHARE') && <button type="button" className={styles.detachButton} disabled={detachingId === item.document_id} onClick={() => void detachDocument(item)}>Xóa khỏi task</button>}{!item.permissions.includes('PREVIEW') && !item.permissions.includes('DOWNLOAD') && <span className={styles.noAction}>Bạn không có quyền thao tác</span>}</div></footer></article>)}
       {items?.length === 0 && <p className={styles.empty}>Chưa có tài liệu nào được gắn vào công việc này.</p>}
       {items === null && <p className={styles.empty}>Đang tải tài liệu…</p>}
     </div>}

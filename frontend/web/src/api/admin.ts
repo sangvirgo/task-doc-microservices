@@ -88,6 +88,8 @@ export const adminApi = {
   alerts: () => gatewayClient.getList<SecurityAlert>('/monitoring/alerts'),
   resolveAlert: (id: string, resolved_by: string) => gatewayClient.post<SecurityAlert>(`/monitoring/alerts/${encodeURIComponent(id)}/resolve`, { resolved_by }),
   rules: () => gatewayClient.getList<SecurityRule>('/monitoring/rules'),
-  createRule: (input: { name: string; description?: string; rule_type: string; threshold?: number; window_minutes?: number; action?: 'ALERT' | 'BLOCK' }) => gatewayClient.post<SecurityRule>('/monitoring/rules', input),
+  createRule: (input: { name: string; description?: string; rule_type: string; threshold?: number; window_minutes?: number; action?: 'ALERT' | 'BLOCK'; send_alert_email?: boolean }) => gatewayClient.post<SecurityRule>('/monitoring/rules', input),
   toggleRule: (id: string, enabled: boolean) => gatewayClient.put<SecurityRule>(`/monitoring/rules/${encodeURIComponent(id)}/toggle`, { enabled }),
+  setRuleEmail: (id: string, send_alert_email: boolean) => gatewayClient.put<SecurityRule>(`/monitoring/rules/${encodeURIComponent(id)}/email`, { send_alert_email }),
+  deleteRule: (id: string) => gatewayClient.delete<void>('/monitoring/rules/' + encodeURIComponent(id)),
 };

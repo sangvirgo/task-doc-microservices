@@ -1,6 +1,7 @@
 import {
   BadRequestException,
   Body,
+  Delete,
   Controller,
   ForbiddenException,
   Get,
@@ -34,6 +35,7 @@ const createRuleSchema = z.object({
   threshold: z.number().int().positive().optional(),
   window_minutes: z.number().int().positive().optional(),
   action: z.enum(['ALERT', 'BLOCK']).optional(),
+  send_alert_email: z.boolean().optional(),
 });
 
 const resolveAlertSchema = z.object({
@@ -42,6 +44,10 @@ const resolveAlertSchema = z.object({
 
 const toggleRuleSchema = z.object({
   enabled: z.boolean(),
+});
+
+const setRuleEmailSchema = z.object({
+  send_alert_email: z.boolean(),
 });
 
 @ApiTags('monitoring')
@@ -157,5 +163,25 @@ export class MonitoringController {
     if (!parsed.success) throw new BadRequestException(parsed.error.issues);
     this.requireAdmin(user as AuthContext);
     return this.monitoringService.toggleRule(id, parsed.data.enabled);
+  }
+
+  @Put('rules/:id/email')
+  @ApiOperation({ summary: 'Enable or disable alert email notifications for a rule' })
+  async setRuleEmail(
+    @Param('id') id: string,
+    @Body() body: z.infer<typeof setRuleEmailSchema>,
+    @CurrentUser() user?: AuthContext,
+  ): Promise<SecurityRuleDto> {
+    const parsed = setRuleEmailSchema.safeParse(body);
+    if (!parsed.success) throw new BadRequestException(parsed.error.issues);
+    this.requireAdmin(user as AuthContext);
+    return this.monitoringService.setRuleEmail(id, parsed.data.send_alert_email);
+  }
+  @Delete("rules/:id")
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @ApiOperation({ summary: "Delete a security rule" })
+  async deleteRule(@Param("id") id: string, @CurrentUser() user?: AuthContext): Promise<void> {
+    this.requireAdmin(user as AuthContext);
+    await this.monitoringService.deleteRule(id);
   }
 }

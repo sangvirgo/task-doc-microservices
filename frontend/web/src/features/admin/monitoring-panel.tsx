@@ -15,6 +15,7 @@ const ruleTypeOptions: Array<{ value: string; label: string }> = [
 ];
 const ruleTypeLabel: Record<string, string> = Object.fromEntries(ruleTypeOptions.map(option => [option.value, option.label]));
 
+const ruleDisplayName = (rule: SecurityRule) => rule.name.startsWith('Failed Login Alert ') ? 'Cảnh báo đăng nhập thất bại' : rule.name.startsWith('Failed Login Block ') ? 'Chặn đăng nhập thất bại' : rule.name;
 export function MonitoringPanel() {
   const session = readSession();
   const [rules, setRules] = useState<SecurityRule[] | null>(null);
@@ -46,7 +47,7 @@ export function MonitoringPanel() {
   const exportRules = () => downloadCSV(`c17-monitoring-rules-${dateKey()}.csv`, [
     ['Tên quy tắc', 'Loại sự kiện', 'Ngưỡng', 'Cửa sổ (phút)', 'Hành động', 'Trạng thái', 'ID quy tắc'],
     ...rules.map(rule => [
-      rule.name,
+      ruleDisplayName(rule),
       ruleTypeLabel[rule.rule_type] ?? rule.rule_type,
       rule.threshold,
       rule.window_minutes,
@@ -77,6 +78,7 @@ export function MonitoringPanel() {
       threshold: Number(form.get('threshold')),
       window_minutes: Number(form.get('window_minutes')),
       action: String(form.get('action')) as 'ALERT' | 'BLOCK',
+      send_alert_email: form.get('send_alert_email') === 'on',
     }), 'Đã tạo quy tắc giám sát.');
   };
 
@@ -113,6 +115,7 @@ export function MonitoringPanel() {
           <label>Loại sự kiện<select name="rule_type" defaultValue="FAILED_LOGIN">{ruleTypeOptions.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}</select></label>
           <div className={styles.formRow}><label>Ngưỡng<input name="threshold" type="number" min="1" defaultValue="5" required /></label><label>Cửa sổ thời gian<input name="window_minutes" type="number" min="1" defaultValue="15" required /></label></div>
           <label>Hành động<select name="action" defaultValue="ALERT"><option value="ALERT">Ghi nhận cảnh báo</option><option value="BLOCK">Chặn truy cập</option></select></label>
+          <label className={styles.checkField}><input name="send_alert_email" type="checkbox" defaultChecked /> Gửi mail cảnh báo cho quản trị viên</label>
           <label>Mô tả <span>Tùy chọn</span><textarea name="description" rows={3} placeholder="Mô tả khi nào quy tắc này được áp dụng…" /></label>
           <button className={styles.primaryAction} type="submit">+ Tạo quy tắc</button>
         </form>
@@ -120,7 +123,7 @@ export function MonitoringPanel() {
 
       <section className={styles.adminPanel}>
         <div className={styles.panelHeader}><div><span className={styles.panelEyebrow}>ĐANG ÁP DỤNG</span><h2>Quy tắc bảo mật</h2></div><span className={styles.countBadge}>{rules.length}</span></div>
-        {rules.length === 0 ? <EmptyState title="Chưa có quy tắc">Tạo quy tắc đầu tiên để bắt đầu theo dõi.</EmptyState> : <div className={styles.ruleList}>{rules.map(rule => <article className={styles.ruleRow} key={rule.id}><span className={styles.ruleIcon}>{rule.action === 'BLOCK' ? '!' : '◉'}</span><div><strong>{rule.name}</strong><small>{ruleTypeLabel[rule.rule_type] ?? rule.rule_type} · Ngưỡng {rule.threshold} trong {rule.window_minutes} phút</small></div><div className={styles.ruleActions}><span className={rule.enabled ? styles.enabledChip : styles.disabledChip}>{rule.enabled ? 'Đang bật' : 'Đã tắt'}</span><button type="button" onClick={() => void change(() => adminApi.toggleRule(rule.id, !rule.enabled), rule.enabled ? 'Đã tắt quy tắc.' : 'Đã bật quy tắc.')}>{rule.enabled ? 'Tắt' : 'Bật'}</button></div></article>)}</div>}
+        {rules.length === 0 ? <EmptyState title="Chưa có quy tắc">Tạo quy tắc đầu tiên để bắt đầu theo dõi.</EmptyState> : <div className={styles.ruleList}>{rules.map(rule => <article className={styles.ruleRow} key={rule.id}><span className={styles.ruleIcon}>{rule.action === 'BLOCK' ? '!' : '◉'}</span><div><strong>{ruleDisplayName(rule)}</strong><small>{ruleTypeLabel[rule.rule_type] ?? rule.rule_type} · Ngưỡng {rule.threshold} trong {rule.window_minutes} phút</small></div><div className={styles.ruleActions}><span className={rule.enabled ? styles.enabledChip : styles.disabledChip}>{rule.enabled ? 'Đang bật' : 'Đã tắt'}</span><span className={rule.send_alert_email ? styles.enabledChip : styles.disabledChip}>{rule.send_alert_email ? 'Mail cảnh báo' : 'Không gửi mail'}</span><button type="button" onClick={() => void change(() => adminApi.setRuleEmail(rule.id, !rule.send_alert_email), rule.send_alert_email ? 'Đã tắt gửi mail cảnh báo.' : 'Đã bật gửi mail cảnh báo.')}>{rule.send_alert_email ? 'Tắt mail' : 'Bật mail'}</button><button type="button" onClick={() => void change(() => adminApi.toggleRule(rule.id, !rule.enabled), rule.enabled ? 'Đã tắt quy tắc.' : 'Đã bật quy tắc.')}>{rule.enabled ? 'Tắt' : 'Bật'}</button><button type="button" className={styles.deleteButton} onClick={() => { if (window.confirm("Xóa quy tắc này?")) void change(() => adminApi.deleteRule(rule.id), "Đã xóa quy tắc."); }}>Xóa</button></div></article>)}</div>}
       </section>
     </div>
 

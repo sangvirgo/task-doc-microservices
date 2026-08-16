@@ -75,9 +75,9 @@ export function DocumentPreview({
   if (status === 'error') {
     return (
       <section className={styles.previewPanel} role="alert">
-        <h2>Preview unavailable</h2>
+        <h2>Không thể xem trước</h2>
         <p>{errorMessage}</p>
-        {onClose && <button onClick={onClose}>Close preview</button>}
+        {onClose && <button onClick={onClose}>Đóng xem trước</button>}
       </section>
     );
   }
@@ -90,20 +90,20 @@ export function DocumentPreview({
     >
       <header className={styles.previewHeader}>
         <div>
-          <h2>{session?.title || 'Secure preview'}</h2>
-          <p>Pages are rendered server-side. Original file download is disabled.</p>
+          <h2>{session?.title || 'Xem trước an toàn'}</h2>
+          <p>Các trang được render và đóng watermark trên server. File gốc không được phát trong luồng xem trước.</p>
         </div>
-        {onClose && <button onClick={onClose}>Close preview</button>}
+        {onClose && <button onClick={onClose}>Đóng xem trước</button>}
       </header>
-      <div className={styles.previewWarning} aria-label="Preview only warning">
-        PREVIEW ONLY — NO DOWNLOAD
+      <div className={styles.previewWarning} aria-label="Cảnh báo chỉ xem trước">
+        CHỈ XEM TRƯỚC — KHÔNG TẢI FILE GỐC
       </div>
-      {status === 'loading' && <p role="status">Preparing watermarked pages…</p>}
+      {status === 'loading' && <p role="status">Đang chuẩn bị các trang có watermark…</p>}
       <div className={styles.previewPages}>
         {pages.map(({ page, url }) => (
           <figure className={styles.previewPage} key={page}>
-            <img src={url} alt={`Preview page ${page}`} draggable={false} />
-            <figcaption>PREVIEW ONLY · page {page}</figcaption>
+            <img src={url} alt={'Trang xem trước ' + page} draggable={false} />
+            <figcaption>CHỈ XEM TRƯỚC · trang {page}</figcaption>
           </figure>
         ))}
       </div>
@@ -113,9 +113,9 @@ export function DocumentPreview({
 
 function previewErrorMessage(reason: unknown): string {
   if (reason instanceof GatewayError) {
-    if (reason.status === 403) return 'Your preview permission has expired or was revoked.';
-    if (reason.status === 422) return 'This file cannot be rendered safely for preview.';
-    if (reason.status === 429) return 'Too many preview requests. Please try again later.';
+    if (reason.status === 403) return 'Quyền xem trước đã hết hạn hoặc đã bị thu hồi.';
+    if (reason.status === 422) return 'File này không thể được render an toàn để xem trước.';
+    if (reason.status === 429) return 'Có quá nhiều yêu cầu xem trước. Hãy thử lại sau.';
   }
-  return 'The secure preview could not be prepared.';
+  return 'Không thể chuẩn bị bản xem trước an toàn. Hãy thử lại sau.';
 }

@@ -72,11 +72,11 @@ export class NotificationEventsConsumer implements OnModuleInit, OnApplicationSh
             email: false,
           },
           notificationType: 'TASK_ASSIGNED',
-          title: 'Task assigned',
+          title: 'Được giao công việc',
           body:
             typeof event.payload.title === 'string'
-              ? `You were assigned task "${event.payload.title}".`
-              : 'You were assigned a task.',
+              ? `Bạn được giao công việc "${event.payload.title}".`
+              : 'Bạn được giao một công việc.',
           metadata: {
             task_id: event.resource_id,
             correlation_id: event.correlation_id,
@@ -105,11 +105,11 @@ export class NotificationEventsConsumer implements OnModuleInit, OnApplicationSh
             email: true,
           },
           notificationType: 'SECURITY_SESSION_REVOKED',
-          title: 'Session revoked',
+          title: 'Phiên đăng nhập đã bị thu hồi',
           body:
             event.payload.reason_code === 'SECURITY_LOCK'
-              ? 'Your active sessions were revoked due to a security lock.'
-              : 'Your session was revoked.',
+              ? 'Các phiên đăng nhập đang hoạt động đã bị thu hồi do tài khoản bị khóa an toàn.'
+              : 'Phiên đăng nhập của bạn đã bị thu hồi.',
           metadata: {
             correlation_id: event.correlation_id,
             reason_code:
@@ -139,8 +139,8 @@ export class NotificationEventsConsumer implements OnModuleInit, OnApplicationSh
             email: true,
           },
           notificationType: 'SECURITY_ALERT',
-          title: 'Security alert',
-          body: 'A security alert was raised on your account activity.',
+          title: 'Cảnh báo an toàn',
+          body: 'Hoạt động tài khoản của bạn đã phát sinh cảnh báo an toàn.',
           metadata: {
             correlation_id: event.correlation_id,
             severity: typeof event.payload.severity === 'string' ? event.payload.severity : null,
@@ -149,8 +149,8 @@ export class NotificationEventsConsumer implements OnModuleInit, OnApplicationSh
           },
         });
 
-        // HIGH severity alerts (e.g. repeated failed logins, brute force) also page every admin.
-        if (created && event.payload.severity === 'HIGH') {
+        // HIGH severity alerts page every admin unless the rule disabled alert emails.
+        if (created && event.payload.severity === 'HIGH' && event.payload.notify_admins !== false) {
           await this.emailSecurityAlertToAdmins(event);
         }
       },
@@ -176,8 +176,8 @@ export class NotificationEventsConsumer implements OnModuleInit, OnApplicationSh
             email: true,
           },
           notificationType: 'GRANT_EXPIRED',
-          title: 'Document access expired',
-          body: 'A document access grant has expired.',
+          title: 'Quyền truy cập tài liệu đã hết hạn',
+          body: 'Một quyền truy cập tài liệu đã hết hạn.',
           metadata: {
             correlation_id: event.correlation_id,
             grant_id: typeof event.payload.grant_id === 'string' ? event.payload.grant_id : null,
@@ -208,11 +208,11 @@ export class NotificationEventsConsumer implements OnModuleInit, OnApplicationSh
             typeof event.payload.reviewer_id === 'string' ? event.payload.reviewer_id : null,
           channels: { inApp: true, email: false },
           notificationType: 'TASK_SUBMITTED_FOR_REVIEW',
-          title: 'Task submission needs review',
+          title: 'Bài nộp công việc cần được duyệt',
           body:
             typeof event.payload.title === 'string'
-              ? `A submission for task "${event.payload.title}" is ready for your review.`
-              : 'A task submission is ready for your review.',
+              ? `Bài nộp cho công việc "${event.payload.title}" đang chờ bạn duyệt.`
+              : 'A task submission đang chờ bạn duyệt.',
           metadata: {
             task_id: typeof event.payload.task_id === 'string' ? event.payload.task_id : null,
             submission_id:

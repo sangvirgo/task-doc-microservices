@@ -114,8 +114,14 @@
 .revision strong { font-weight: 700; }
 
 .terminal {
-  border-color: #efc7c2;
+  border-color: #efb8b4;
+  background: #fff7f7;
+  color: #5d1e21;
 }
+
+.terminal .eyebrow { color: #9a3b37; }
+.terminal .heading h2 { color: #5d1e21; }
+.terminal .supporting { color: #6b2a2a; }
 
 .terminalMark {
   display: grid;

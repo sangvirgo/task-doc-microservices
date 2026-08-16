@@ -4,6 +4,8 @@ export interface AuditEventMetadata {
   occurred_at: string;
   resource_type: string;
   sequence_number: number;
+  actor_id?: string | null;
+  resource_id?: string;
 }
 
 export interface AuditChainHead {

@@ -144,10 +144,15 @@ services:
       NOTIFICATION_SERVICE_URL: http://notification-service:3008
       SECURITY_MONITORING_SERVICE_URL: http://security-monitoring-service:3009
       GATEWAY_TIMEOUT_MS: ${GATEWAY_TIMEOUT_MS:-10000}
-      GATEWAY_PREVIEW_TIMEOUT_MS: ${GATEWAY_PREVIEW_TIMEOUT_MS:-120000}
+      GATEWAY_PREVIEW_TIMEOUT_MS: ${GATEWAY_PREVIEW_TIMEOUT_MS:-300000}
       STATISTICS_CACHE_TTL_MS: ${STATISTICS_CACHE_TTL_MS:-30000}
       STATISTICS_CACHE_MAX_ENTRIES: ${STATISTICS_CACHE_MAX_ENTRIES:-200}
       CORS_ORIGINS: "${CORS_ORIGINS:-http://13.229.104.126:3100,http://localhost:3001,http://localhost:3100}"
+      MINIO_ENDPOINT: ${MINIO_ENDPOINT:-minio}
+      MINIO_PORT: ${MINIO_PORT:-9000}
+      MINIO_ACCESS_KEY: ${MINIO_ACCESS_KEY:-minioadmin}
+      MINIO_SECRET_KEY: ${MINIO_SECRET_KEY:-minioadmin}
+      MINIO_USE_SSL: ${MINIO_USE_SSL:-false}
     depends_on:
       authentication-identity-service:
         condition: service_healthy
@@ -272,7 +277,8 @@ services:
       TASK_LOOKUP_TIMEOUT_MS: ${TASK_LOOKUP_TIMEOUT_MS:-2000}
       AUDIT_TIMEOUT_MS: ${AUDIT_TIMEOUT_MS:-2000}
       SECURITY_TIMEOUT_MS: ${SECURITY_TIMEOUT_MS:-5000}
-      PREVIEW_TIMEOUT_MS: ${PREVIEW_TIMEOUT_MS:-90000}
+      SECURITY_UPLOAD_TIMEOUT_MS: ${SECURITY_UPLOAD_TIMEOUT_MS:-120000}
+      PREVIEW_TIMEOUT_MS: ${PREVIEW_TIMEOUT_MS:-240000}
     depends_on:
       <<: *rabbitmq-dependency
       postgres:
@@ -309,6 +315,10 @@ services:
       CLAMAV_HOST: clamav
       CLAMAV_PORT: 3310
       CLAMAV_TIMEOUT_MS: ${CLAMAV_TIMEOUT_MS:-10000}
+      PREVIEW_RENDER_TIMEOUT_MS: ${PREVIEW_RENDER_TIMEOUT_MS:-180000}
+      PREVIEW_MAX_INPUT_BYTES: ${PREVIEW_MAX_INPUT_BYTES:-26214400}
+      PREVIEW_MAX_PAGES: ${PREVIEW_MAX_PAGES:-200}
+      PREVIEW_MAX_DIMENSION: ${PREVIEW_MAX_DIMENSION:-2400}
       DOCUMENT_ACTIVE_KEK_VERSION: ${DOCUMENT_ACTIVE_KEK_VERSION:-1}
       DOCUMENT_KEK_V1: ${DOCUMENT_KEK_V1:-replace-me-local-only}
       DOCUMENT_SIGNATURE_KEY: ${DOCUMENT_SIGNATURE_KEY:-replace-me-local-only}
@@ -406,6 +416,7 @@ services:
     environment:
       <<: *service-env
       PORT: 3009
+      AUTHENTICATION_IDENTITY_SERVICE_URL: http://authentication-identity-service:3001
       SECURITY_MONITORING_DATABASE_URL: postgresql://${POSTGRES_USER:-c17}:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}@postgres:5432/security_monitoring_db
     depends_on:
       <<: *rabbitmq-dependency
@@ -425,12 +436,12 @@ services:
         NEXT_PUBLIC_API_BASE_URL: http://api-gateway:3000
     environment:
       NEXT_PUBLIC_API_BASE_URL: http://api-gateway:3000
-      NEXT_PUBLIC_APP_ENV: development
+      NEXT_PUBLIC_APP_ENV: production
     depends_on:
       api-gateway:
         condition: service_healthy
     ports:
-      - '3100:3000'
+      - '80:3000'
 
 volumes:
   postgres-data:
