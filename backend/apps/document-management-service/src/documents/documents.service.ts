@@ -503,6 +503,18 @@ export class DocumentsService {
     return this.previewSessionToRecord(session);
   }
 
+  async updatePreviewSessionPageCount(
+    sessionId: string,
+    pageCount: number,
+  ): Promise<PreviewSessionRecord> {
+    const session = await this.getPreviewSession(sessionId);
+    const updated = await this.prisma.previewSession.update({
+      where: { id: sessionId },
+      data: { page_count: Math.max(session.page_count, pageCount), last_used_at: new Date() },
+    });
+    return this.previewSessionToRecord(updated);
+  }
+
   async markPreviewPageRequested(data: {
     session_id: string;
     document_id: string;

@@ -113,12 +113,14 @@ function parsePagination(page?: string, page_size?: string): PaginationQuery {
   if (!parsed.success) throw new BadRequestException(parsed.error.issues);
   return parsed.data;
 }
-const MAX_UPLOAD_BYTES = Number(process.env.DOCUMENT_UPLOAD_MAX_BYTES || 25 * 1024 * 1024);
+const MAX_UPLOAD_BYTES = Number(process.env.DOCUMENT_UPLOAD_MAX_BYTES || 5 * 1024 * 1024);
 const MAX_UPLOAD_FILES = Number(process.env.DOCUMENT_UPLOAD_MAX_FILES || 10);
+const PREVIEW_INITIAL_PAGES = Number(process.env.PREVIEW_INITIAL_PAGES || 10);
+const PREVIEW_EXTEND_PAGES = Number(process.env.PREVIEW_EXTEND_PAGES || 10);
 const ALLOWED_UPLOAD_MIME_TYPES = new Set(
   (
     process.env.DOCUMENT_ALLOWED_MIME_TYPES ||
-    'application/pdf,text/plain,application/octet-stream,image/png,image/jpeg,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+    'application/pdf,text/plain,application/octet-stream,image/png,image/jpeg,image/gif,image/webp,image/bmp,image/tiff,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-powerpoint,application/vnd.openxmlformats-officedocument.presentationml.presentation,text/csv,application/rtf,text/rtf,application/zip,application/x-rar-compressed,application/x-7z-compressed'
   )
     .split(',')
     .map((value) => value.trim())
@@ -618,6 +620,7 @@ export class DocumentsController {
       version: versionNum,
       actor_label: formatPreviewActorLabel(user),
       session_id: sessionId,
+      max_pages: PREVIEW_INITIAL_PAGES,
     });
     if (!securityPreview) {
       throw new ServiceUnavailableException('Document preview renderer is unavailable');
@@ -659,10 +662,72 @@ export class DocumentsController {
       document_id: session.document_id,
       version: session.version,
       page_count: session.page_count,
+      total_pages: securityPreview.total_pages,
       mime_type: session.mime_type,
       expires_at: session.expires_at,
       capabilities: { preview: true, download: downloadDecision.decision.allowed },
       title: document.title,
+    };
+  }
+
+  @Post(':id/versions/:version/preview-session/:sessionId/pages')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Render additional pages for an existing preview session' })
+  async extendPreviewSession(
+    @Param('id') documentId: string,
+    @Param('version') version: string,
+    @Param('sessionId') sessionId: string,
+    @Body() body: { to_page?: unknown },
+    @CurrentUser() user?: AuthContext,
+  ) {
+    if (!user) throw new ForbiddenException('Authentication required');
+    const versionNum = parseInt(version, 10);
+    if (isNaN(versionNum) || versionNum < 1)
+      throw new BadRequestException('Invalid version number');
+
+    const parsedToPage = z.coerce.number().int().positive().safeParse(body?.to_page);
+    if (!parsedToPage.success) throw new BadRequestException('Invalid target page');
+
+    const session = await this.documentsService.getPreviewSession(sessionId);
+    if (
+      session.document_id !== documentId ||
+      session.version !== versionNum ||
+      session.actor_id !== user.userId
+    ) {
+      throw new ForbiddenException('Preview session access denied');
+    }
+
+    const { decision } = await this.checkDocumentPermission(
+      documentId,
+      user,
+      PermissionAction.PREVIEW,
+      session.task_id ?? undefined,
+    );
+    if (!decision.allowed) throw new ForbiddenException('Document preview permission revoked');
+
+    const startPage = session.page_count + 1;
+    const toPage = Math.min(parsedToPage.data, startPage + PREVIEW_EXTEND_PAGES - 1);
+    if (toPage < startPage) {
+      return { page_count: session.page_count, total_pages: session.page_count };
+    }
+
+    const extended = await this.securityClient.extendPreview(
+      session.security_preview_id,
+      startPage,
+      toPage,
+    );
+    if (!extended) {
+      throw new ServiceUnavailableException('Document preview renderer is unavailable');
+    }
+
+    const updated = await this.documentsService.updatePreviewSessionPageCount(
+      sessionId,
+      extended.page_count,
+    );
+
+    return {
+      page_count: updated.page_count,
+      total_pages: extended.total_pages,
     };
   }
 

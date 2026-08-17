@@ -69,6 +69,7 @@ export interface DecryptedDownloadArtifact {
 export interface PreviewPreparationResult {
   preview_id: string;
   page_count: number;
+  total_pages: number;
   mime_type: 'image/png';
   expires_at: string;
 }
@@ -81,9 +82,17 @@ export interface PreviewPageArtifact {
 interface StoredPreview {
   expiresAt: number;
   pages: Buffer[];
+  totalPages: number;
+  documentId: string;
+  version: number;
+  actorLabel: string;
+  sessionId: string;
+  mimeType: 'image/png';
 }
 
 const DEFAULT_PAGINATION: PaginationQuery = { page: 1, page_size: 20 };
+
+const PREVIEW_INITIAL_PAGES = Number(process.env.PREVIEW_INITIAL_PAGES || 10);
 
 interface EncryptionMaterial {
   checksum: string;
@@ -98,6 +107,7 @@ interface EncryptionMaterial {
 @Injectable()
 export class SecurityPipelineService {
   private readonly previews = new Map<string, StoredPreview>();
+  private readonly previewMaxPages = Number(process.env.PREVIEW_MAX_PAGES || 200);
 
   constructor(
     private readonly prisma: DocumentSecurityPrismaService,
@@ -375,6 +385,7 @@ export class SecurityPipelineService {
     version: number;
     actor_label: string;
     session_id: string;
+    max_pages?: number;
   }): Promise<PreviewPreparationResult> {
     this.removeExpiredPreviews();
     const record = await this.prisma.encryptionRecord.findUnique({
@@ -397,16 +408,73 @@ export class SecurityPipelineService {
         renderedAt: new Date(),
         page: 1,
       },
+      pageRange: {
+        start: 1,
+        end: Math.min(data.max_pages ?? PREVIEW_INITIAL_PAGES, this.previewMaxPages),
+      },
     } satisfies PreviewRenderRequest);
     const previewId = randomUUID();
     const expiresAt = Date.now() + 5 * 60 * 1000;
-    this.previews.set(previewId, { expiresAt, pages: rendered.pages });
+    this.previews.set(previewId, {
+      expiresAt,
+      pages: rendered.pages,
+      totalPages: rendered.totalPages,
+      documentId: data.document_id,
+      version: data.version,
+      actorLabel: data.actor_label,
+      sessionId: data.session_id,
+      mimeType: rendered.mimeType,
+    });
 
     return {
       preview_id: previewId,
       page_count: rendered.pages.length,
+      total_pages: rendered.totalPages,
       mime_type: rendered.mimeType,
       expires_at: new Date(expiresAt).toISOString(),
+    };
+  }
+
+  async extendPreview(
+    previewId: string,
+    startPage: number,
+    endPage: number,
+  ): Promise<PreviewPreparationResult> {
+    this.removeExpiredPreviews();
+    const preview = this.previews.get(previewId);
+    if (!preview) throw new ForbiddenException('Preview session is expired or revoked');
+    if (startPage < 1 || endPage < startPage) {
+      throw new BadRequestException('Invalid preview page range');
+    }
+
+    const content = await this.decryptDocumentVersionToBuffer(preview.documentId, preview.version);
+    const rendered = await this.previewRenderer.render({
+      content,
+      mimeType: preview.mimeType,
+      watermark: {
+        actorLabel: preview.actorLabel,
+        documentId: preview.documentId,
+        version: preview.version,
+        sessionId: preview.sessionId,
+        renderedAt: new Date(),
+        page: startPage,
+      },
+      pageRange: { start: startPage, end: Math.min(endPage, this.previewMaxPages) },
+    } satisfies PreviewRenderRequest);
+
+    const pages = [...preview.pages];
+    rendered.pages.forEach((pageBytes, index) => {
+      pages[rendered.firstPage - 1 + index] = pageBytes;
+    });
+    preview.pages = pages;
+    preview.totalPages = rendered.totalPages;
+
+    return {
+      preview_id: previewId,
+      page_count: pages.length,
+      total_pages: rendered.totalPages,
+      mime_type: rendered.mimeType,
+      expires_at: new Date(preview.expiresAt).toISOString(),
     };
   }
 

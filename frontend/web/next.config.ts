@@ -10,6 +10,12 @@ export default function nextConfig(phase: string): NextConfig {
     distDir: phase === PHASE_DEVELOPMENT_SERVER ? '.next-dev' : '.next',
     allowedDevOrigins: ['127.0.0.1', '13.229.104.126', 'task.tansang.dpdns.org'],
     output: 'standalone',
+    // The /gateway rewrite proxies POST bodies. Its default 10MB cap silently truncates
+    // uploads that are still well under the 25MB backend/file limit, so raise it to cover
+    // the 25MB per-file limit plus multipart overhead.
+    experimental: {
+      proxyClientMaxBodySize: '30mb',
+    },
     async rewrites() {
       return [{ source: '/gateway/:path*', destination: `${gatewayBaseUrl}/api/:path*` }];
     },

@@ -4,12 +4,13 @@ import { documentsApi } from '@/api/documents';
 import { GatewayError } from '@/lib/errors';
 import type { Task } from '@/types/task';
 
-const MAX_UPLOAD_BYTES = 25 * 1024 * 1024;
+const MAX_UPLOAD_BYTES = 5 * 1024 * 1024;
 
 export interface AttachmentUploadSummary {
   uploaded: number;
   skipped: number;
   failed: number;
+  failedFiles: string[];
   error?: string;
 }
 
@@ -47,22 +48,29 @@ export async function uploadTaskAttachments(
       return documentsApi.upload(data, () => undefined);
     }),
   );
-  const failedResults = results.filter(
-    (result): result is PromiseRejectedResult => result.status === 'rejected',
-  );
-  const firstError = failedResults[0]?.reason;
-  const error =
-    firstError instanceof GatewayError
-      ? 'Mã lỗi ' + firstError.status
-      : firstError
-        ? 'Lỗi xử lý bảo mật'
-        : oversized > 0
-          ? 'Có tệp vượt quá 25 MB'
-          : undefined;
+  const failedResults = results
+    .map((result, index) => ({ result, file: validFiles[index] }))
+    .filter(
+      (entry): entry is { result: PromiseRejectedResult; file: File } =>
+        entry.result.status === 'rejected',
+    );
+  const firstError = failedResults[0]?.result.reason;
+  const failedFiles = failedResults.map(({ file }) => file.name);
+  const error = (() => {
+    if (firstError instanceof GatewayError) {
+      const message = firstError.message;
+      if (message && message !== 'The request could not be completed.') return message;
+      return 'Mã lỗi ' + firstError.status;
+    }
+    if (firstError) return 'Lỗi xử lý bảo mật';
+    if (oversized > 0) return 'Có tệp vượt quá 5 MB';
+    return undefined;
+  })();
   return {
     uploaded: results.length - failedResults.length,
     failed: failedResults.length,
     skipped: oversized + failedResults.length,
+    failedFiles,
     error,
   };
 }

@@ -10,7 +10,7 @@ import type { TaskDocument } from '@/types/document';
 import { readSession } from '@/auth/session';
 import { GatewayError } from '@/lib/errors';
 import styles from './task-documents.module.css';
-const MAX_UPLOAD_BYTES = 25 * 1024 * 1024;
+const MAX_UPLOAD_BYTES = 5 * 1024 * 1024;
 
 const GRANTABLE_PERMISSIONS = ['PREVIEW', 'DOWNLOAD', 'UPDATE', 'SHARE', 'TRANSFER', 'DISPOSE'];
 const permissionLabel: Record<string, string> = { PREVIEW: 'Xem', DOWNLOAD: 'Tải xuống', UPDATE: 'Cập nhật', SHARE: 'Chia sẻ', TRANSFER: 'Chuyển giao', DISPOSE: 'Hủy' };
@@ -92,7 +92,7 @@ export function TaskDocuments({ task, canUpload = false, members = [], participa
     const file = (form.elements.namedItem('file') as HTMLInputElement).files?.[0];
     const session = readSession();
     if (!file || !session?.userId) { setStatus('Chọn tài liệu và đăng nhập lại để tải lên.'); return; }
-    if (file.size > MAX_UPLOAD_BYTES) { setStatus('Tệp vượt quá giới hạn 25 MB và chưa được tải lên.'); return; }
+    if (file.size > MAX_UPLOAD_BYTES) { setStatus('Tệp vượt quá giới hạn 5 MB và chưa được tải lên.'); return; }
     const data = new FormData(form);
     const actors = Array.from(new Set([session.userId, task.creator_id, task.assignee_id].filter((value): value is string => Boolean(value))));
     const grants = actors.map(actor_id => ({ actor_id, permissions: actor_id === session.userId ? ['PREVIEW', 'DOWNLOAD'] : ['PREVIEW', 'DOWNLOAD'], expires_at: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString() }));

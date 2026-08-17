@@ -43,6 +43,7 @@ describe('PreviewRenderer', () => {
         await writeFile(`${prefix}-2.png`, Buffer.from('page-two'));
         void cwd;
       }),
+      runAndCapture: jest.fn(async (_command, _args) => 'Pages: 2\n'),
     };
   });
 

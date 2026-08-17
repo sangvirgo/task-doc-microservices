@@ -20,6 +20,7 @@ export const documentsApi = {
   ticket: (id: string, version: number, taskId: string) => gatewayClient.post<DownloadTicket>(`/documents/${encodeURIComponent(id)}/download-ticket`, { task_id: taskId, version }),
   redeem: (id: string, version: number, ticketId: string) => gatewayClient.postBlob(`/documents/${encodeURIComponent(id)}/versions/${version}/redeem`, { ticket_id: ticketId }),
   createPreviewSession: (id: string, version: number, taskId?: string) => gatewayClient.post<PreviewSession>(`/documents/${encodeURIComponent(id)}/versions/${version}/preview-session`, taskId ? { task_id: taskId } : {}),
+  extendPreviewSession: (id: string, version: number, sessionId: string, toPage: number) => gatewayClient.post<{ page_count: number; total_pages: number }>(`/documents/${encodeURIComponent(id)}/versions/${version}/preview-session/${encodeURIComponent(sessionId)}/pages`, { to_page: toPage }),
   getPreviewPage: (id: string, version: number, sessionId: string, page: number) => gatewayClient.getBlob(`/documents/${encodeURIComponent(id)}/versions/${version}/preview-session/${encodeURIComponent(sessionId)}/pages/${page}`),
   revokePreviewSession: (id: string, version: number, sessionId: string) => gatewayClient.post<void>(`/documents/${encodeURIComponent(id)}/versions/${version}/preview-session/${encodeURIComponent(sessionId)}/revoke`),
 };

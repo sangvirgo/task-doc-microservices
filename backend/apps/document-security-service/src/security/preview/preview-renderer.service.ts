@@ -19,20 +19,36 @@ const DEFAULT_TIMEOUT_MS = 60_000;
 const DEFAULT_TEXT_LINES_PER_PAGE = 58;
 const DEFAULT_TEMP_ROOT = join(tmpdir(), 'c17-document-preview');
 
+export interface PreviewPageRange {
+  /** 1-indexed, inclusive */
+  start: number;
+  /** 1-indexed, inclusive */
+  end: number;
+}
+
 export interface PreviewRenderRequest {
   content: Buffer;
   mimeType: string;
   watermark: WatermarkInput;
+  /** Restrict rendering to a page range. When omitted, all pages are rendered. */
+  pageRange?: PreviewPageRange;
 }
 
 export interface RenderedPreview {
   format: Exclude<PreviewFormat, 'unsupported'>;
+  /** Rendered pages in ascending page order, starting at {@link firstPage}. */
   pages: Buffer[];
+  /** Absolute 1-indexed page number of {@link pages}[0]. */
+  firstPage: number;
+  /** Total number of pages in the source document. */
+  totalPages: number;
   mimeType: 'image/png';
 }
 
 export interface PreviewCommandRunner {
   run(command: string, args: string[], cwd: string): Promise<void>;
+  /** Run a command and capture its stdout (used to inspect document metadata). */
+  runAndCapture(command: string, args: string[], cwd: string): Promise<string>;
 }
 
 export interface PreviewImageProcessor {
@@ -94,15 +110,15 @@ export class PreviewRenderer {
     const jobDir = await mkdtemp(join(this.options.tempRoot, 'render-'));
 
     try {
-      const pages = await this.renderPages(request, format, jobDir);
-      if (pages.length === 0) {
+      const rendered = await this.renderPages(request, format, jobDir);
+      if (rendered.pages.length === 0) {
         throw new PreviewUnavailableError('Document contains no previewable pages');
       }
-      if (pages.length > this.options.maxPages) {
+      if (rendered.pages.length > this.options.maxPages) {
         throw new PreviewUnavailableError('Document exceeds the preview page limit');
       }
 
-      return { format, pages, mimeType: 'image/png' };
+      return rendered;
     } finally {
       await rm(jobDir, { recursive: true, force: true }).catch(() => undefined);
     }
@@ -112,34 +128,49 @@ export class PreviewRenderer {
     request: PreviewRenderRequest,
     format: Exclude<PreviewFormat, 'unsupported'>,
     jobDir: string,
-  ): Promise<Buffer[]> {
+  ): Promise<RenderedPreview> {
     switch (format) {
       case 'png':
       case 'jpeg':
-        return [
-          await this.imageProcessor.sanitizeAndWatermark(request.content, {
-            ...request.watermark,
-            page: 1,
-          }),
-        ];
+        return {
+          format,
+          pages: [
+            await this.imageProcessor.sanitizeAndWatermark(request.content, {
+              ...request.watermark,
+              page: 1,
+            }),
+          ],
+          firstPage: 1,
+          totalPages: 1,
+          mimeType: 'image/png',
+        };
       case 'text':
-        return this.renderTextPages(request.content.toString('utf8'), request.watermark);
+        return this.renderTextPages(request.content.toString('utf8'), request.watermark, request.pageRange);
       case 'pdf':
-        return this.renderPdfPages(request.content, '.pdf', request.watermark, jobDir);
+        return this.renderPdfPages(request.content, '.pdf', request.watermark, jobDir, request.pageRange);
       case 'doc':
       case 'docx':
-        return this.renderOfficePages(request.content, format, request.watermark, jobDir);
+        return this.renderOfficePages(request.content, format, request.watermark, jobDir, request.pageRange);
     }
   }
 
-  private async renderTextPages(text: string, watermark: WatermarkInput): Promise<Buffer[]> {
+  private async renderTextPages(
+    text: string,
+    watermark: WatermarkInput,
+    pageRange?: PreviewPageRange,
+  ): Promise<RenderedPreview> {
     const lines = text.split(/\r?\n/);
+    const totalPages = Math.max(1, Math.ceil(lines.length / DEFAULT_TEXT_LINES_PER_PAGE));
+    const start = pageRange?.start ?? 1;
+    const end = Math.min(pageRange?.end ?? totalPages, totalPages);
+
     const pages: Buffer[] = [];
-    for (let start = 0; start < Math.max(lines.length, 1); start += DEFAULT_TEXT_LINES_PER_PAGE) {
-      const page = pages.length + 1;
+    for (let page = start; page <= end; page += 1) {
       pages.push(
         await this.imageProcessor.renderTextPage(
-          lines.slice(start, start + DEFAULT_TEXT_LINES_PER_PAGE).join('\n'),
+          lines
+            .slice((page - 1) * DEFAULT_TEXT_LINES_PER_PAGE, page * DEFAULT_TEXT_LINES_PER_PAGE)
+            .join('\n'),
           {
             ...watermark,
             page,
@@ -147,7 +178,7 @@ export class PreviewRenderer {
         ),
       );
     }
-    return pages;
+    return { format: 'text', pages, firstPage: start, totalPages, mimeType: 'image/png' };
   }
 
   private async renderOfficePages(
@@ -155,7 +186,8 @@ export class PreviewRenderer {
     format: 'doc' | 'docx',
     watermark: WatermarkInput,
     jobDir: string,
-  ): Promise<Buffer[]> {
+    pageRange?: PreviewPageRange,
+  ): Promise<RenderedPreview> {
     const sourcePath = join(jobDir, `source${format === 'doc' ? '.doc' : '.docx'}`);
     const libreOfficeProfile = join(jobDir, 'libreoffice-profile');
     await writeFile(sourcePath, content, { mode: 0o600 });
@@ -184,7 +216,7 @@ export class PreviewRenderer {
     } catch {
       throw new PreviewUnavailableError('Office document could not be converted to PDF');
     }
-    return this.renderPdfPagesFromFile(pdfPath, watermark, jobDir);
+    return this.renderPdfPagesFromFile(pdfPath, watermark, jobDir, pageRange);
   }
 
   private async renderPdfPages(
@@ -192,40 +224,56 @@ export class PreviewRenderer {
     extension: '.pdf',
     watermark: WatermarkInput,
     jobDir: string,
-  ): Promise<Buffer[]> {
+    pageRange?: PreviewPageRange,
+  ): Promise<RenderedPreview> {
     const sourcePath = join(jobDir, `source${extension}`);
     await writeFile(sourcePath, content, { mode: 0o600 });
-    return this.renderPdfPagesFromFile(sourcePath, watermark, jobDir);
+    return this.renderPdfPagesFromFile(sourcePath, watermark, jobDir, pageRange);
   }
 
   private async renderPdfPagesFromFile(
     sourcePath: string,
     watermark: WatermarkInput,
     jobDir: string,
-  ): Promise<Buffer[]> {
+    pageRange?: PreviewPageRange,
+  ): Promise<RenderedPreview> {
+    const totalPages = await this.countPdfPages(sourcePath);
+    const start = pageRange?.start ?? 1;
+    const end = Math.min(pageRange?.end ?? totalPages, totalPages);
+
     const outputPrefix = join(jobDir, 'page');
-    await this.commandRunner.run(
-      'pdftoppm',
-      ['-png', '-r', '120', '-scale-to', String(this.options.maxDimension), sourcePath, outputPrefix],
-      jobDir,
-    );
+    const args = ['-png', '-r', '120', '-scale-to', String(this.options.maxDimension)];
+    if (start > 1) args.push('-f', String(start));
+    if (end < totalPages) args.push('-l', String(end));
+    args.push(sourcePath, outputPrefix);
+    await this.commandRunner.run('pdftoppm', args, jobDir);
 
     const pageFiles = (await readdir(jobDir))
       .filter((name) => /^page-\d+\.png$/i.test(name))
-      .sort((left, right) => extractPageNumber(left) - extractPageNumber(right));
+      .map((name) => ({ name, page: extractPageNumber(name) }))
+      .filter((entry) => entry.page >= start && entry.page <= end)
+      .sort((left, right) => left.page - right.page);
 
-    if (pageFiles.length > this.options.maxPages) {
-      throw new PreviewUnavailableError('Document exceeds the preview page limit');
-    }
-
-    return Promise.all(
-      pageFiles.map(async (pageFile, index) =>
-        this.imageProcessor.watermarkPage(await readFile(join(jobDir, pageFile)), {
+    const pages = await Promise.all(
+      pageFiles.map(async ({ name, page }) =>
+        this.imageProcessor.watermarkPage(await readFile(join(jobDir, name)), {
           ...watermark,
-          page: index + 1,
+          page,
         }),
       ),
     );
+    return { format: 'pdf', pages, firstPage: start, totalPages, mimeType: 'image/png' };
+  }
+
+  private async countPdfPages(sourcePath: string): Promise<number> {
+    try {
+      const output = await this.commandRunner.runAndCapture('pdfinfo', [sourcePath], '');
+      const match = output.match(/^Pages:\s+(\d+)/m);
+      const parsed = match ? Number(match[1]) : NaN;
+      return Number.isFinite(parsed) && parsed > 0 ? parsed : 1;
+    } catch {
+      return 1;
+    }
   }
 }
 
@@ -273,6 +321,14 @@ function createCommandRunner(timeoutMs: number): PreviewCommandRunner {
   return {
     async run(command, args, cwd) {
       await execFileAsync(command, args, { cwd, timeout: timeoutMs, maxBuffer: 1024 * 1024 });
+    },
+    async runAndCapture(command, args, cwd) {
+      const { stdout } = await execFileAsync(command, args, {
+        cwd,
+        timeout: timeoutMs,
+        maxBuffer: 1024 * 1024,
+      });
+      return stdout;
     },
   };
 }

@@ -134,7 +134,13 @@ function DirectTask({ task, parentContext, participants, submissions, members, r
       const created = await tasksApi.create({ ...input, parent_task_id: task.id });
       const attachments = await uploadTaskAttachments(form, created, currentUserId ?? '');
       setSubtaskOpen(false);
-      setNotice(attachments.skipped ? 'Đã tạo sub-task, nhưng ' + attachments.skipped + ' tệp chưa thể tải lên' + (attachments.error ? ' (' + attachments.error + ').' : '.') : 'Đã tạo sub-task trong công việc này.');
+      setNotice(
+        attachments.failed > 0
+          ? `Đã tạo sub-task, nhưng ${attachments.failed} tệp chưa thể tải lên${attachments.failedFiles.length ? ': ' + attachments.failedFiles.join(', ') : ''}${attachments.error ? ' (' + attachments.error + ').' : '.'} Mở sub-task để gắn lại tài liệu.`
+          : attachments.skipped > 0
+            ? `Đã tạo sub-task, nhưng ${attachments.skipped} tệp vượt quá giới hạn 5 MB. Mở sub-task để gắn lại tài liệu.`
+            : 'Đã tạo sub-task trong công việc này.',
+      );
       reload();
     } catch { setSubtaskError('Không thể tạo sub-task. Kiểm tra thông tin và thử lại.'); } finally { setCreatingSubtask(false); }
   };

@@ -62,7 +62,15 @@ export function TaskList() {
       const attachments = await uploadTaskAttachments(form, created, currentUserId ?? '');
       setCreatedTaskId(created.id);
       setComposerOpen(false);
-      setNotice(attachments.skipped ? `Đã tạo task, nhưng ${attachments.skipped} tệp chưa thể tải lên.` : input.assignee_id ? 'Đã giao task kèm tệp đính kèm.' : 'Đã tạo task ở trạng thái Chưa giao.');
+      setNotice(
+        attachments.failed > 0
+          ? `Đã tạo task, nhưng ${attachments.failed} tệp chưa thể tải lên${attachments.failedFiles.length ? ': ' + attachments.failedFiles.join(', ') : ''}${attachments.error ? ' (' + attachments.error + ').' : '.'} Mở task để gắn lại tài liệu.`
+          : attachments.skipped > 0
+            ? `Đã tạo task, nhưng ${attachments.skipped} tệp vượt quá giới hạn 5 MB. Mở task để gắn lại tài liệu.`
+            : input.assignee_id
+              ? 'Đã giao task kèm tệp đính kèm.'
+              : 'Đã tạo task ở trạng thái Chưa giao.',
+      );
       load();
     } catch {
       setCreateError('Không thể tạo task. Kiểm tra thông tin và thử lại.');

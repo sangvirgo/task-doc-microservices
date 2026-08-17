@@ -1,12 +1,10 @@
 'use client';
 
-import { useEffect, useState } from 'react';
-import { adminApi } from '@/api/admin';
+import { useEffect, useMemo, useState } from 'react';
 import { auditApi } from '@/api/audit';
 import { readSession } from '@/auth/session';
 import { EmptyState, ErrorState, LoadingState, PermissionDeniedState } from '@/components/common-states';
 import type { AuditEventMetadata } from '@/types/audit';
-import type { MemberOption } from '@/types/admin';
 import styles from '@/features/admin/admin.module.css';
 
 const EVENT_LABELS: Record<string, string> = {
@@ -56,7 +54,6 @@ const formatTime = (value: string) => new Date(value).toLocaleString('vi-VN');
 export function ActivityLogPanel() {
   const session = readSession();
   const [events, setEvents] = useState<AuditEventMetadata[] | null>(null);
-  const [members, setMembers] = useState<MemberOption[]>([]);
   const [failed, setFailed] = useState(false);
   const [filter, setFilter] = useState('ALL');
   const [page, setPage] = useState(1);
@@ -66,33 +63,35 @@ export function ActivityLogPanel() {
     if (!session?.userId) return;
     setEvents(null);
     setFailed(false);
-    Promise.all([
-      auditApi.events(page, 50, filter === 'ALL' ? undefined : filter),
-      adminApi.directory().catch(() => [] as MemberOption[]),
-    ])
-      .then(([result, directory]) => {
+    auditApi
+      .events(page, 50)
+      .then((result) => {
         setEvents(result.items);
         setTotal(result.pagination.total ?? 0);
-        setMembers(directory);
       })
       .catch(() => setFailed(true));
   };
 
-  useEffect(() => { load(); }, [session?.userId, page, filter]);
+  useEffect(() => { load(); }, [session?.userId, page]);
+
+  const visible = useMemo(() => {
+    if (!events) return [];
+    if (filter === 'ALL') return events;
+    return events.filter((event) => event.event_type.split('.')[0] === filter);
+  }, [events, filter]);
 
   if (!session?.userId) return <PermissionDeniedState />;
   if (failed) return <ErrorState message="Không thể tải nhật ký hoạt động." onRetry={load} />;
   if (!events) return <LoadingState />;
 
-  const memberById = new Map(members.map((member) => [member.id, member]));
   const totalPages = Math.max(1, Math.ceil(total / 50));
 
   return <section className={styles.auditPage}>
     <header className={styles.auditHero}>
       <div>
-        <span className={styles.heroEyebrow}>NHẬT KÝ KHÔNG GIAN LÀM VIỆC</span>
+        <span className={styles.heroEyebrow}>NHẬT KÝ HOẠT ĐỘNG CỦA TÔI</span>
         <h1>Nhật ký hoạt động</h1>
-        <p>Tất cả thao tác quan trọng của nhân viên và quản trị viên được hiển thị tại đây.</p>
+        <p>Các thao tác quan trọng được ghi lại cho tài khoản của bạn.</p>
       </div>
       <div className={styles.heroActions}>
         <span className={styles.auditBadge}><span aria-hidden="true">▤</span>Chỉ đọc · Không thể sửa</span>
@@ -102,8 +101,8 @@ export function ActivityLogPanel() {
     <div className={styles.auditNotice}>
       <span className={styles.noticeIcon} aria-hidden="true">i</span>
       <div>
-        <strong>Nhật ký chỉ đọc</strong>
-        <p>Không ai, kể cả quản trị viên, có thể chỉnh sửa hoặc xóa sự kiện. Nhật ký được ghi bởi các dịch vụ nội bộ để theo dõi minh bạch hoạt động trong hệ thống.</p>
+        <strong>Chỉ hiển thị hoạt động của riêng bạn</strong>
+        <p>Màn hình này chỉ liệt kê các sự kiện do chính bạn thực hiện. Nhật ký chỉ đọc — không ai, kể cả quản trị viên, có thể chỉnh sửa hoặc xóa sự kiện. Nhật ký toàn hệ thống chỉ dành cho quản trị viên tại mục "Siêu dữ liệu kiểm toán".</p>
       </div>
     </div>
 
@@ -121,14 +120,14 @@ export function ActivityLogPanel() {
       </label>
     </div>
 
-    {events.length === 0 ? <EmptyState title="Chưa có hoạt động">Chưa có sự kiện nào được ghi nhận.</EmptyState> : <div className={styles.auditList}>
-      {events.map((event) => <article className={styles.auditRow} key={event.id}>
+    {visible.length === 0 ? <EmptyState title="Chưa có hoạt động">Chưa có sự kiện nào được ghi nhận cho tài khoản này.</EmptyState> : <div className={styles.auditList}>
+      {visible.map((event) => <article className={styles.auditRow} key={event.id}>
         <span className={styles.seqBadge}>#{event.sequence_number}</span>
         <span className={styles.auditIcon + ' ' + styles[toneOf(event.event_type)]} aria-hidden="true">▤</span>
         <div className={styles.auditContent}>
           <strong>{labelOf(event.event_type)}</strong>
           <span className={styles.auditTypeCode}>{event.event_type}</span>
-          <small>Người thao tác: {memberById.get(event.actor_id ?? '')?.email ?? shortId(event.actor_id)}</small>
+          <small>Người thao tác: Bạn</small>
         </div>
         <span className={styles.resourceChip}>{event.resource_type} · {shortId(event.resource_id)}</span>
         <time className={styles.auditTime} dateTime={event.occurred_at}>{formatTime(event.occurred_at)}</time>

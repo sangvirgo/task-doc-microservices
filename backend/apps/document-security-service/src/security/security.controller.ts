@@ -59,6 +59,12 @@ const uploadHeaderSchema = z.object({
 const previewPrepareSchema = z.object({
   actor_label: z.string().min(1).max(320),
   session_id: z.string().uuid(),
+  max_pages: z.coerce.number().int().positive().max(200).optional(),
+});
+
+const previewExtendSchema = z.object({
+  start_page: z.coerce.number().int().positive(),
+  end_page: z.coerce.number().int().positive(),
 });
 
 @ApiTags('security')
@@ -175,7 +181,25 @@ export class SecurityController {
       version: versionNum,
       actor_label: parsed.data.actor_label,
       session_id: parsed.data.session_id,
+      max_pages: parsed.data.max_pages,
     });
+  }
+
+  @Post('preview/:previewId/pages')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Render and append additional preview pages to an existing preview' })
+  async extendPreview(
+    @Param('previewId') previewId: string,
+    @Body() body: z.infer<typeof previewExtendSchema>,
+  ) {
+    const parsed = previewExtendSchema.safeParse(body);
+    if (!parsed.success) throw new BadRequestException(parsed.error.issues);
+
+    return this.securityService.extendPreview(
+      previewId,
+      parsed.data.start_page,
+      parsed.data.end_page,
+    );
   }
 
   @Get('preview/:previewId/pages/:page')

@@ -104,6 +104,7 @@ function getRoutes(): ServiceRoute[] {
 
 const DEFAULT_TIMEOUT_MS = Number(process.env.GATEWAY_TIMEOUT_MS || 10_000);
 const PREVIEW_TIMEOUT_MS = Number(process.env.GATEWAY_PREVIEW_TIMEOUT_MS || 120_000);
+const UPLOAD_TIMEOUT_MS = Number(process.env.GATEWAY_UPLOAD_TIMEOUT_MS || 120_000);
 
 /**
  * Server-rendered previews are slow: creating a preview session for an office/PDF
@@ -112,6 +113,14 @@ const PREVIEW_TIMEOUT_MS = Number(process.env.GATEWAY_PREVIEW_TIMEOUT_MS || 120_
  * Allow those routes a much longer budget while keeping fast routes at the default.
  */
 const PREVIEW_ROUTE = /^\/api\/documents\/[^/]+\/versions\/\d+\/preview-session/;
+
+/**
+ * Document uploads stream the full file to document-management-service and then run it
+ * through the security pipeline (ClamAV scan, encryption, MinIO) before responding. A
+ * 10s default would abort real-world files (several MB) mid-processing. Use a much longer
+ * budget for upload routes, matching the frontend XHR timeout and SECURITY_UPLOAD_TIMEOUT_MS.
+ */
+const UPLOAD_ROUTE = /^\/api\/documents\/upload/;
 
 /**
  * API Gateway controller: proxies /api/* requests to internal services.
@@ -210,11 +219,26 @@ export class GatewayController {
       return;
     }
 
-    try {
-      // Strip the /api/<service> prefix → forward the rest to the internal service
-      const targetPath = req.originalUrl.slice(route.prefix.length);
-      const targetUrl = `${route.target}${route.upstreamBasePath}${targetPath || ''}`;
+    // Employees may only read their own audit trail: force the actor filter server-side
+    // (never trust the client) and reject requests that try to scope to another user.
+    const gatewayUser = (req as unknown as Record<string, unknown>)['user'] as
+      { userId: string; role: string } | undefined;
+    let targetPath = req.originalUrl.slice(route.prefix.length);
+    if (requestPath === '/api/audit/events' && req.method === 'GET' && gatewayUser?.role !== 'ADMIN') {
+      const actorId = gatewayUser?.userId;
+      if (!actorId) throw new ForbiddenException('Authentication required');
+      const suppliedActor = typeof req.query.actor_id === 'string' ? req.query.actor_id : undefined;
+      if (suppliedActor && suppliedActor !== actorId) {
+        throw new ForbiddenException('Employees may only query their own audit trail');
+      }
+      const rest = (req.originalUrl.includes('?') ? req.originalUrl.slice(req.originalUrl.indexOf('?') + 1) : '')
+        .split('&')
+        .filter((pair) => pair && !pair.startsWith('actor_id='));
+      targetPath = `${targetPath.split('?')[0]}?actor_id=${encodeURIComponent(actorId)}${rest.length ? '&' + rest.join('&') : ''}`;
+    }
+    const targetUrl = `${route.target}${route.upstreamBasePath}${targetPath || ''}`;
 
+    try {
       const headers: Record<string, string> = {};
       const requestContentType = req.headers['content-type'];
       const accept = req.headers['accept'];
@@ -250,10 +274,14 @@ export class GatewayController {
         body = JSON.stringify(req.body);
       }
 
-      // Fetch with configurable timeout. Server-rendered preview sessions can take
-      // well over the default timeout, so route them with the preview-specific budget.
+      // Fetch with configurable timeout. Server-rendered preview sessions and document
+      // uploads can take well over the default timeout, so route them with their own budgets.
       const controller = new AbortController();
-      const requestTimeout = PREVIEW_ROUTE.test(requestPath) ? PREVIEW_TIMEOUT_MS : DEFAULT_TIMEOUT_MS;
+      const requestTimeout = UPLOAD_ROUTE.test(requestPath)
+        ? UPLOAD_TIMEOUT_MS
+        : PREVIEW_ROUTE.test(requestPath)
+          ? PREVIEW_TIMEOUT_MS
+          : DEFAULT_TIMEOUT_MS;
       const timeout = setTimeout(() => controller.abort(), requestTimeout);
 
       let response: globalThis.Response;
@@ -390,8 +418,7 @@ export class GatewayController {
         (path === '/api/users' || path.startsWith('/api/users/'))) ||
       path.startsWith('/api/monitoring/') ||
       path === '/api/monitoring' ||
-      path === '/api/audit/chain/head' ||
-      path === '/api/audit/chain/verify'
+      (path.startsWith('/api/audit/') && !(path === '/api/audit/events' && req.method === 'GET'))
     ) {
       if (!isAdmin) throw new ForbiddenException('Administrator role required');
     }

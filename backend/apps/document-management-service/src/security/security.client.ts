@@ -27,6 +27,7 @@ export interface SecurityUploadResult {
 export interface SecurityPreviewResult {
   preview_id: string;
   page_count: number;
+  total_pages: number;
   mime_type: 'image/png';
   expires_at: string;
 }
@@ -192,6 +193,7 @@ export class SecurityClient {
     version: number;
     actor_label: string;
     session_id: string;
+    max_pages?: number;
   }): Promise<SecurityPreviewResult | null> {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), this.previewTimeoutMs);
@@ -205,6 +207,7 @@ export class SecurityClient {
           body: JSON.stringify({
             actor_label: params.actor_label,
             session_id: params.session_id,
+            max_pages: params.max_pages,
           }),
           signal: controller.signal,
         },
@@ -217,6 +220,39 @@ export class SecurityClient {
     } catch (error) {
       this.logger.warn(
         `Security preview preparation error: ${error instanceof Error ? error.message : 'unknown'}`,
+      );
+      return null;
+    } finally {
+      clearTimeout(timeout);
+    }
+  }
+
+  async extendPreview(
+    previewId: string,
+    start_page: number,
+    end_page: number,
+  ): Promise<SecurityPreviewResult | null> {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), this.previewTimeoutMs);
+
+    try {
+      const response = await fetch(
+        `${this.securityServiceUrl}/security/preview/${previewId}/pages`,
+        {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ start_page, end_page }),
+          signal: controller.signal,
+        },
+      );
+      if (!response.ok) {
+        this.logger.warn(`Security preview extension failed: ${response.status}`);
+        return null;
+      }
+      return (await response.json()) as SecurityPreviewResult;
+    } catch (error) {
+      this.logger.warn(
+        `Security preview extension error: ${error instanceof Error ? error.message : 'unknown'}`,
       );
       return null;
     } finally {

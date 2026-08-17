@@ -1,5 +1,6 @@
 import { Injectable, OnApplicationShutdown, OnModuleInit } from '@nestjs/common';
 
+import { EventType } from '@c17/contracts';
 import { AmqpEventConsumer, queueName } from '@c17/messaging';
 import { StructuredLogger } from '@c17/observability';
 
@@ -31,6 +32,9 @@ export class AuditConsumerService implements OnModuleInit, OnApplicationShutdown
         maxAttempts: 3,
       },
       async (event) => {
+        if (event.event_type === EventType.PERMISSION_DECISION_MADE && event.payload?.allowed !== false) {
+          return;
+        }
         await this.auditService.appendEvent({
           event_id: event.event_id,
           event_type: event.event_type,

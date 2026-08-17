@@ -1,7 +1,7 @@
 'use client';
 /* eslint-disable @next/next/no-img-element */
 
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { documentsApi } from '@/api/documents';
 import { GatewayError } from '@/lib/errors';
 import type { PreviewSession } from '@/types/document';
@@ -11,6 +11,8 @@ interface PreviewPage {
   page: number;
   url: string;
 }
+
+const EXTEND_PAGE_BATCH = 10;
 
 export function DocumentPreview({
   documentId,
@@ -28,9 +30,23 @@ export function DocumentPreview({
   const [session, setSession] = useState<PreviewSession>();
   const [pages, setPages] = useState<PreviewPage[]>([]);
   const [status, setStatus] = useState<'loading' | 'ready' | 'error'>('loading');
+  const [extending, setExtending] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
   const sessionIdRef = useRef<string | undefined>(undefined);
   const objectUrlsRef = useRef<string[]>([]);
+
+  const loadPages = useCallback(
+    async (session: PreviewSession, fromPage: number, toPage: number) => {
+      const next: PreviewPage[] = [];
+      for (let page = fromPage; page <= toPage; page += 1) {
+        const blob = await documentsApi.getPreviewPage(documentId, version, session.id, page);
+        const url = URL.createObjectURL(blob);
+        next.push({ page, url });
+      }
+      return next;
+    },
+    [documentId, version],
+  );
 
   useEffect(() => {
     let cancelled = false;
@@ -43,16 +59,13 @@ export function DocumentPreview({
         setSession(created);
         onCapabilitiesChange?.(created.capabilities);
 
-        for (let page = 1; page <= created.page_count; page += 1) {
-          const blob = await documentsApi.getPreviewPage(documentId, version, created.id, page);
-          const url = URL.createObjectURL(blob);
-          if (cancelled) {
-            URL.revokeObjectURL(url);
-            return;
-          }
-          objectUrlsRef.current.push(url);
-          setPages((current) => [...current, { page, url }]);
+        const initial = await loadPages(created, 1, created.page_count);
+        if (cancelled) {
+          initial.forEach(({ url }) => URL.revokeObjectURL(url));
+          return;
         }
+        initial.forEach(({ url }) => objectUrlsRef.current.push(url));
+        setPages(initial);
         if (!cancelled) setStatus('ready');
       } catch (reason: unknown) {
         if (cancelled) return;
@@ -70,7 +83,30 @@ export function DocumentPreview({
         void documentsApi.revokePreviewSession(documentId, version, sessionIdRef.current);
       }
     };
-  }, [documentId, onCapabilitiesChange, taskId, version]);
+  }, [documentId, loadPages, onCapabilitiesChange, taskId, version]);
+
+  const renderMore = async (): Promise<void> => {
+    if (!session || extending) return;
+    setExtending(true);
+    try {
+      const fromPage = session.page_count + 1;
+      const toPage = Math.min(session.total_pages, fromPage + EXTEND_PAGE_BATCH - 1);
+      const extended = await documentsApi.extendPreviewSession(
+        documentId,
+        version,
+        session.id,
+        toPage,
+      );
+      const additional = await loadPages(session, fromPage, extended.page_count);
+      additional.forEach(({ url }) => objectUrlsRef.current.push(url));
+      setPages((current) => [...current, ...additional]);
+      setSession((current) => (current ? { ...current, page_count: extended.page_count } : current));
+    } catch (reason: unknown) {
+      setErrorMessage(previewErrorMessage(reason));
+    } finally {
+      setExtending(false);
+    }
+  };
 
   if (status === 'error') {
     return (
@@ -81,6 +117,8 @@ export function DocumentPreview({
       </section>
     );
   }
+
+  const hasMorePages = !!session && session.page_count < session.total_pages;
 
   return (
     <section
@@ -107,6 +145,17 @@ export function DocumentPreview({
           </figure>
         ))}
       </div>
+      {status === 'ready' && hasMorePages && (
+        <div className={styles.previewMore}>
+          <p>
+            Đã hiển thị {pages.length}/{session?.total_pages} trang. Render thêm trang để tiếp tục.
+          </p>
+          <button onClick={() => void renderMore()} disabled={extending}>
+            {extending ? 'Đang render thêm…' : 'Render thêm trang'}
+          </button>
+          {errorMessage && <p role="alert">{errorMessage}</p>}
+        </div>
+      )}
     </section>
   );
 }
