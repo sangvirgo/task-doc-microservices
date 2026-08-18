@@ -7,14 +7,9 @@
 .detailLabel{color:#6b778c;font-size:.62rem;font-weight:850;letter-spacing:.05em;text-transform:uppercase;padding-top:3px}
 .detailValue{color:#172b4d;font-size:.78rem;font-weight:700;display:flex;flex-direction:column;gap:6px;align-items:flex-start}
 .detailValue small{color:#8a96a8;font-size:.62rem;font-weight:500}
-.actionGrid{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-top:18px;align-items:stretch}
-.delegatePanel,.revokePanel{display:flex;flex-direction:column;justify-content:space-between;gap:18px;padding:18px;border:1px solid #dfe1e6;border-radius:13px;background:#fff;box-shadow:0 3px 12px #091e4210}
-.delegatePanel .formHeading,.revokePanel .formHeading{margin-bottom:0}
-.delegatePanel .formGrid{grid-template-columns:1fr;gap:12px}
-.delegatePanel .formGrid > label{display:grid;gap:6px;color:#344563;font-size:.7rem;font-weight:800}
-.delegatePanel .permissionField{margin:0;padding:12px 14px;border:1px solid #dfe1e6;border-radius:9px;background:#fbfcfe}
-.delegatePanel .permissionField legend{color:#344563;font-size:.68rem;font-weight:850;padding:0 4px}
-.delegatePanel .permissionField p{margin:4px 0 10px;color:#8a96a8;font-size:.62rem;font-weight:500}
+.actionGrid{display:grid;grid-template-columns:1fr;gap:14px;margin-top:18px;align-items:stretch}
+.revokePanel{display:flex;flex-direction:column;justify-content:space-between;gap:18px;padding:18px;border:1px solid #f0d9d4;border-radius:13px;background:#fff;box-shadow:0 3px 12px #091e4210}
+.revokePanel .formHeading{margin-bottom:0}
 .permissionGrid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px}
 .permissionGrid label{display:flex;align-items:center;gap:8px;padding:9px 10px;border:1px solid #dfe1e6;border-radius:8px;background:#fff;color:#172b4d;font-size:.7rem;font-weight:700;cursor:pointer}
 .permissionGrid input{width:16px;height:16px;accent-color:#0c66e4;cursor:pointer}
@@ -22,8 +17,7 @@
 .permissionQuickActions{display:flex;gap:8px;margin-top:8px}
 .permissionQuickActions button{min-height:28px;padding:0 10px;border:1px solid #c7ced8;border-radius:6px;background:#fff;color:#344563;font-size:.64rem;font-weight:800;cursor:pointer}
 .permissionQuickActions button:hover{background:#f1f2f4}
-.delegatePanel .formActions{align-self:start}
-.revokePanel{border-color:#f0d9d4}
+.revokePanel .formActions{align-self:start}
 .revokeButton{min-height:39px;padding:0 16px;border:0;border-radius:7px;color:#fff;background:#e2483d;font-size:.72rem;font-weight:850;cursor:pointer;align-self:flex-start}
 .formActions button:disabled,.revokeButton:disabled{opacity:.45;cursor:not-allowed}
 @media(max-width:900px){.actionGrid{grid-template-columns:1fr}}

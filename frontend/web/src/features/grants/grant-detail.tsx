@@ -1,6 +1,6 @@
 'use client';
 /* eslint-disable react-hooks/set-state-in-effect */
-import { FormEvent, useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { grantsApi } from '@/api/grants';
 import { documentsApi } from '@/api/documents';
@@ -8,7 +8,6 @@ import { tasksApi } from '@/api/tasks';
 import { adminApi } from '@/api/admin';
 import { readSession } from '@/auth/session';
 import { EmptyState, ErrorState, LoadingState, PermissionDeniedState } from '@/components/common-states';
-import { SearchableSelect } from '@/components/searchable-select';
 import type { Grant } from '@/types/grant';
 import type { Document } from '@/types/document';
 import type { Task } from '@/types/task';
@@ -32,8 +31,6 @@ const statusLabel: Record<string, string> = {
 
 const statusClass = (status: string) => status === 'ACTIVE' ? styles.statusActive : status === 'REVOKED' ? styles.statusRevoked : styles.statusExpired;
 
-const GRANTABLE_PERMISSIONS = ['PREVIEW', 'DOWNLOAD', 'UPDATE', 'SHARE', 'TRANSFER', 'DISPOSE'];
-
 const formatTime = (value: string | null) => value
   ? new Intl.DateTimeFormat('vi-VN', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' }).format(new Date(value))
   : 'Chưa thu hồi';
@@ -48,14 +45,12 @@ export function GrantDetail({ id }: { id: string }) {
   const [members, setMembers] = useState<MemberOption[]>([]);
   const [error, setError] = useState(false);
   const [message, setMessage] = useState('');
-  const [delegatePermissions, setDelegatePermissions] = useState<string[]>([]);
 
   const load = () => {
     setGrant(null);
     setError(false);
     grantsApi.get(id).then((grant) => {
       setGrant(grant);
-      setDelegatePermissions(grant.permissions ?? []);
     }).catch(() => setError(true));
     documentsApi.list().then(setDocuments).catch(() => setDocuments([]));
     tasksApi.list().then(setTasks).catch(() => setTasks([]));
@@ -74,28 +69,6 @@ export function GrantDetail({ id }: { id: string }) {
   const actor = members.find(member => member.id === grant.actor_id);
   const nameOf = (member?: MemberOption, raw?: string) => member?.email || (raw ? shortId(raw) : 'Không xác định');
   const active = grant.status === 'ACTIVE' && !grant.revoked_at;
-
-  const delegate = async (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-    const form = new FormData(event.currentTarget);
-    const permissions = String(form.get('permissions') || '')
-      .split(',')
-      .map(value => value.trim().toUpperCase())
-      .filter(Boolean);
-    if (!String(form.get('actor_id'))) {
-      setMessage('Vui lòng chọn người nhận quyền.');
-      return;
-    }
-    setMessage('Đang chuyển tiếp quyền…');
-    try {
-      const result = await grantsApi.delegate(grant.id, String(form.get('actor_id')), permissions.length ? permissions : undefined);
-      setMessage(`Đã chuyển tiếp quyền cho người nhận. Trạng thái máy chủ: ${result.status.toLowerCase()}.`);
-      event.currentTarget.reset();
-      load();
-    } catch (reason) {
-      setMessage(reason instanceof Error && reason.message ? reason.message : 'Máy chủ không chấp nhận chuyển tiếp quyền.');
-    }
-  };
 
   const revoke = async () => {
     const reason = window.prompt('Lý do thu hồi (tùy chọn)') ?? undefined;
@@ -145,45 +118,12 @@ export function GrantDetail({ id }: { id: string }) {
     </div>
 
     <div className={styles.actionGrid}>
-      <div className={styles.delegatePanel}>
-        <div className={styles.formHeading}>
-          <div><p>CHUYỂN TIẾP QUYỀN</p><h2>Giao quyền cho thành viên khác</h2></div>
-          <span>Người nhận phải là thành viên trực tiếp của task. Quyền bị giới hạn bởi deadline task.</span>
-        </div>
-        <form className={styles.formGrid} onSubmit={delegate}>
-          <label>Người nhận
-            <SearchableSelect name="actor_id" required defaultValue="" showAvatar>
-              <option value="" disabled>Chọn thành viên trong task</option>
-              {members.filter(member => member.id !== session.userId).map(member => <option key={member.id} value={member.id}>{member.email}</option>)}
-            </SearchableSelect>
-          </label>
-          <fieldset className={styles.permissionField}>
-            <legend>Quyền được cấp</legend>
-            <p>Tối đa các quyền bạn đang giữ trên quyền này. Để trống để giữ nguyên quyền của quyền gốc.</p>
-            <div className={styles.permissionGrid}>
-              {GRANTABLE_PERMISSIONS.filter(permission => (grant.permissions ?? []).includes(permission)).map(permission => (
-                <label key={permission}>
-                  <input type="checkbox" checked={delegatePermissions.includes(permission)} onChange={() => setDelegatePermissions(current => current.includes(permission) ? current.filter(item => item !== permission) : [...current, permission])} />
-                  <span>{permissionLabel[permission] ?? permission}</span>
-                </label>
-              ))}
-            </div>
-            <div className={styles.permissionQuickActions}>
-              <button type="button" onClick={() => setDelegatePermissions([...(grant.permissions ?? [])])}>Chọn tất cả</button>
-              <button type="button" onClick={() => setDelegatePermissions([])}>Bỏ chọn</button>
-            </div>
-            <input type="hidden" name="permissions" value={delegatePermissions.join(', ')} />
-          </fieldset>
-          <div className={styles.formActions}><button type="submit" disabled={!active}>Chuyển tiếp</button>{message && <p role="status">{message}</p>}</div>
-        </form>
-      </div>
-
       <div className={styles.revokePanel}>
         <div className={styles.formHeading}>
           <div><p>THU HỒI QUYỀN</p><h2>Chấm dứt quyền truy cập</h2></div>
           <span>Thu hồi sẽ vô hiệu quyền này cùng các quyền được chuyển tiếp từ nó.</span>
         </div>
-        {active ? <button type="button" className={styles.revokeButton} onClick={revoke}>Thu hồi quyền</button> : <EmptyState title="Không có thao tác khả dụng">Quyền ở trạng thái {statusLabel[grant.status] ?? grant.status.toLowerCase()} nên không thể chuyển tiếp hoặc thu hồi.</EmptyState>}
+        {active ? <button type="button" className={styles.revokeButton} onClick={revoke}>Thu hồi quyền</button> : <EmptyState title="Không có thao tác khả dụng">Quyền ở trạng thái {statusLabel[grant.status] ?? grant.status.toLowerCase()} nên không thể thu hồi.</EmptyState>}
       </div>
     </div>
   </section>;

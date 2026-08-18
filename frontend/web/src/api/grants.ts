@@ -22,6 +22,5 @@ export const grantsApi = {
   },
   get: (id: string) => gatewayClient.get<Grant>(`/permissions/grants/${encodeURIComponent(id)}`),
   create: (input: CreateGrantInput) => gatewayClient.post<Grant>('/permissions/grants', input),
-  delegate: (id: string, actorId: string, permissions?: string[]) => gatewayClient.post<Grant>(`/permissions/grants/${encodeURIComponent(id)}/delegate`, { actor_id: actorId, ...(permissions ? { permissions } : {}) }),
   revoke: (id: string, reason?: string) => gatewayClient.delete<Grant>(`/permissions/grants/${encodeURIComponent(id)}`, reason ? { reason } : {}),
 };
