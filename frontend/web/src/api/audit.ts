@@ -28,6 +28,21 @@ export const auditApi = {
         })),
         pagination,
       })),
+  allEvents: (page = 1, pageSize = 50) =>
+    gatewayClient
+      .getPage<AuditEventResponse>('/audit/events?all=true&page=' + page + '&page_size=' + pageSize)
+      .then(({ items, pagination }) => ({
+        items: items.map(({ id, event_type, occurred_at, resource_type, sequence_number, actor_id, resource_id }) => ({
+          id,
+          event_type,
+          occurred_at,
+          resource_type,
+          sequence_number,
+          actor_id,
+          resource_id,
+        })),
+        pagination,
+      })),
   chainHead: () => gatewayClient.get<AuditChainHead>('/audit/chain/head'),
   verify: () => gatewayClient.post<AuditChainVerification>('/audit/chain/verify'),
 };

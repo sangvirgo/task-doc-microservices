@@ -12,6 +12,7 @@ export const documentsApi = {
   versions: (id: string) => gatewayClient.getList<DocumentVersion>(`/documents/${encodeURIComponent(id)}/versions`),
   taskDocuments: (taskId: string) => gatewayClient.getList<TaskDocument>(`/tasks/${encodeURIComponent(taskId)}/documents`),
   addGrant: (taskId: string, documentId: string, grant: { actor_id: string; permissions: string[]; expires_at: string; parent_grant_id?: string }) => gatewayClient.post<Grant>(`/tasks/${encodeURIComponent(taskId)}/documents/${encodeURIComponent(documentId)}/grants`, grant),
+  listGrants: (taskId: string, documentId: string) => gatewayClient.get<{ items: Grant[] }>(`/tasks/${encodeURIComponent(taskId)}/documents/${encodeURIComponent(documentId)}/grants`),
   taskDocumentsPage: (taskId: string, page = 1, pageSize = 20): Promise<PaginatedResponse<TaskDocument>> => gatewayClient.getPage<TaskDocument>(`/tasks/${encodeURIComponent(taskId)}/documents?${pageQuery(page, pageSize)}`),
   attachToTask: (taskId: string, documentId: string, grants: Array<{ actor_id: string; permissions: string[]; expires_at: string }>) => gatewayClient.post<DocumentUploadResult>(`/tasks/${encodeURIComponent(taskId)}/documents`, { document_id: documentId, grants }),
   detachFromTask: (taskId: string, documentId: string) => gatewayClient.delete<void>(`/tasks/${encodeURIComponent(taskId)}/documents/${encodeURIComponent(documentId)}`),

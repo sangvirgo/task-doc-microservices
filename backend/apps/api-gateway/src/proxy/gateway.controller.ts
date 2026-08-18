@@ -221,10 +221,17 @@ export class GatewayController {
 
     // Employees may only read their own audit trail: force the actor filter server-side
     // (never trust the client) and reject requests that try to scope to another user.
+    // The "super log" page (query flag all=true) is intentionally open to both roles and
+    // shows the full read-only feed, so the actor filter is skipped for it.
     const gatewayUser = (req as unknown as Record<string, unknown>)['user'] as
       { userId: string; role: string } | undefined;
     let targetPath = req.originalUrl.slice(route.prefix.length);
-    if (requestPath === '/api/audit/events' && req.method === 'GET' && gatewayUser?.role !== 'ADMIN') {
+    if (
+      requestPath === '/api/audit/events' &&
+      req.method === 'GET' &&
+      gatewayUser?.role !== 'ADMIN' &&
+      req.query.all !== 'true'
+    ) {
       const actorId = gatewayUser?.userId;
       if (!actorId) throw new ForbiddenException('Authentication required');
       const suppliedActor = typeof req.query.actor_id === 'string' ? req.query.actor_id : undefined;

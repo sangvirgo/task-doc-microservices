@@ -95,6 +95,9 @@ export class NotificationEventsConsumer implements OnModuleInit, OnApplicationSh
         maxAttempts: 3,
       },
       async (event) => {
+        if (event.payload.reason_code === 'LOGOUT') {
+          return;
+        }
         await this.createNotificationsForEvent({
           eventId: event.event_id,
           eventType: event.event_type,

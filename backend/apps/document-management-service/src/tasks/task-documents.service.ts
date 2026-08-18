@@ -378,7 +378,11 @@ export class TaskDocumentsService {
       throw new NotFoundException('Task-document association not found');
     }
 
-    await this.assertCanShare(association.document, caller, taskId, context.task.parent_task_id);
+    // The task creator may always remove an attachment from their own task, even
+    // when they hold no SHARE capability on the document itself.
+    if (context.task.creator_id !== caller.userId) {
+      await this.assertCanShare(association.document, caller, taskId, context.task.parent_task_id);
+    }
 
     // Removing the association first is fail-closed: even if the external revoke call is
     // unavailable, Permission Service will reject the now-orphaned task-scoped grants.
@@ -637,9 +641,7 @@ export class TaskDocumentsService {
     return (
       context.task.creator_id === userId ||
       context.task.assignee_id === userId ||
-      context.participants.some(
-        (participant) => participant.user_id === userId && participant.role !== 'ASSIGNEE',
-      )
+      context.participants.some((participant) => participant.user_id === userId)
     );
   }
 

@@ -88,7 +88,7 @@ export function TaskAssignmentDrawer({ currentUserId, members, parentTask, submi
         <section className={styles.attachments} aria-labelledby="task-attachments-title">
           <div><strong id="task-attachments-title">Tệp đính kèm</strong><span>Tự động gắn vào task ngay sau khi tạo</span></div>
           <label className={styles.filePicker} htmlFor="task-attachments"><span aria-hidden="true">⌕</span><b>Chọn tệp</b><small>Tối đa 5 MB mỗi tệp</small><input id="task-attachments" name="attachments" aria-label="Đính kèm tệp" type="file" multiple onChange={selectAttachments} /></label>
-          {attachments.length > 0 && <ul className={styles.fileList}>{attachments.map(file => <li key={`${file.name}-${file.lastModified}`}><span aria-hidden="true">▧</span><span>{file.name}</span><small>{Math.ceil(file.size / 1024)} KB</small></li>)}</ul>}
+          {attachments.length > 0 && <ul className={styles.fileList}>{attachments.map((file, index) => <li key={`${file.name}-${file.lastModified}`}><span aria-hidden="true">▧</span><span>{file.name}</span><small>{Math.ceil(file.size / 1024)} KB</small><button type="button" className={styles.removeFile} aria-label={'Gỡ ' + file.name} title={'Gỡ ' + file.name} onClick={() => setAttachments(current => current.filter((_, currentIndex) => currentIndex !== index))}>×</button></li>)}</ul>}
         </section>
         <p className={styles.helper}>{assigneeId ? 'Task sẽ được chuyển sang trạng thái Đã giao.' : 'Chưa giao người thực hiện thì task được lưu ở trạng thái Chưa giao; bạn có thể giao sau.'}</p>
 

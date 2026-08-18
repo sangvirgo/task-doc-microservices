@@ -285,6 +285,43 @@ export class PermissionService {
       throw new ForbiddenException('Grant recipient must be a direct task participant');
     }
 
+    const existing = await this.prisma.grant.findFirst({
+      where: {
+        resource_type: ResourceType.DOCUMENT,
+        resource_id: data.resource_id,
+        task_id: data.task_id,
+        actor_id: data.actor_id,
+        status: 'ACTIVE',
+      },
+      orderBy: { created_at: 'desc' },
+    });
+
+    if (existing) {
+      this.assertKnownPermissions(data.permissions);
+      const now = new Date();
+      if (data.expires_at.getTime() <= now.getTime()) {
+        throw new BadRequestException('Grant expiration must be in the future');
+      }
+      const taskDeadline = context.task.deadline ? new Date(context.task.deadline) : undefined;
+      const effectiveExpiresAt = earliestDate(data.expires_at, taskDeadline);
+      if (effectiveExpiresAt.getTime() <= now.getTime()) {
+        throw new BadRequestException('Grant is already expired under the task deadline');
+      }
+      const updated = await this.prisma.grant.update({
+        where: { id: existing.id },
+        data: {
+          grantor_id: data.grantor_id,
+          permissions: data.permissions,
+          expires_at: data.expires_at,
+          effective_expires_at: effectiveExpiresAt,
+          status: 'ACTIVE',
+          revoked_at: null,
+        },
+      });
+      await this.shortenDescendantExpiries(existing.id, effectiveExpiresAt);
+      return this.toDto(updated);
+    }
+
     return this.createGrant({
       ...data,
       resource_type: ResourceType.DOCUMENT,
@@ -772,8 +809,6 @@ function isDirectTaskParticipant(
   return (
     context.task.creator_id === userId ||
     context.task.assignee_id === userId ||
-    context.participants.some(
-      (participant) => participant.user_id === userId && participant.role !== 'ASSIGNEE',
-    )
+    context.participants.some((participant) => participant.user_id === userId)
   );
 }

@@ -10,7 +10,9 @@
 
 const fs = require('fs');
 const path = require('path');
+const crypto = require('crypto');
 const { hashSync } = require('bcryptjs');
+const { Client: MinioClient } = require('minio');
 
 // ── Parse .env ──────────────────────────────────────────────────────────────
 function loadEnv() {
@@ -247,12 +249,144 @@ async function seedDocumentSecurity() {
       create: { id: 1, active: true },
       update: {},
     });
-    console.log('  document_security_db: KEK v1 seeded');
+    await seedDemoDocumentContent(prisma);
+    console.log('  document_security_db: KEK v1 seeded + demo document content encrypted');
     return prisma;
   } catch (e) {
     console.error('  document_security_db ERROR:', e.message);
     throw e;
   }
+}
+
+/**
+ * Give the seeded "Q3 Financial Report" a real, decryptable file so the demo can
+ * preview and download it. Mirrors the document-security-service pipeline exactly:
+ * AES-256-GCM with a random DEK, DEK wrapped by the sha256-derived KEK, plaintext
+ * sha256 checksum, and an HMAC-SHA256 integrity signature.
+ */
+async function seedDemoDocumentContent(securityPrisma) {
+  const docPrisma = prismaClient('@prisma/client-document', 'DOCUMENT_DATABASE_URL');
+
+  const kekSecret = process.env.DOCUMENT_KEK_V1 || 'b211f9500ad1bba9c484eb8d5c333b6be40e137bc7a86258fd2d92985127baa4';
+  const signatureKey = process.env.DOCUMENT_SIGNATURE_KEY || '';
+  const kekVersion = Number(process.env.DOCUMENT_ACTIVE_KEK_VERSION || 1);
+  const kek = crypto.createHash('sha256').update(kekSecret, 'utf8').digest();
+
+  const plaintext = Buffer.from(
+    [
+      '%PDF-1.4',
+      '1 0 obj << /Type /Catalog /Pages 2 0 R >> endobj',
+      '2 0 obj << /Type /Pages /Kids [3 0 R] /Count 1 >> endobj',
+      '3 0 obj << /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 5 0 R >> >> /Contents 4 0 R >> endobj',
+      '4 0 obj << /Length 74 >> stream',
+      'BT /F1 24 Tf 72 720 Td (Q3 Financial Report - C17 Demo) Tj ET',
+      'endstream endobj',
+      '5 0 obj << /Type /Font /Subtype /Type1 /BaseFont /Helvetica >> endobj',
+      'xref',
+      '0 6',
+      '0000000000 65535 f ',
+      '0000000009 00000 n ',
+      '0000000058 00000 n ',
+      '0000000115 00000 n ',
+      '0000000261 00000 n ',
+      '0000000389 00000 n ',
+      'trailer << /Root 1 0 R /Size 6 >>',
+      'startxref',
+      '475',
+      '%%EOF',
+    ].join('\n'),
+    'utf8',
+  );
+
+  const dek = crypto.randomBytes(32);
+  const iv = crypto.randomBytes(12);
+  const cipher = crypto.createCipheriv('aes-256-gcm', dek, iv);
+  const ciphertext = Buffer.concat([cipher.update(plaintext), cipher.final()]);
+  const authTag = cipher.getAuthTag();
+
+  const wrapIv = crypto.randomBytes(12);
+  const wrapCipher = crypto.createCipheriv('aes-256-gcm', kek, wrapIv);
+  const wrapped = Buffer.concat([wrapCipher.update(dek), wrapCipher.final()]);
+  const wrapTag = wrapCipher.getAuthTag();
+  const encryptedDek = JSON.stringify({
+    iv: wrapIv.toString('base64'),
+    auth_tag: wrapTag.toString('base64'),
+    ciphertext: wrapped.toString('base64'),
+  });
+
+  const objectKey = 'documents/seed/q3-financial-report-v1.pdf';
+  const checksum = crypto.createHash('sha256').update(plaintext).digest('hex');
+  const signaturePayload = JSON.stringify({
+    document_id: DOC_ID,
+    version: 1,
+    object_key: objectKey,
+    checksum,
+    encrypted_dek: encryptedDek,
+    iv: iv.toString('base64'),
+    auth_tag: authTag.toString('base64'),
+    kek_version: kekVersion,
+    file_size: plaintext.length,
+    mime_type: 'application/pdf',
+  });
+  const signature = crypto.createHmac('sha256', signatureKey).update(signaturePayload, 'utf8').digest('base64');
+
+  const minioEndpoint = process.env.MINIO_ENDPOINT || 'minio';
+  const minioPort = Number(process.env.MINIO_PORT || 9000);
+  const minioBucket = process.env.MINIO_BUCKET || 'documents';
+  const client = new MinioClient({
+    endPoint: minioEndpoint,
+    port: minioPort,
+    useSSL: String(process.env.MINIO_USE_SSL || 'false') === 'true',
+    accessKey: process.env.MINIO_ACCESS_KEY || 'minioadmin',
+    secretKey: process.env.MINIO_SECRET_KEY || 'minioadmin',
+  });
+
+  const bucketExists = await client.bucketExists(minioBucket);
+  if (!bucketExists) await client.makeBucket(minioBucket);
+  await client.putObject(minioBucket, objectKey, ciphertext, ciphertext.length);
+
+  await securityPrisma.encryptionRecord.upsert({
+    where: { document_id_version: { document_id: DOC_ID, version: 1 } },
+    create: {
+      document_id: DOC_ID,
+      version: 1,
+      object_key: objectKey,
+      checksum,
+      signature,
+      kek_version: kekVersion,
+      encrypted_dek: encryptedDek,
+      iv: iv.toString('base64'),
+      auth_tag: authTag.toString('base64'),
+      file_size: plaintext.length,
+      mime_type: 'application/pdf',
+      scan_status: 'CLEAN',
+      scan_result: 'OK',
+    },
+    update: {
+      object_key: objectKey,
+      checksum,
+      signature,
+      kek_version: kekVersion,
+      encrypted_dek: encryptedDek,
+      iv: iv.toString('base64'),
+      auth_tag: authTag.toString('base64'),
+      file_size: plaintext.length,
+      mime_type: 'application/pdf',
+      scan_status: 'CLEAN',
+      scan_result: 'OK',
+    },
+  });
+
+  await docPrisma.documentVersion.update({
+    where: { document_id_version: { document_id: DOC_ID, version: 1 } },
+    data: {
+      object_key: objectKey,
+      checksum: `sha256:${checksum}`,
+      file_size: plaintext.length,
+      mime_type: 'application/pdf',
+    },
+  });
+  await docPrisma.$disconnect();
 }
 
 async function seedPermission() {
