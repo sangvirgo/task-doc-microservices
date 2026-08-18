@@ -44,4 +44,35 @@ export class TaskDocumentClient {
       clearTimeout(timeout);
     }
   }
+
+  async titles(
+    ids: string[],
+  ): Promise<Record<string, { title: string; document_type: string }>> {
+    if (ids.length === 0) return {};
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), this.timeoutMs);
+
+    try {
+      const query = new URLSearchParams();
+      query.set('ids', ids.join(','));
+      const response = await fetch(
+        `${this.documentServiceUrl}/documents/internal/titles?${query.toString()}`,
+        { headers: { Accept: 'application/json' }, signal: controller.signal },
+      );
+      if (!response.ok) {
+        throw new ServiceUnavailableException(
+          `Document title lookup failed: ${response.status}`,
+        );
+      }
+      return (await response.json()) as Record<string, { title: string; document_type: string }>;
+    } catch (error) {
+      if (error instanceof ServiceUnavailableException) throw error;
+      this.logger.warn(
+        `Document title lookup error: ${error instanceof Error ? error.message : 'unknown'}`,
+      );
+      return {};
+    } finally {
+      clearTimeout(timeout);
+    }
+  }
 }

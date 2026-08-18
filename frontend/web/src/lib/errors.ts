@@ -29,5 +29,7 @@ export async function toGatewayError(response: Response): Promise<GatewayError> 
     }
   } catch { /* Gateway response may be empty. */ }
   const safeMessages: Record<number, string> = { 403: 'You do not have permission to do that.', 404: 'The requested resource was not found.', 409: 'This item changed. Refresh and try again.', 413: 'The uploaded file is too large.', 415: 'That file type is not supported.', 429: 'Too many requests. Try again shortly.', 503: 'The service is temporarily unavailable.' };
-  return new GatewayError(response.status, safeMessages[response.status] ?? message, correlationId);
+  const hasServerMessage = message !== 'The request could not be completed.';
+  const finalMessage = hasServerMessage ? message : (safeMessages[response.status] ?? message);
+  return new GatewayError(response.status, finalMessage, correlationId);
 }

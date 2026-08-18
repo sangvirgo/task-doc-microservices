@@ -74,7 +74,7 @@ useEffect(load, [session?.userId, session?.role]);
   const documentById = new Map(documents.map(document => [document.id, document]));
   const taskById = new Map(tasks.map(task => [task.id, task]));
   const memberById = new Map(members.map(member => [member.id, member]));
-  const documentTitle = (grant: Grant) => documentById.get(grant.resource_id)?.title || 'Tài liệu không xác định';
+  const documentTitle = (grant: Grant) => grant.document_title || documentById.get(grant.resource_id)?.title || 'Tài liệu không xác định';
   const taskTitle = (grant: Grant) => taskById.get(grant.task_id)?.title || 'Task không xác định';
   const personName = (id?: string) => id ? memberById.get(id)?.email || id.slice(0, 8) : 'Unknown recipient';
   const activeCount = visibleGrants.filter(grant => grant.status === 'ACTIVE').length;

@@ -302,6 +302,17 @@ export class DocumentsService {
     };
   }
 
+  async findTitlesByIds(ids: string[]): Promise<Record<string, { title: string; document_type: string }>> {
+    if (ids.length === 0) return {};
+    const documents = await this.prisma.document.findMany({
+      where: { id: { in: ids } },
+      select: { id: true, title: true, document_type: true },
+    });
+    return Object.fromEntries(
+      documents.map((document) => [document.id, { title: document.title, document_type: document.document_type }]),
+    );
+  }
+
   async createUploadedDocument(data: {
     document_id: string;
     title: string;

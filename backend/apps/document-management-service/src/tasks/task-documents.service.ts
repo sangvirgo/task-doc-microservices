@@ -181,7 +181,7 @@ export class TaskDocumentsService {
 
     for (const item of associations) {
       const access = await this.getAccess(taskId, item.document, caller);
-      if (!access.permissions.includes(PermissionAction.PREVIEW)) continue;
+      if (access.permissions.length === 0) continue;
 
       visible.push({
         association_id: item.association.id,

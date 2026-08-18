@@ -48,12 +48,15 @@ export function GrantDetail({ id }: { id: string }) {
   const [members, setMembers] = useState<MemberOption[]>([]);
   const [error, setError] = useState(false);
   const [message, setMessage] = useState('');
-  const [delegatePermissions, setDelegatePermissions] = useState<string[]>(['PREVIEW', 'DOWNLOAD']);
+  const [delegatePermissions, setDelegatePermissions] = useState<string[]>([]);
 
   const load = () => {
     setGrant(null);
     setError(false);
-    grantsApi.get(id).then(setGrant).catch(() => setError(true));
+    grantsApi.get(id).then((grant) => {
+      setGrant(grant);
+      setDelegatePermissions(grant.permissions ?? []);
+    }).catch(() => setError(true));
     documentsApi.list().then(setDocuments).catch(() => setDocuments([]));
     tasksApi.list().then(setTasks).catch(() => setTasks([]));
     adminApi.directory().then(setMembers).catch(() => setMembers([]));
@@ -89,8 +92,8 @@ export function GrantDetail({ id }: { id: string }) {
       setMessage(`Đã chuyển tiếp quyền cho người nhận. Trạng thái máy chủ: ${result.status.toLowerCase()}.`);
       event.currentTarget.reset();
       load();
-    } catch {
-      setMessage('Máy chủ không chấp nhận chuyển tiếp quyền. Người nhận phải là thành viên trực tiếp của task.');
+    } catch (reason) {
+      setMessage(reason instanceof Error && reason.message ? reason.message : 'Máy chủ không chấp nhận chuyển tiếp quyền.');
     }
   };
 
@@ -129,7 +132,7 @@ export function GrantDetail({ id }: { id: string }) {
         <span className={styles.grantsBadge}>{grant.resource_type}</span>
       </div>
       <div className={styles.detailBody}>
-        <div className={styles.detailRow}><span className={styles.detailLabel}>Tài liệu</span><span className={styles.detailValue}>{document?.title || 'Tài liệu không xác định'}<small>Loại tài nguyên: {grant.resource_type}</small></span></div>
+        <div className={styles.detailRow}><span className={styles.detailLabel}>Tài liệu</span><span className={styles.detailValue}>{document?.title || grant.document_title || 'Tài liệu không xác định'}<small>Loại tài nguyên: {grant.resource_type}</small></span></div>
         <div className={styles.detailRow}><span className={styles.detailLabel}>Công việc</span><span className={styles.detailValue}>{task?.title || 'Task không xác định'}<small>Mã task: {grant.task_id.slice(0, 8)}</small></span></div>
         <div className={styles.detailRow}><span className={styles.detailLabel}>Quyền truy cập</span><span className={styles.detailValue}><div className={styles.permissionChips}>{(grant.permissions || []).map(permission => <span key={permission}>{permissionLabel[permission] || permission}</span>)}</div></span></div>
         <div className={styles.detailRow}><span className={styles.detailLabel}>Trạng thái</span><span className={styles.detailValue}><span className={statusClass(grant.status)}>{grant.status}</span></span></div>
@@ -156,9 +159,9 @@ export function GrantDetail({ id }: { id: string }) {
           </label>
           <fieldset className={styles.permissionField}>
             <legend>Quyền được cấp</legend>
-            <p>Tích nhanh nhiều quyền. Để trống để giữ nguyên quyền của quyền gốc.</p>
+            <p>Tối đa các quyền bạn đang giữ trên quyền này. Để trống để giữ nguyên quyền của quyền gốc.</p>
             <div className={styles.permissionGrid}>
-              {GRANTABLE_PERMISSIONS.map(permission => (
+              {GRANTABLE_PERMISSIONS.filter(permission => (grant.permissions ?? []).includes(permission)).map(permission => (
                 <label key={permission}>
                   <input type="checkbox" checked={delegatePermissions.includes(permission)} onChange={() => setDelegatePermissions(current => current.includes(permission) ? current.filter(item => item !== permission) : [...current, permission])} />
                   <span>{permissionLabel[permission] ?? permission}</span>
@@ -166,7 +169,7 @@ export function GrantDetail({ id }: { id: string }) {
               ))}
             </div>
             <div className={styles.permissionQuickActions}>
-              <button type="button" onClick={() => setDelegatePermissions([...GRANTABLE_PERMISSIONS])}>Chọn tất cả</button>
+              <button type="button" onClick={() => setDelegatePermissions([...(grant.permissions ?? [])])}>Chọn tất cả</button>
               <button type="button" onClick={() => setDelegatePermissions([])}>Bỏ chọn</button>
             </div>
             <input type="hidden" name="permissions" value={delegatePermissions.join(', ')} />

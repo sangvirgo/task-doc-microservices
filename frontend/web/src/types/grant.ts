@@ -12,6 +12,7 @@ export interface Grant {
   revoked_at: string | null;
   parent_grant_id: string | null;
   created_at: string;
+  document_title?: string | null;
 }
 
 export interface CreateGrantInput {

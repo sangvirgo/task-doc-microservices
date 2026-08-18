@@ -259,6 +259,21 @@ export class DocumentsController {
     return this.documentStatisticsService.getOverview({ ...parsed, caller: user });
   }
 
+  @Get('internal/titles')
+  @ApiOperation({ summary: 'Resolve document titles for internal services' })
+  async getInternalTitles(
+    @Query('ids') ids?: string,
+  ): Promise<Record<string, { title: string; document_type: string }>> {
+    const parsed = z
+      .string()
+      .min(1)
+      .safeParse(ids);
+    if (!parsed.success) return {};
+    const rawIds = parsed.data.split(',').map((value) => value.trim()).filter(Boolean);
+    const uniqueIds = Array.from(new Set(rawIds));
+    return this.documentsService.findTitlesByIds(uniqueIds);
+  }
+
   @Get()
   @ApiOperation({ summary: 'List documents' })
   async listDocuments(

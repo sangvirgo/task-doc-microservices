@@ -24,6 +24,7 @@ import {
   toPrismaPagination,
 } from '@c17/contracts';
 import { EVENT_PUBLISHER, type EventPublisher } from '@c17/messaging';
+import type { Grant } from '@prisma/client-permission';
 import { PermissionPrismaService } from '../prisma/permission-prisma.service';
 import { TaskContextClient } from '../tasks/task-context.client';
 import { TaskDocumentClient } from '../tasks/task-document.client';
@@ -42,6 +43,7 @@ export interface GrantDto {
   revoked_at: string | null;
   parent_grant_id: string | null;
   created_at: string;
+  document_title?: string | null;
 }
 
 const DEFAULT_PAGINATION: PaginationQuery = { page: 1, page_size: 20 };
@@ -149,6 +151,13 @@ export class PermissionService {
           grant.resource_type === ResourceType.DOCUMENT &&
           !(await this.taskDocumentClient.exists(grant.task_id, grant.resource_id))
         ) {
+          continue;
+        }
+
+        // A delegated grant is only effective while its entire parent chain is alive.
+        // Revoking or expiring an ancestor invalidates every descendant, even if the
+        // descendant was never touched by the cascade revoke.
+        if (grant.parent_grant_id && !(await this.isParentChainAlive(grant.parent_grant_id))) {
           continue;
         }
 
@@ -461,7 +470,12 @@ export class PermissionService {
   async getGrant(id: string): Promise<GrantDto> {
     const grant = await this.prisma.grant.findUnique({ where: { id } });
     if (!grant) throw new NotFoundException('Grant not found');
-    return this.toDto(grant);
+    const dto = this.toDto(grant);
+    if (dto.resource_type === ResourceType.DOCUMENT) {
+      const titles = await this.taskDocumentClient.titles([dto.resource_id]);
+      dto.document_title = titles[dto.resource_id]?.title ?? null;
+    }
+    return dto;
   }
 
   async listGrants(
@@ -484,10 +498,29 @@ export class PermissionService {
         ...toPrismaPagination(pagination),
       }),
     ]);
+    const items = grants.map((g) => this.toDto(g));
+    await this.attachDocumentTitles(items);
     return {
-      items: grants.map((g) => this.toDto(g)),
+      items,
       pagination: createPaginationMeta(pagination.page, pagination.page_size, total),
     };
+  }
+
+  private async attachDocumentTitles(grants: GrantDto[]): Promise<void> {
+    const documentIds = Array.from(
+      new Set(
+        grants
+          .filter((grant) => grant.resource_type === ResourceType.DOCUMENT)
+          .map((grant) => grant.resource_id),
+      ),
+    );
+    if (documentIds.length === 0) return;
+    const titles = await this.taskDocumentClient.titles(documentIds);
+    for (const grant of grants) {
+      if (grant.resource_type === ResourceType.DOCUMENT) {
+        grant.document_title = titles[grant.resource_id]?.title ?? null;
+      }
+    }
   }
 
   async delegateGrant(data: {
@@ -719,6 +752,21 @@ export class PermissionService {
     }
 
     return updatedCount;
+  }
+
+  private async isParentChainAlive(parentGrantId: string): Promise<boolean> {
+    let currentId: string | null = parentGrantId;
+    const seen = new Set<string>();
+    while (currentId) {
+      if (seen.has(currentId)) return false;
+      seen.add(currentId);
+      const ancestor: Grant | null = await this.prisma.grant.findUnique({ where: { id: currentId } });
+      if (!ancestor) return false;
+      if (ancestor.status !== 'ACTIVE' || ancestor.revoked_at) return false;
+      if (ancestor.effective_expires_at.getTime() <= Date.now()) return false;
+      currentId = ancestor.parent_grant_id;
+    }
+    return true;
   }
 
   private async cascadeRevoke(
