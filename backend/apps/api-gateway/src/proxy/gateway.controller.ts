@@ -221,16 +221,15 @@ export class GatewayController {
 
     // Employees may only read their own audit trail: force the actor filter server-side
     // (never trust the client) and reject requests that try to scope to another user.
-    // The "super log" page (query flag all=true) is intentionally open to both roles and
-    // shows the full read-only feed, so the actor filter is skipped for it.
+    // The "super log" page (query flag all=true) is intentionally open to both roles, but
+    // for employees it is still scoped to their own activity — only admins see the full feed.
     const gatewayUser = (req as unknown as Record<string, unknown>)['user'] as
       { userId: string; role: string } | undefined;
     let targetPath = req.originalUrl.slice(route.prefix.length);
     if (
       requestPath === '/api/audit/events' &&
       req.method === 'GET' &&
-      gatewayUser?.role !== 'ADMIN' &&
-      req.query.all !== 'true'
+      gatewayUser?.role !== 'ADMIN'
     ) {
       const actorId = gatewayUser?.userId;
       if (!actorId) throw new ForbiddenException('Authentication required');
@@ -240,7 +239,7 @@ export class GatewayController {
       }
       const rest = (req.originalUrl.includes('?') ? req.originalUrl.slice(req.originalUrl.indexOf('?') + 1) : '')
         .split('&')
-        .filter((pair) => pair && !pair.startsWith('actor_id='));
+        .filter((pair) => pair && !pair.startsWith('actor_id=') && pair !== 'all=true');
       targetPath = `${targetPath.split('?')[0]}?actor_id=${encodeURIComponent(actorId)}${rest.length ? '&' + rest.join('&') : ''}`;
     }
     const targetUrl = `${route.target}${route.upstreamBasePath}${targetPath || ''}`;

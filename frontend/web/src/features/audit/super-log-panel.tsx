@@ -134,6 +134,7 @@ const formatTime = (value: string) => new Date(value).toLocaleString('vi-VN');
 
 export function SuperLogPanel() {
   const session = readSession();
+  const isAdmin = session?.role === 'ADMIN';
   const [events, setEvents] = useState<AuditEventMetadata[] | null>(null);
   const [failed, setFailed] = useState(false);
   const [filter, setFilter] = useState('ALL');
@@ -174,9 +175,9 @@ export function SuperLogPanel() {
   return <section className={styles.auditPage}>
     <header className={styles.auditHero}>
       <div>
-        <span className={styles.heroEyebrow}>SIÊU NHẬT KÝ TOÀN HỆ THỐNG</span>
+        <span className={styles.heroEyebrow}>SIÊU NHẬT KÝ {isAdmin ? 'TOÀN HỆ THỐNG' : 'HOẠT ĐỘNG CỦA BẠN'}</span>
         <h1>Super log</h1>
-        <p>Toàn bộ thao tác của người dùng lẫn quản trị viên, được móc nối thành chuỗi băm bất biến.</p>
+        <p>{isAdmin ? 'Toàn bộ thao tác của người dùng lẫn quản trị viên, được móc nối thành chuỗi băm bất biến.' : 'Toàn bộ hoạt động của bạn trên hệ thống, được móc nối thành chuỗi băm bất biến.'}</p>
       </div>
       <div className={styles.heroActions}>
         <span className={styles.auditBadge}><span aria-hidden="true">▤</span>Chỉ đọc · Không ai ghi/sửa được</span>
@@ -186,15 +187,15 @@ export function SuperLogPanel() {
     <div className={styles.auditNotice}>
       <span className={styles.noticeIcon} aria-hidden="true">i</span>
       <div>
-        <strong>Mọi hoạt động, mọi tài khoản — kể cả quản trị viên</strong>
-        <p>Màn hình này liệt kê mọi sự kiện kiểm toán của toàn hệ thống, dành cho cả người dùng lẫn quản trị viên, và hoàn toàn chỉ đọc. Không ai — kể cả quản trị viên — có thể chỉnh sửa, ghi đè hoặc xóa sự kiện: dữ liệu chỉ được thêm vào bởi các dịch vụ nội bộ theo chuỗi băm SHA-256.</p>
+        <strong>{isAdmin ? 'Mọi hoạt động, mọi tài khoản — kể cả quản trị viên' : 'Chỉ hiển thị hoạt động của riêng bạn'}</strong>
+        <p>{isAdmin ? 'Màn hình này liệt kê mọi sự kiện kiểm toán của toàn hệ thống, dành cho cả người dùng lẫn quản trị viên, và hoàn toàn chỉ đọc. Không ai — kể cả quản trị viên — có thể chỉnh sửa, ghi đè hoặc xóa sự kiện: dữ liệu chỉ được thêm vào bởi các dịch vụ nội bộ theo chuỗi băm SHA-256.' : 'Bạn chỉ thấy các sự kiện kiểm toán của chính mình; hoạt động của người khác chỉ dành cho quản trị viên. Toàn bộ nhật ký là chỉ đọc — dữ liệu chỉ được thêm vào bởi các dịch vụ nội bộ theo chuỗi băm SHA-256.'}</p>
       </div>
     </div>
 
     <div className={styles.auditListHeader}>
       <div>
-        <span className={styles.panelEyebrow}>HOẠT ĐỘNG TOÀN HỆ THỐNG</span>
-        <h2>Lịch sử thao tác của mọi người dùng</h2>
+        <span className={styles.panelEyebrow}>{isAdmin ? 'HOẠT ĐỘNG TOÀN HỆ THỐNG' : 'HOẠT ĐỘNG CỦA BẠN'}</span>
+        <h2>{isAdmin ? 'Lịch sử thao tác của mọi người dùng' : 'Lịch sử thao tác của bạn'}</h2>
       </div>
       <label className={styles.auditFilter}>
         <span>Lọc theo nhóm</span>
