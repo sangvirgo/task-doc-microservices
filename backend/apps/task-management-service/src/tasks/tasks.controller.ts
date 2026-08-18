@@ -225,16 +225,6 @@ export class TasksController {
         parent_task_id: parsed.data.parent_task_id,
         deadline: parsed.data.deadline ? new Date(parsed.data.deadline) : undefined,
         correlation_id: getCorrelationId() ?? randomUUID(),
-      })
-      .then(async (task) => {
-        await this.auditClient.record({
-          event_type: 'TASK_CREATED',
-          actor_id: user.userId,
-          resource_type: 'TASK',
-          resource_id: task.id,
-          payload: { title: task.title, assignee_id: task.assignee_id },
-        });
-        return task;
       });
   }
 

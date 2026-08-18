@@ -48,6 +48,26 @@ export class AuditService {
     resource_id: string;
     payload: Record<string, unknown>;
   }): Promise<{ current_hash: string; sequence_number: number }> {
+    // Keep the super log focused on meaningful activity. Raw permission-check
+    // decisions (even denied ones) are noise: real security denials are already
+    // captured by the domain-level *_DENIED events with better context. Login,
+    // logout and preview-session teardown are routine. Page views, download
+    // tickets and denied task-document listings are high-frequency noise that
+    // add little to an audit trail. This filter is the single choke point for
+    // both the RabbitMQ consumer and the direct HTTP append path.
+    const SUPPRESSED_EVENT_TYPES = new Set([
+      'permission.decision.made',
+      'auth.login.failed',
+      'auth.session.revoked',
+      'DOCUMENT_PREVIEW_PAGE_VIEWED',
+      'DOCUMENT_PREVIEW_SESSION_REVOKED',
+      'DOCUMENT_DOWNLOAD_TICKET',
+      'TASK_DOCUMENT_LIST_DENIED',
+    ]);
+    if (SUPPRESSED_EVENT_TYPES.has(event.event_type)) {
+      return { current_hash: '', sequence_number: -1 };
+    }
+
     return this.prisma.$transaction(async (tx) => {
       const existing = await tx.auditEvent.findUnique({ where: { id: event.event_id } });
       if (existing) {

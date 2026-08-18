@@ -39,6 +39,42 @@ const EVENT_LABELS: Record<string, string> = {
   'transfer.package.accepted': 'Chấp nhận gói chuyển giao',
   'transfer.package.rejected': 'Từ chối gói chuyển giao',
   'disposal.executed': 'Đã hủy hồ sơ',
+
+  TASK_CREATED: 'Tạo công việc',
+  TASK_DOCUMENT_ATTACHED: 'Gắn tài liệu vào công việc',
+  TASK_DOCUMENT_DETACHED: 'Gỡ tài liệu khỏi công việc',
+  TASK_DOCUMENT_ATTACH_DENIED: 'Gắn tài liệu bị từ chối',
+  TASK_DOCUMENT_LIST_DENIED: 'Xem tài liệu công việc bị từ chối',
+  TASK_DOCUMENT_GRANT_DENIED: 'Thao tác quyền tài liệu bị từ chối',
+  TASK_DOCUMENT_GRANT_LIST_DENIED: 'Xem quyền tài liệu bị từ chối',
+  TASK_COMMENT_ACCESS_DENIED: 'Xem bình luận công việc bị từ chối',
+  DOCUMENT_CREATED: 'Tạo tài liệu',
+  DOCUMENT_UPLOAD_REJECTED: 'Tài liệu bị từ chối tải lên',
+  DOCUMENT_PREVIEW_SESSION_CREATED: 'Mở phiên xem trước tài liệu',
+  DOCUMENT_PREVIEW_PAGE_VIEWED: 'Xem một trang tài liệu',
+  DOCUMENT_PREVIEW_SESSION_REVOKED: 'Đóng phiên xem trước tài liệu',
+  DOCUMENT_PREVIEW_DENIED: 'Xem trước tài liệu bị từ chối',
+  DOCUMENT_DOWNLOAD_TICKET: 'Tạo vé tải xuống tài liệu',
+  DOCUMENT_DOWNLOAD_REDEEMED: 'Tải xuống tài liệu',
+  DOCUMENT_DOWNLOAD_DENIED: 'Tải xuống tài liệu bị từ chối',
+  DOCUMENT_GRANT_CREATED_IN_TASK: 'Cấp quyền tài liệu trong công việc',
+  DOCUMENT_GRANT_UPDATED_IN_TASK: 'Cập nhật quyền tài liệu trong công việc',
+  DOCUMENT_GRANT_REVOKED_IN_TASK: 'Thu hồi quyền tài liệu trong công việc',
+  DOCUMENT_GRANTS_REVOKED_DUE_TO_TASK_DETACH: 'Thu hồi quyền khi gỡ tài liệu khỏi công việc',
+  RECORD_CREATED: 'Tạo hồ sơ',
+  RECORD_ENTRY_ADDED: 'Thêm tài liệu vào hồ sơ',
+  RECORD_SEALED: 'Niêm phong hồ sơ',
+  RETENTION_ELIGIBLE: 'Hồ sơ đủ điều kiện lưu trữ',
+  TRANSFER_PACKAGE_CREATED: 'Tạo gói chuyển giao',
+  TRANSFER_PACKAGE_SUBMITTED: 'Nộp gói chuyển giao',
+  TRANSFER_PACKAGE_RECEIVED: 'Nhận gói chuyển giao',
+  TRANSFER_PACKAGE_ACCEPTED: 'Chấp nhận gói chuyển giao',
+  TRANSFER_PACKAGE_REJECTED: 'Từ chối gói chuyển giao',
+  TRANSFER_PACKAGE_ARCHIVED: 'Lưu trữ gói chuyển giao',
+  TRANSFER_PACKAGE_REJECTION_FAILED: 'Từ chối gói chuyển giao thất bại',
+  DISPOSAL_APPROVED: 'Phê duyệt hủy hồ sơ',
+  DISPOSAL_EXECUTED: 'Đã hủy hồ sơ',
+  DISPOSAL_FAILED: 'Hủy hồ sơ thất bại',
 };
 
 const RESOURCE_LABELS: Record<string, string> = {
@@ -81,7 +117,18 @@ const DOMAIN_TONES: Record<string, string> = {
 
 const labelOf = (type: string) => EVENT_LABELS[type] ?? type;
 const resourceOf = (type: string) => RESOURCE_LABELS[type] ?? type;
-const toneOf = (type: string) => DOMAIN_TONES[type.split('.')[0]] ?? 'toneDefault';
+const domainOf = (type: string) => {
+  if (type.includes('.')) return type.split('.')[0];
+  const lower = type.toLowerCase();
+  if (lower.startsWith('task')) return 'task';
+  if (lower.startsWith('document')) return 'document';
+  if (lower.startsWith('transfer')) return 'transfer';
+  if (lower.startsWith('record') || lower.startsWith('retention')) return 'record';
+  if (lower.startsWith('disposal')) return 'disposal';
+  if (lower.startsWith('security')) return 'security';
+  return 'document';
+};
+const toneOf = (type: string) => DOMAIN_TONES[domainOf(type)] ?? 'toneDefault';
 const shortId = (id: string | null | undefined) => (id ? id.slice(0, 8) + '…' + id.slice(-4) : 'Hệ thống');
 const formatTime = (value: string) => new Date(value).toLocaleString('vi-VN');
 
@@ -115,7 +162,7 @@ export function SuperLogPanel() {
   const visible = useMemo(() => {
     if (!events) return [];
     if (filter === 'ALL') return events;
-    return events.filter((event) => event.event_type.split('.')[0] === filter);
+    return events.filter((event) => domainOf(event.event_type) === filter);
   }, [events, filter]);
 
   if (!session?.userId) return <PermissionDeniedState />;
@@ -164,7 +211,6 @@ export function SuperLogPanel() {
         <span className={styles.auditIcon + ' ' + styles[toneOf(event.event_type)]} aria-hidden="true">▤</span>
         <div className={styles.auditContent}>
           <strong>{labelOf(event.event_type)}</strong>
-          <span className={styles.auditTypeCode}>{event.event_type}</span>
           <small>Người thao tác: <strong>{actorName(event.actor_id)}</strong> · {resourceOf(event.resource_type)} {shortId(event.resource_id)}</small>
         </div>
         <span className={styles.resourceChip}>{resourceOf(event.resource_type)}</span>

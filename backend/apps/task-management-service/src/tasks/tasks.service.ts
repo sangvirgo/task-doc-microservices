@@ -259,6 +259,7 @@ export class TasksService {
             payload: {
               title: created.title,
               assignee_id: created.assignee_id,
+              reviewer_id: created.reviewer_id,
               deadline: created.deadline?.toISOString() ?? null,
             },
             occurred_at: new Date(),

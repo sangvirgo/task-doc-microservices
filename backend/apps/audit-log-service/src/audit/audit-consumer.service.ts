@@ -1,6 +1,5 @@
 import { Injectable, OnApplicationShutdown, OnModuleInit } from '@nestjs/common';
 
-import { EventType } from '@c17/contracts';
 import { AmqpEventConsumer, queueName } from '@c17/messaging';
 import { StructuredLogger } from '@c17/observability';
 
@@ -32,17 +31,9 @@ export class AuditConsumerService implements OnModuleInit, OnApplicationShutdown
         maxAttempts: 3,
       },
       async (event) => {
-        // Keep the super log focused on meaningful activity. Raw permission-check
-        // decisions (even denied ones) are noise: real security denials are already
-        // captured by the domain-level *_DENIED events with better context. Login and
-        // logout are routine, so they are not appended either.
-        if (
-          event.event_type === EventType.PERMISSION_DECISION_MADE ||
-          event.event_type === EventType.AUTH_LOGIN_FAILED ||
-          event.event_type === EventType.AUTH_SESSION_REVOKED
-        ) {
-          return;
-        }
+        // Noise filtering (preview page views, download tickets, list denials,
+        // raw permission decisions, login/logout) lives in AuditService.appendEvent,
+        // the single choke point for both the AMQP and HTTP append paths.
         await this.auditService.appendEvent({
           event_id: event.event_id,
           event_type: event.event_type,

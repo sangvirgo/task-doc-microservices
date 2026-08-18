@@ -454,20 +454,6 @@ export class DocumentsController {
         security_level: parsed.data.security_level,
         retention_policy: parsed.data.retention_policy,
         correlation_id: getCorrelationId() ?? randomUUID(),
-      })
-      .then(async (doc) => {
-        await this.auditClient.record({
-          event_type: 'DOCUMENT_CREATED',
-          actor_id: user.userId,
-          resource_type: 'DOCUMENT',
-          resource_id: doc.id,
-          payload: {
-            title: doc.title,
-            document_type: doc.document_type,
-            security_level: doc.security_level,
-          },
-        });
-        return doc;
       });
   }
 
@@ -1122,19 +1108,6 @@ export class DocumentsController {
         mime_type: processed.mime_type,
         kek_version: processed.kek_version,
         correlation_id: getCorrelationId() ?? randomUUID(),
-      });
-
-      await this.auditClient.record({
-        event_type: 'DOCUMENT_CREATED',
-        actor_id: user.userId,
-        resource_type: 'DOCUMENT',
-        resource_id: created.document.id,
-        payload: {
-          title: created.document.title,
-          document_type: created.document.document_type,
-          security_level: created.document.security_level,
-          version: created.version.version,
-        },
       });
 
       if (!metadata.task_id || !metadata.grants) return created;
