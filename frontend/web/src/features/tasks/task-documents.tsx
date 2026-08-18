@@ -18,6 +18,8 @@ const permissionLabel: Record<string, string> = { PREVIEW: 'Xem', DOWNLOAD: 'T�
 const isFutureExpiry = (value: string) => new Date(value).getTime() > Date.now();
 const defaultExpiry = () => { const date = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000); const pad = (n: number) => String(n).padStart(2, '0'); return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`; };
 const toLocalInputValue = (value: string) => { const date = new Date(value); if (Number.isNaN(date.getTime())) return ''; const pad = (n: number) => String(n).padStart(2, '0'); return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`; };
+const formatExpiry = (value: string | null) => { if (!value) return 'Không giới hạn'; const date = new Date(value); return Number.isNaN(date.getTime()) ? 'Không xác định' : new Intl.DateTimeFormat('vi-VN', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }).format(date); };
+const grantStatusLabel = (grant: Grant) => grant.status === 'ACTIVE' && !grant.revoked_at ? 'Đang hiệu lực' : grant.status === 'REVOKED' || grant.revoked_at ? 'Đã thu hồi' : 'Đã hết hạn';
 
 export function TaskDocuments({ task, canUpload = false, members = [], participants = [], childTasks = [] }: { task: Task; canUpload?: boolean; members?: MemberOption[]; participants?: Participant[]; childTasks?: TaskChildSummary[] }) {
   const [items, setItems] = useState<TaskDocument[] | null>(null);
@@ -33,6 +35,8 @@ export function TaskDocuments({ task, canUpload = false, members = [], participa
   const [shareExpiry, setShareExpiry] = useState(defaultExpiry);
   const [shareGrants, setShareGrants] = useState<Grant[]>([]);
   const [sharing, setSharing] = useState(false);
+  const [editingGrantId, setEditingGrantId] = useState<string | undefined>();
+  const [revokingGrantId, setRevokingGrantId] = useState<string | undefined>();
   const loadSequence = useRef(0);
   const session = readSession();
   const canDetach = (item: TaskDocument) =>
@@ -133,25 +137,53 @@ export function TaskDocuments({ task, canUpload = false, members = [], participa
     setSharePermissions([]);
     setShareExpiry('');
     setShareGrants([]);
+    setEditingGrantId(undefined);
     setStatus('');
     documentsApi
       .listGrants(task.id, item.document_id)
       .then(result => setShareGrants(result.items ?? []))
       .catch(() => setShareGrants([]));
   };
-  const closeShare = () => { setShareFor(undefined); setShareActorId(''); setSharePermissions([]); setShareExpiry(''); setShareGrants([]); setStatus(''); };
+  const closeShare = () => { setShareFor(undefined); setShareActorId(''); setSharePermissions([]); setShareExpiry(''); setShareGrants([]); setEditingGrantId(undefined); setStatus(''); };
   const selectShareActor = (actorId: string) => {
     setShareActorId(actorId);
     setStatus('');
     const current = shareGrants
-      .filter(grant => grant.actor_id === actorId && grant.status === 'ACTIVE')
+      .filter(grant => grant.actor_id === actorId && grant.status === 'ACTIVE' && !grant.revoked_at)
       .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())[0];
     if (current) {
       setSharePermissions(current.permissions ?? []);
       setShareExpiry(toLocalInputValue(current.expires_at));
+      setEditingGrantId(current.id);
     } else {
       setSharePermissions([]);
       setShareExpiry('');
+      setEditingGrantId(undefined);
+    }
+  };
+  const editGrant = (grant: Grant) => {
+    setShareActorId(grant.actor_id);
+    setSharePermissions(grant.permissions ?? []);
+    setShareExpiry(toLocalInputValue(grant.expires_at));
+    setEditingGrantId(grant.id);
+    setStatus('');
+  };
+  const revokeGrant = async (grant: Grant) => {
+    if (!shareFor || revokingGrantId) return;
+    const recipient = memberById.get(grant.actor_id)?.email ?? grant.actor_id.slice(0, 8);
+    if (!window.confirm(`Thu hồi quyền của ${recipient} trên tài liệu "${shareFor.title}"?`)) return;
+    setRevokingGrantId(grant.id);
+    setStatus('Đang thu hồi quyền…');
+    try {
+      await documentsApi.revokeGrant(task.id, shareFor.document_id, grant.id);
+      setStatus(`Đã thu hồi quyền của ${recipient}.`);
+      if (editingGrantId === grant.id) setEditingGrantId(undefined);
+      const result = await documentsApi.listGrants(task.id, shareFor.document_id);
+      setShareGrants(result.items ?? []);
+    } catch (reason) {
+      setStatus(reason instanceof GatewayError ? `Không thể thu hồi quyền (${reason.status}).` : 'Không thể thu hồi quyền.');
+    } finally {
+      setRevokingGrantId(undefined);
     }
   };
   const toggleSharePermission = (permission: string) => {
@@ -183,17 +215,26 @@ export function TaskDocuments({ task, canUpload = false, members = [], participa
     const expiresAt = new Date(shareExpiry);
     if (!isFutureExpiry(shareExpiry)) { setStatus('Thời hạn hiệu lực phải ở tương lai.'); return; }
     setSharing(true);
-    setStatus(`Đang cấp quyền cho ${memberById.get(shareActorId)?.email ?? 'thành viên'}…`);
+    const recipientEmail = memberById.get(shareActorId)?.email ?? 'thành viên';
+    setStatus(`Đang ${editingGrantId ? 'cập nhật quyền cho' : 'cấp quyền cho'} ${recipientEmail}…`);
     try {
-      await documentsApi.addGrant(task.id, shareFor.document_id, {
-        actor_id: shareActorId,
-        permissions: sharePermissions,
-        expires_at: expiresAt.toISOString(),
-      });
-      setStatus(`Đã cấp quyền cho ${memberById.get(shareActorId)?.email ?? 'thành viên'} tới tài liệu "${shareFor.title}".`);
+      if (editingGrantId) {
+        await documentsApi.updateGrant(task.id, shareFor.document_id, editingGrantId, {
+          permissions: sharePermissions,
+          expires_at: expiresAt.toISOString(),
+        });
+        setStatus(`Đã cập nhật quyền cho ${recipientEmail} trên tài liệu "${shareFor.title}".`);
+      } else {
+        await documentsApi.addGrant(task.id, shareFor.document_id, {
+          actor_id: shareActorId,
+          permissions: sharePermissions,
+          expires_at: expiresAt.toISOString(),
+        });
+        setStatus(`Đã cấp quyền cho ${recipientEmail} tới tài liệu "${shareFor.title}".`);
+      }
       closeShare();
     } catch (reason) {
-      setStatus(reason instanceof GatewayError ? `Không thể cấp quyền (${reason.status}). Người nhận phải là thành viên trực tiếp của task.` : 'Không thể cấp quyền cho người nhận.');
+      setStatus(reason instanceof GatewayError ? `Không thể ${editingGrantId ? 'cập nhật' : 'cấp'} quyền (${reason.status}). Người nhận phải là thành viên trực tiếp của task.` : `Không thể ${editingGrantId ? 'cập nhật' : 'cấp'} quyền cho người nhận.`);
     } finally { setSharing(false); }
   };
   return <section className={styles.section} aria-labelledby="task-documents-title">
@@ -210,6 +251,6 @@ export function TaskDocuments({ task, canUpload = false, members = [], participa
       {items?.length === 0 && <p className={styles.empty}>Chưa có tài liệu nào được gắn vào công việc này.</p>}
       {items === null && <p className={styles.empty}>Đang tải tài liệu…</p>}
     </div>}
-    {shareFor && <div className={styles.shareDialog} role="dialog" aria-modal="true" aria-labelledby={`share-title-${shareFor.document_id}`}><form className={styles.sharePanel} onSubmit={shareDocument}><div className={styles.shareHeader}><div><p className={styles.eyebrow}>Chia sẻ quyền truy cập</p><h3 id={`share-title-${shareFor.document_id}`}>Cấp quyền cho “{shareFor.title}”</h3><p className={styles.shareSub}>Người nhận phải là thành viên trực tiếp của task. Hiệu lực giới hạn theo deadline task.</p></div><button type="button" className={styles.shareClose} aria-label="Đóng biểu mẫu chia sẻ quyền" onClick={closeShare} disabled={sharing}>×</button></div><div className={styles.shareBody}><label>Người nhận<select name="actor_id" value={shareActorId} onChange={event => selectShareActor(event.target.value)} required><option value="" disabled>Chọn thành viên trong task</option>{recipients.map(member => <option key={member.id} value={member.id}>{member.email}</option>)}</select></label><fieldset className={styles.permissionField}><legend>Quyền được cấp</legend><p>Chọn ít nhất một quyền cho người nhận.</p><div className={styles.permissionGrid}>{GRANTABLE_PERMISSIONS.map(permission => <label key={permission}><input type="checkbox" checked={sharePermissions.includes(permission)} onChange={() => toggleSharePermission(permission)} /><span>{permissionLabel[permission] ?? permission}</span></label>)}</div></fieldset><label>Hiệu lực đến<input name="expires_at" type="datetime-local" value={shareExpiry} onChange={event => { setShareExpiry(event.target.value); setStatus(''); }} required /></label>{status && <p className={styles.shareStatus} role="status">{status}</p>}</div><div className={styles.shareActions}><button type="button" className={styles.cancelButton} onClick={closeShare} disabled={sharing}>Hủy</button><button type="submit" className={styles.submitButton} disabled={sharing}>{sharing ? 'Đang cấp quyền…' : 'Cấp quyền'}</button></div></form></div>}
+    {shareFor && <div className={styles.shareDialog} role="dialog" aria-modal="true" aria-labelledby={`share-title-${shareFor.document_id}`}><form className={styles.sharePanel} onSubmit={shareDocument}><div className={styles.shareHeader}><div><p className={styles.eyebrow}>Chia sẻ quyền truy cập</p><h3 id={`share-title-${shareFor.document_id}`}>{editingGrantId ? `Cập nhật quyền cho “${shareFor.title}”` : `Cấp quyền cho “${shareFor.title}”`}</h3><p className={styles.shareSub}>{editingGrantId ? 'Đang sửa một quyền đã cấp. Điều chỉnh quyền và hiệu lực rồi bấm Cập nhật quyền.' : 'Người nhận phải là thành viên trực tiếp của task. Hiệu lực giới hạn theo deadline task.'}</p></div><button type="button" className={styles.shareClose} aria-label="Đóng biểu mẫu chia sẻ quyền" onClick={closeShare} disabled={sharing}>×</button></div><div className={styles.shareBody}>{shareGrants.length > 0 ? <div className={styles.grantList}><div className={styles.grantListHeading}><span>Quyền đã cấp cho tài liệu này</span><small>{shareGrants.length} quyền</small></div>{shareGrants.map(grant => { const active = grant.status === 'ACTIVE' && !grant.revoked_at; return <div className={styles.grantRow} key={grant.id}><div className={styles.grantRowMain}><strong>{memberById.get(grant.actor_id)?.email ?? grant.actor_id.slice(0, 8)}</strong><div className={styles.grantPerms}>{grant.permissions.map(permission => <span key={permission}>{permissionLabel[permission] ?? permission}</span>)}</div><small>Hết hạn: {formatExpiry(grant.effective_expires_at)} · {grantStatusLabel(grant)}</small></div><div className={styles.grantRowActions}>{active && <button type="button" className={styles.grantEditButton} onClick={() => editGrant(grant)} disabled={Boolean(sharing) || Boolean(revokingGrantId)}>Sửa</button>}{active && <button type="button" className={styles.grantRevokeButton} onClick={() => void revokeGrant(grant)} disabled={Boolean(sharing) || Boolean(revokingGrantId)}>{revokingGrantId === grant.id ? 'Đang thu hồi…' : 'Thu hồi'}</button>}</div></div>; })}</div> : <p className={styles.grantEmpty}>Chưa có quyền nào được cấp cho tài liệu này trong task.</p>}<label>Người nhận<select name="actor_id" value={shareActorId} onChange={event => selectShareActor(event.target.value)} required><option value="" disabled>Chọn thành viên trong task</option>{recipients.map(member => <option key={member.id} value={member.id}>{member.email}</option>)}</select></label><fieldset className={styles.permissionField}><legend>Quyền được cấp</legend><p>Chọn ít nhất một quyền cho người nhận.</p><div className={styles.permissionGrid}>{GRANTABLE_PERMISSIONS.map(permission => <label key={permission}><input type="checkbox" checked={sharePermissions.includes(permission)} onChange={() => toggleSharePermission(permission)} /><span>{permissionLabel[permission] ?? permission}</span></label>)}</div></fieldset><label>Hiệu lực đến<input name="expires_at" type="datetime-local" value={shareExpiry} onChange={event => { setShareExpiry(event.target.value); setStatus(''); }} required /></label>{status && <p className={styles.shareStatus} role="status">{status}</p>}</div><div className={styles.shareActions}>{editingGrantId && <button type="button" className={styles.cancelButton} onClick={() => { setEditingGrantId(undefined); setShareActorId(''); setSharePermissions([]); setShareExpiry(''); setStatus(''); }} disabled={sharing}>Hủy sửa</button>}<button type="button" className={styles.cancelButton} onClick={closeShare} disabled={sharing}>Đóng</button><button type="submit" className={styles.submitButton} disabled={sharing || !shareActorId || sharePermissions.length === 0}>{sharing ? (editingGrantId ? 'Đang cập nhật…' : 'Đang cấp quyền…') : (editingGrantId ? 'Cập nhật quyền' : 'Cấp quyền')}</button></div></form></div>}
   </section>;
 }

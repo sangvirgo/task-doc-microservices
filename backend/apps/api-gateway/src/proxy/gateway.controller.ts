@@ -25,7 +25,7 @@ interface ServiceRoute {
   matches?: (path: string) => boolean;
 }
 
-const TASK_DOCUMENT_ROUTE = /^\/api\/tasks\/[^/]+\/documents(?:\/[^/]+(?:\/grants)?)?$/;
+const TASK_DOCUMENT_ROUTE = /^\/api\/tasks\/[^/]+\/documents(?:\/[^/]+(?:\/grants(?:\/[^/]+)?)?)?$/;
 
 /**
  * Route table: maps URL prefixes to internal service base URLs.
