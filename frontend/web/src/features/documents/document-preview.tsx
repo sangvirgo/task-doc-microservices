@@ -12,6 +12,7 @@ interface PreviewPage {
   url: string;
 }
 
+const INITIAL_PAGE_BATCH = 5;
 const EXTEND_PAGE_BATCH = 10;
 
 export function DocumentPreview({
@@ -59,7 +60,7 @@ export function DocumentPreview({
         setSession(created);
         onCapabilitiesChange?.(created.capabilities);
 
-        const initial = await loadPages(created, 1, created.page_count);
+        const initial = await loadPages(created, 1, Math.min(created.page_count, INITIAL_PAGE_BATCH));
         if (cancelled) {
           initial.forEach(({ url }) => URL.revokeObjectURL(url));
           return;
@@ -89,18 +90,12 @@ export function DocumentPreview({
     if (!session || extending) return;
     setExtending(true);
     try {
-      const fromPage = session.page_count + 1;
+      const fromPage = pages.length + 1;
       const toPage = Math.min(session.total_pages, fromPage + EXTEND_PAGE_BATCH - 1);
-      const extended = await documentsApi.extendPreviewSession(
-        documentId,
-        version,
-        session.id,
-        toPage,
-      );
-      const additional = await loadPages(session, fromPage, extended.page_count);
+      await documentsApi.extendPreviewSession(documentId, version, session.id, toPage);
+      const additional = await loadPages(session, fromPage, toPage);
       additional.forEach(({ url }) => objectUrlsRef.current.push(url));
       setPages((current) => [...current, ...additional]);
-      setSession((current) => (current ? { ...current, page_count: extended.page_count } : current));
     } catch (reason: unknown) {
       setErrorMessage(previewErrorMessage(reason));
     } finally {
@@ -118,7 +113,7 @@ export function DocumentPreview({
     );
   }
 
-  const hasMorePages = !!session && session.page_count < session.total_pages;
+  const hasMorePages = pages.length < (session?.total_pages ?? 0);
 
   return (
     <section

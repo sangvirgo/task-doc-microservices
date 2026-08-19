@@ -238,7 +238,6 @@ interface UploadedFilePayload {
 const DOCUMENT_VIEW_ACTIONS: readonly PermissionAction[] = [
   PermissionAction.PREVIEW,
   PermissionAction.DOWNLOAD,
-  PermissionAction.UPDATE,
   PermissionAction.SHARE,
   PermissionAction.DISPOSE,
 ];

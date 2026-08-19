@@ -29,9 +29,8 @@ const STATUS_LABELS: Record<TaskStatus, string> = {
 const PERMISSION_LABELS: Record<string, string> = {
   PREVIEW: 'Xem',
   DOWNLOAD: 'Tải xuống',
-  UPDATE: 'Cập nhật',
   SHARE: 'Chia sẻ',
-  DISPOSE: 'Hủy',
+  DISPOSE: 'Gỡ khỏi task',
 };
 
 const taskLabel = (task: Task) => task.title || 'Task ' + task.id.slice(0, 8);

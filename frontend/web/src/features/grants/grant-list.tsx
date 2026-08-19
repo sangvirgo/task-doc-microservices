@@ -22,9 +22,8 @@ const formatDateTime = (value: string | null) => value
 const permissionLabel: Record<string, string> = {
   PREVIEW: 'Xem',
   DOWNLOAD: 'Tải xuống',
-  UPDATE: 'Cập nhật',
   SHARE: 'Chia sẻ',
-  DISPOSE: 'Hủy',
+  DISPOSE: 'Gỡ khỏi task',
 };
 
 export function GrantList() {

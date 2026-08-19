@@ -13,8 +13,8 @@ import { GatewayError } from '@/lib/errors';
 import styles from './task-documents.module.css';
 const MAX_UPLOAD_BYTES = 5 * 1024 * 1024;
 
-const GRANTABLE_PERMISSIONS = ['PREVIEW', 'DOWNLOAD', 'UPDATE', 'SHARE', 'DISPOSE'];
-const permissionLabel: Record<string, string> = { PREVIEW: 'Xem', DOWNLOAD: 'Tải xuống', UPDATE: 'Cập nhật', SHARE: 'Chia sẻ', DISPOSE: 'Hủy' };
+const GRANTABLE_PERMISSIONS = ['PREVIEW', 'DOWNLOAD', 'SHARE', 'DISPOSE'];
+const permissionLabel: Record<string, string> = { PREVIEW: 'Xem', DOWNLOAD: 'Tải xuống', SHARE: 'Chia sẻ', DISPOSE: 'Gỡ khỏi task' };
 const isFutureExpiry = (value: string) => new Date(value).getTime() > Date.now();
 const defaultExpiry = () => { const date = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000); const pad = (n: number) => String(n).padStart(2, '0'); return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`; };
 const toLocalInputValue = (value: string) => { const date = new Date(value); if (Number.isNaN(date.getTime())) return ''; const pad = (n: number) => String(n).padStart(2, '0'); return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`; };
@@ -40,7 +40,7 @@ export function TaskDocuments({ task, canUpload = false, members = [], participa
   const loadSequence = useRef(0);
   const session = readSession();
   const canDetach = (item: TaskDocument) =>
-    item.permissions.includes('DISPOSE') || session?.userId === task.creator_id;
+    item.permissions.includes('DISPOSE');
 
   const load = useCallback(async () => {
     const sequence = ++loadSequence.current;

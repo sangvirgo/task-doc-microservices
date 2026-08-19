@@ -17,9 +17,8 @@ import styles from './grants.module.css';
 const permissionLabel: Record<string, string> = {
   PREVIEW: 'Xem',
   DOWNLOAD: 'Tải xuống',
-  UPDATE: 'Cập nhật',
   SHARE: 'Chia sẻ',
-  DISPOSE: 'Hủy',
+  DISPOSE: 'Gỡ khỏi task',
 };
 
 const statusLabel: Record<string, string> = {

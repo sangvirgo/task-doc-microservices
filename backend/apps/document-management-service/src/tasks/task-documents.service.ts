@@ -30,7 +30,6 @@ import { TaskContext, TaskContextClient } from './task-context.client';
 const DOCUMENT_GRANTABLE_ACTIONS = new Set<string>([
   PermissionAction.PREVIEW,
   PermissionAction.DOWNLOAD,
-  PermissionAction.UPDATE,
   PermissionAction.SHARE,
   PermissionAction.DISPOSE,
 ]);
@@ -377,11 +376,9 @@ export class TaskDocumentsService {
       throw new NotFoundException('Task-document association not found');
     }
 
-    // The task creator may always remove an attachment from their own task, even
-    // when they hold no DISPOSE capability on the document itself.
-    if (context.task.creator_id !== caller.userId) {
-      await this.assertCanDispose(association.document, caller, taskId, context.task.parent_task_id);
-    }
+    // Only a caller holding the DISPOSE permission may remove an attachment from
+    // the task (document owners/creators retain the implicit ownership right).
+    await this.assertCanDispose(association.document, caller, taskId, context.task.parent_task_id);
 
     // Removing the association first is fail-closed: even if the external revoke call is
     // unavailable, Permission Service will reject the now-orphaned task-scoped grants.

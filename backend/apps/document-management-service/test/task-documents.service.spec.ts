@@ -296,7 +296,6 @@ describe('TaskDocumentsService', () => {
     expect(result.items[0]?.permissions).toEqual([
       PermissionAction.PREVIEW,
       PermissionAction.DOWNLOAD,
-      PermissionAction.UPDATE,
       PermissionAction.SHARE,
       PermissionAction.DISPOSE,
     ]);
