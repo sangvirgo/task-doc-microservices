@@ -8,7 +8,7 @@
   :root{
     --blue:#1a4b8c; --blue-2:#2f6bb3; --gold:#c9a227; --ink:#152238;
     --muted:#5a6b85; --line:#dde5f0; --bg:#eef3fb; --card:#ffffff;
-    --red:#c0392b; --green:#1e8e5a;
+    --red:#c0392b; --red-bg:#fdecea; --green:#1e8e5a; --green-bg:#e8f6ef;
   }
   *{box-sizing:border-box; margin:0; padding:0;}
   html,body{height:100%;}
@@ -19,7 +19,7 @@
   .deck{position:relative; width:100vw; height:100vh;}
   .slide{
     position:absolute; inset:0; display:none; flex-direction:column;
-    padding:4.5% 6%; background:var(--bg); overflow:hidden;
+    padding:4% 6%; background:var(--bg); overflow:hidden;
   }
   .slide.active{display:flex;}
   .slide.t-cover{background:linear-gradient(135deg,var(--blue) 0%, var(--blue-2) 70%); color:#fff;}
@@ -35,45 +35,106 @@
   .members{font-size:clamp(.85rem,1.3vw,1.05rem); line-height:1.7; opacity:.95;}
   .members b{color:#ffd97a;}
 
+  /* cover illustration (pure CSS) */
+  .hero-ill{position:relative; width:250px; height:200px; margin:0 auto;}
+  .hero-ill .doc{position:absolute; left:0; top:14px; width:150px; height:116px;
+    background:#fff; border-radius:10px 4px 10px 10px; padding:14px 16px;
+    box-shadow:0 10px 24px rgba(0,0,0,.28);}
+  .hero-ill .doc:before{content:""; position:absolute; top:0; right:0;
+    border-style:solid; border-width:0 32px 32px 0;
+    border-color:#ffd97a #ffd97a #fff #fff; border-radius:0 8px 0 0;}
+  .hero-ill .doc .l{height:7px; border-radius:4px; background:#c9d6ea; margin-bottom:9px;}
+  .hero-ill .doc .l.b{background:var(--blue); width:70%;}
+  .hero-ill .doc .l.g{background:#e4eaf5;}
+  .hero-ill .shield{position:absolute; right:2px; bottom:2px; width:104px; height:122px;
+    background:linear-gradient(135deg,#ffd97a,#e0b93f);
+    clip-path:polygon(50% 0,100% 25%,100% 74%,50% 100%,0 74%,0 25%);
+    display:grid; place-items:center; box-shadow:0 8px 18px rgba(0,0,0,.25);}
+  .hero-ill .shield .chk{color:var(--blue); font-weight:800; font-size:2.4rem;}
+  .hero-ill .linkline{position:absolute; left:128px; top:70px; width:74px; height:2px;
+    background:rgba(255,255,255,.7);}
+  .hero-ill .linkline:after{content:""; position:absolute; right:-1px; top:50%; transform:translateY(-50%);
+    border:5px solid transparent; border-left:7px solid rgba(255,255,255,.7);}
+  .hero-ill .glow{position:absolute; left:-30px; top:-26px; width:120px; height:120px; border-radius:50%;
+    border:1px solid rgba(255,255,255,.22);}
+  .hero-ill .glow.g2{left:auto; right:-34px; top:auto; bottom:-30px;}
+
   .kicker{font-size:.78rem; letter-spacing:.22em; text-transform:uppercase; color:var(--blue-2); font-weight:700; margin-bottom:.35rem;}
-  .slide h2{font-size:clamp(1.35rem,3vw,2.3rem); color:var(--blue); margin-bottom:1.2rem; border-bottom:3px solid var(--gold); padding-bottom:.4rem;}
-  .slide p.lead{font-size:clamp(.95rem,1.5vw,1.15rem); color:var(--muted); margin-bottom:1rem;}
+  .slide h2{font-size:clamp(1.3rem,2.9vw,2.25rem); color:var(--blue); margin-bottom:1.1rem; border-bottom:3px solid var(--gold); padding-bottom:.4rem;}
+  .slide p.lead{font-size:clamp(.9rem,1.4vw,1.1rem); color:var(--muted); margin-bottom:1rem;}
 
   .grid{display:grid; gap:.9rem;}
   .cols-2{grid-template-columns:repeat(2,1fr);}
   .cols-3{grid-template-columns:repeat(3,1fr);}
   .card{background:var(--card); border:1px solid var(--line); border-left:5px solid var(--blue-2);
-    border-radius:10px; padding:1rem 1.1rem; box-shadow:0 2px 6px rgba(20,40,80,.06);}
+    border-radius:10px; padding:.95rem 1.1rem; box-shadow:0 2px 6px rgba(20,40,80,.06);}
   .card.gold{border-left-color:var(--gold);}
   .card.green{border-left-color:var(--green);}
   .card.red{border-left-color:var(--red);}
-  .card h4{color:var(--blue); font-size:1rem; margin-bottom:.35rem;}
-  .card p{font-size:.9rem; color:#33415c; line-height:1.5;}
+  .card h4{color:var(--blue); font-size:.98rem; margin-bottom:.3rem;}
+  .card p{font-size:.88rem; color:#33415c; line-height:1.5;}
 
-  ul.plain{list-style:none; display:flex; flex-direction:column; gap:.55rem;}
-  ul.plain li{position:relative; padding-left:1.5rem; font-size:clamp(.92rem,1.5vw,1.12rem); line-height:1.5;}
+  ul.plain{list-style:none; display:flex; flex-direction:column; gap:.5rem;}
+  ul.plain li{position:relative; padding-left:1.5rem; font-size:clamp(.9rem,1.4vw,1.08rem); line-height:1.5;}
   ul.plain li::before{content:"▸"; position:absolute; left:0; color:var(--gold); font-weight:700;}
-  ol.flow{list-style:none; counter-reset:step; display:flex; flex-direction:column; gap:.45rem;}
-  ol.flow li{counter-increment:step; position:relative; padding-left:2.6rem; font-size:clamp(.9rem,1.4vw,1.08rem); line-height:1.45;}
-  ol.flow li::before{content:counter(step); position:absolute; left:0; top:.05em; width:1.8rem; height:1.8rem;
-    background:var(--blue); color:#fff; border-radius:50%; display:flex; align-items:center; justify-content:center;
-    font-size:.85rem; font-weight:700;}
 
-  table.tbl{width:100%; border-collapse:collapse; font-size:clamp(.78rem,1.2vw,.95rem); background:#fff;}
-  table.tbl th{background:var(--blue); color:#fff; text-align:left; padding:.5rem .7rem;}
-  table.tbl td{border:1px solid var(--line); padding:.45rem .7rem; vertical-align:top;}
+  /* ===== flow diagrams (pure CSS) ===== */
+  .flowv{display:flex; flex-direction:column; align-items:center; margin-top:.4rem;}
+  .fstep{background:var(--card); border:1px solid var(--line); border-left:5px solid var(--blue-2);
+    border-radius:10px; padding:.55rem 1rem; min-width:260px; max-width:600px; text-align:center;
+    box-shadow:0 2px 6px rgba(20,40,80,.06);}
+  .fstep.gold{border-left-color:var(--gold);}
+  .fstep.green{border-left-color:var(--green); background:var(--green-bg);}
+  .fstep.red{border-left-color:var(--red); background:var(--red-bg);}
+  .fstep .t{font-weight:700; color:var(--blue); font-size:.98rem; line-height:1.3;}
+  .fstep.green .t{color:var(--green);}
+  .fstep.red .t{color:var(--red);}
+  .fstep .d{font-size:.82rem; color:#44536e; margin-top:.1rem;}
+  .fconn{height:22px; width:2px; background:var(--blue-2); position:relative;}
+  .fconn::after{content:""; position:absolute; left:50%; bottom:0; transform:translateX(-50%);
+    border:6px solid transparent; border-top:7px solid var(--blue-2);}
+  .jsplit{display:flex; width:min(92%,760px); gap:2rem; align-items:flex-start; justify-content:center;}
+  .jcol{flex:1; display:flex; flex-direction:column; align-items:center;}
+  .jcol .fconn{background:var(--muted);}
+  .jcol .fconn::after{border-top-color:var(--muted);}
+  .jlbl{font-weight:800; font-size:.82rem; color:var(--muted); letter-spacing:.06em; margin-bottom:.15rem;}
+  .jlbl.no{color:var(--red);}
+  .jlbl.yes{color:var(--green);}
+  .frow2{display:flex; gap:1.6rem; align-items:stretch; justify-content:center; flex-wrap:wrap;}
+  .frow2 .fstep{min-width:230px;}
+  .fstep.small{min-width:200px; padding:.5rem .9rem;}
+  .flowh{display:flex; align-items:stretch; justify-content:center; flex-wrap:wrap; gap:.3rem;}
+  .hstep{flex:1 1 130px; min-width:150px; max-width:190px; background:var(--card); border:1px solid var(--line);
+    border-top:4px solid var(--blue-2); border-radius:10px; padding:.6rem .7rem; text-align:center;
+    box-shadow:0 2px 6px rgba(20,40,80,.06);}
+  .hstep.gold{border-top-color:var(--gold);}
+  .hstep.green{border-top-color:var(--green); background:var(--green-bg);}
+  .hstep .n{display:inline-grid; place-items:center; width:24px; height:24px; border-radius:50%;
+    background:var(--blue); color:#fff; font-weight:800; font-size:.8rem; margin-bottom:.35rem;}
+  .hstep .t{font-weight:700; color:var(--ink); font-size:.9rem; line-height:1.3;}
+  .hstep .d{font-size:.78rem; color:var(--muted); margin-top:.2rem; line-height:1.4;}
+  .hlink{width:26px; height:2px; background:var(--blue-2); position:relative; align-self:center;}
+  .hlink::after{content:""; position:absolute; right:0; top:50%; transform:translateY(-50%);
+    border:5px solid transparent; border-left:6px solid var(--blue-2);}
+  .hstep.green + .hlink{background:var(--green);}
+  .hstep.green + .hlink::after{border-left-color:var(--green);}
+  .caption{font-size:.82rem; color:var(--muted); text-align:center; margin-top:.7rem; line-height:1.5;}
+
+  table.tbl{width:100%; border-collapse:collapse; font-size:clamp(.76rem,1.15vw,.93rem); background:#fff;}
+  table.tbl th{background:var(--blue); color:#fff; text-align:left; padding:.45rem .7rem;}
+  table.tbl td{border:1px solid var(--line); padding:.42rem .7rem; vertical-align:top;}
   table.tbl tr:nth-child(even) td{background:#f6f9fe;}
   table.tbl code{background:#eef3fb; padding:.05rem .3rem; border-radius:4px; color:var(--blue);}
 
-  .diagram{background:#fff; border:1px solid var(--line); border-radius:12px; padding:1.1rem; box-shadow:0 2px 8px rgba(20,40,80,.08);}
-  .arch{display:flex; flex-direction:column; gap:.7rem;}
+  .diagram{background:#fff; border:1px solid var(--line); border-radius:12px; padding:1rem; box-shadow:0 2px 8px rgba(20,40,80,.08);}
+  .arch{display:flex; flex-direction:column; gap:.6rem;}
   .arch-row{display:flex; justify-content:center; gap:.7rem; flex-wrap:wrap;}
-  .node{background:var(--blue); color:#fff; border-radius:9px; padding:.55rem .8rem; font-size:.85rem; font-weight:600; text-align:center; min-width:8rem;}
+  .node{background:var(--blue); color:#fff; border-radius:9px; padding:.5rem .8rem; font-size:.85rem; font-weight:600; text-align:center; min-width:8rem;}
   .node.alt{background:var(--gold); color:var(--ink);}
   .node.lite{background:#fff; color:var(--blue); border:2px solid var(--blue);}
   .node.gray{background:#5a6b85;}
-  .node.small{min-width:6.4rem; padding:.4rem .6rem; font-size:.78rem;}
-  .arrow{text-align:center; color:var(--muted); font-weight:700; font-size:.8rem; letter-spacing:.1em;}
+  .node.small{min-width:6.2rem; padding:.4rem .6rem; font-size:.76rem;}
+  .arrow{text-align:center; color:var(--muted); font-weight:700; font-size:.78rem; letter-spacing:.1em;}
 
   .code{font-family:"Consolas","Menlo",monospace; background:#0f1b2d; color:#cfe3ff; border-radius:10px;
     padding:1rem 1.2rem; font-size:clamp(.72rem,1.15vw,.9rem); line-height:1.65; white-space:pre; overflow:auto;}
@@ -82,10 +143,10 @@
 
   .badges{display:flex; gap:.5rem; flex-wrap:wrap;}
   .badge{background:#fff; border:1px solid var(--blue-2); color:var(--blue); border-radius:999px;
-    padding:.3rem .8rem; font-size:.8rem; font-weight:600;}
+    padding:.28rem .8rem; font-size:.8rem; font-weight:600;}
 
-  .foot{position:absolute; left:6%; right:6%; bottom:1.4rem; display:flex; justify-content:space-between;
-    align-items:center; font-size:.75rem; color:var(--muted); border-top:1px solid var(--line); padding-top:.6rem;}
+  .foot{position:absolute; left:6%; right:6%; bottom:1.3rem; display:flex; justify-content:space-between;
+    align-items:center; font-size:.75rem; color:var(--muted); border-top:1px solid var(--line); padding-top:.55rem;}
   .t-cover .foot{border-top-color:rgba(255,255,255,.25); color:rgba(255,255,255,.75);}
 
   #controls{position:fixed; right:1.2rem; bottom:1rem; z-index:50; display:flex; align-items:center; gap:.6rem; background:rgba(255,255,255,.9);
@@ -110,9 +171,20 @@
   <section class="slide t-cover active">
     <div class="cover-inner">
       <div class="brand">Đồ án tốt nghiệp &nbsp;•&nbsp; Ủy ban nhân dân &nbsp;•&nbsp; D22CQCNPM01-N</div>
-      <div>
-        <h1>Hệ thống <span class="accent">giao việc và chia sẻ tài liệu số</span><br>trong tổ chức</h1>
-        <p class="sub" style="margin-top:1rem;">Quyền truy cập tài liệu gắn với công việc — đúng người, đúng quyền, đúng thời hạn</p>
+      <div style="display:flex; align-items:center; gap:3rem; flex-wrap:wrap;">
+        <div style="flex:1; min-width:340px;">
+          <h1>Hệ thống <span class="accent">giao việc và chia sẻ tài liệu số</span><br>trong tổ chức</h1>
+          <p class="sub" style="margin-top:1rem;">Quyền truy cập tài liệu gắn với công việc — đúng người, đúng quyền, đúng thời hạn</p>
+        </div>
+        <div class="hero-ill">
+          <div class="glow"></div>
+          <div class="glow g2"></div>
+          <div class="doc">
+            <div class="l b"></div><div class="l"></div><div class="l g"></div><div class="l g"></div>
+          </div>
+          <div class="linkline"></div>
+          <div class="shield"><span class="chk">✓</span></div>
+        </div>
       </div>
       <div class="members">
         <b>Nhóm C17</b><br>
@@ -131,10 +203,10 @@
     <p class="lead">Một công việc ở UBND thường đi qua nhiều phòng ban, nhiều cán bộ — kèm theo hồ sơ, văn bản, dự thảo nhạy cảm.</p>
     <div class="grid cols-3">
       <div class="card red"><h4>1. Phân tán</h4><p>Công việc rải rác qua email, giấy tờ, không có một kênh thống nhất để giao việc và theo dõi.</p></div>
-      <div class="card red"><h4>2. Khó kiểm soát quyền</h4><p>Không biết ai được xem, ai được tải, ai được chia sẻ tiếp tài liệu — quyền tồn tại vô thời hạn.</p></div>
+      <div class="card red"><h4>2. Khó kiểm soát quyền</h4><p>Không biết ai được xem, ai được tải, ai được chia sẻ tiếp — quyền tồn tại vô thời hạn.</p></div>
       <div class="card red"><h4>3. Không có dấu vết</h4><p>Không ghi lại ai đã truy cập tài liệu nào, lúc nào — khó đối chiếu, khó điều tra khi có sự cố.</p></div>
     </div>
-    <p style="margin-top:1.2rem; font-size:1.05rem;"><b>Nhu cầu:</b> giao việc theo dõi được + chia sẻ tài liệu <b>đúng người, đúng quyền, đúng thời hạn</b> + ghi nhận toàn bộ hoạt động.</p>
+    <p style="margin-top:1.1rem; font-size:1.02rem;"><b>Nhu cầu:</b> giao việc theo dõi được + chia sẻ tài liệu <b>đúng người, đúng quyền, đúng thời hạn</b> + ghi nhận toàn bộ hoạt động.</p>
   </section>
 
   <!-- 3 GIẢI PHÁP -->
@@ -147,9 +219,26 @@
       <div class="card gold"><h4>Bảo mật nội dung</h4><p>Quét virus, mã hóa AES-256-GCM, chữ ký toàn vẹn, tải xuống qua ticket dùng 1 lần.</p></div>
       <div class="card gold"><h4>Ghi vết & giám sát</h4><p>Audit log dạng chuỗi hash chống giả mạo; cảnh báo khi có truy cập bất thường.</p></div>
     </div>
+    <p style="margin-top:1.1rem; font-size:1.02rem; color:var(--blue); font-weight:700;">Access = Identity + Role/Capability + Task + Grant + Time validity</p>
   </section>
 
-  <!-- 4 KIẾN TRÚC -->
+  <!-- 4 CÔNG NGHỆ -->
+  <section class="slide">
+    <div class="kicker">Công nghệ</div>
+    <h2>Vì sao chọn Node.js / NestJS?</h2>
+    <div class="grid cols-2">
+      <div class="card"><h4>Node.js</h4><p>Non-blocking I/O, phù hợp hệ thống API nhiều I/O (network, DB). Cùng ngôn ngữ cho frontend & backend.</p></div>
+      <div class="card"><h4>NestJS</h4><p>Framework TypeScript: Dependency Injection, module hóa, guard/interceptor/pipe — code có cấu trúc, dễ kiểm thử.</p></div>
+      <div class="card"><h4>PostgreSQL + Prisma</h4><p>Dữ liệu nghiệp vụ có quan hệ rõ (task, user, grant); Prisma = schema + truy vấn type-safe.</p></div>
+      <div class="card"><h4>RabbitMQ + Docker</h4><p>Event bất đồng bộ giữa service; Docker Compose đóng gói & triển khai nhất quán.</p></div>
+    </div>
+    <div class="badges" style="margin-top:1rem;">
+      <span class="badge">TypeScript</span><span class="badge">REST + RabbitMQ</span>
+      <span class="badge">Database-per-service</span><span class="badge">CI/CD GitHub Actions</span>
+    </div>
+  </section>
+
+  <!-- 5 KIẾN TRÚC -->
   <section class="slide">
     <div class="kicker">Kiến trúc hệ thống</div>
     <h2>Microservices — một gateway, chín service, database riêng</h2>
@@ -176,7 +265,7 @@
     </div>
   </section>
 
-  <!-- 5 GATEWAY -->
+  <!-- 6 GATEWAY -->
   <section class="slide">
     <div class="kicker">Điểm vào duy nhất</div>
     <h2>API Gateway</h2>
@@ -186,14 +275,14 @@
       <div class="card"><h4>Định tuyến</h4><p>Chuyển request tới đúng service theo đường dẫn.</p></div>
       <div class="card green"><h4>Nguyên tắc</h4><p>Client <b>không bao giờ</b> gọi trực tiếp port service (3001–3009), không đọc database, không nhận secret storage.</p></div>
     </div>
-    <div class="code" style="margin-top:1.1rem;"><span class="c"># Client → Gateway → Service</span>
+    <div class="code" style="margin-top:1rem;"><span class="c"># Client → Gateway → Service</span>
   POST /auth/login              → authentication-identity-service
   POST /tasks                   → task-management-service
   GET  /documents/:id/download  → document-management-service (ticket)
   GET  /internal/*              → chỉ gọi nội bộ giữa các service</div>
   </section>
 
-  <!-- 6 CÁC SERVICE -->
+  <!-- 7 CÁC SERVICE -->
   <section class="slide">
     <div class="kicker">Chín service nghiệp vụ</div>
     <h2>Mỗi service một trách nhiệm, một database</h2>
@@ -211,22 +300,35 @@
     </table>
   </section>
 
-  <!-- 7 LUỒNG NGHIỆP VỤ -->
+  <!-- 8 CHU KỲ CÔNG VIỆC -->
   <section class="slide">
     <div class="kicker">Luồng nghiệp vụ</div>
     <h2>Một chu kỳ công việc hoàn chỉnh</h2>
-    <ol class="flow">
-      <li><b>Lãnh đạo</b> đăng nhập → tạo task, giao cho chuyên viên, đặt deadline</li>
-      <li>Upload tài liệu (hồ sơ/dự thảo) → gắn vào task</li>
-      <li>Cấp quyền cho chuyên viên: <b>PREVIEW, DOWNLOAD</b> (có thời hạn)</li>
-      <li><b>Chuyên viên</b> đăng nhập → thấy đúng task & tài liệu được phép</li>
-      <li>Xem, tải, xử lý → gửi kết quả → task sang <b>chờ review</b></li>
-      <li><b>Lãnh đạo</b> review → <b>APPROVED</b></li>
-      <li>Quyền tài liệu hết hạn theo deadline / bị thu hồi</li>
-    </ol>
+    <div class="flowh">
+      <div class="hstep"><span class="n">1</span><div class="t">Lãnh đạo tạo task</div><div class="d">giao chuyên viên + deadline</div></div>
+      <div class="hlink"></div>
+      <div class="hstep"><span class="n">2</span><div class="t">Upload tài liệu</div><div class="d">gắn vào task</div></div>
+      <div class="hlink"></div>
+      <div class="hstep"><span class="n">3</span><div class="t">Cấp quyền</div><div class="d">PREVIEW, DOWNLOAD có thời hạn</div></div>
+      <div class="hlink"></div>
+      <div class="hstep gold"><span class="n">4</span><div class="t">Chuyên viên xử lý</div><div class="d">chỉ thấy đúng task/tài liệu được phép</div></div>
+    </div>
+    <div class="flowv" style="margin-top:.2rem;">
+      <div class="fconn"></div>
+    </div>
+    <div class="flowh">
+      <div class="hstep gold"><span class="n">5</span><div class="t">Nộp kết quả</div><div class="d">task → chờ review</div></div>
+      <div class="hlink"></div>
+      <div class="hstep"><span class="n">6</span><div class="t">Review</div><div class="d">lãnh đạo phê duyệt</div></div>
+      <div class="hlink"></div>
+      <div class="hstep"><span class="n">7</span><div class="t">APPROVED</div><div class="d">việc hoàn thành</div></div>
+      <div class="hlink"></div>
+      <div class="hstep green"><span class="n">8</span><div class="t">Quyền hết hạn</div><div class="d">theo deadline — hết việc là hết quyền</div></div>
+    </div>
+    <p class="caption">Vòng lặp: nếu kết quả chưa đạt, lãnh đạo trả lại → quay về bước xử lý (task quay về IN_PROGRESS).</p>
   </section>
 
-  <!-- 8 GRANT THEO TASK -->
+  <!-- 9 GRANT THEO TASK -->
   <section class="slide">
     <div class="kicker">Mô hình phân quyền</div>
     <h2>Quyền tài liệu được sinh ra từ công việc</h2>
@@ -234,9 +336,9 @@
       <div class="card gold"><h4>Task-derived grant</h4><p>Grant bắt buộc có <code>source_task_id</code>. Không có task làm căn cứ → không có quyền.</p></div>
       <div class="card gold"><h4>Thời hạn hiệu lực</h4><p>Effective expiry = <b>min</b>(grant, deadline task, grant cha). Quyền tự tắt khi việc kết thúc.</p></div>
       <div class="card gold"><h4>Ủy quyền (delegation)</h4><p>Grant con là <b>tập con</b> quyền của grant cha và hết hạn <b>không muộn hơn</b> grant cha.</p></div>
-      <div class="card gold"><h4>Thu hồi theo tầng</h4><p>Thu hồi grant cha → thu hồi luôn grant con, thu hồi theo task được gỡ.</p></div>
+      <div class="card gold"><h4>Thu hồi theo tầng</h4><p>Thu hồi grant cha → thu hồi luôn grant con; thu hồi theo task được gỡ.</p></div>
     </div>
-    <div class="code" style="margin-top:1.1rem;"><span class="k">Grant</span> {
+    <div class="code" style="margin-top:1rem;"><span class="k">Grant</span> {
   <span class="k">actor</span>: chuyên viên, <span class="k">resource</span>: doc/123,
   <span class="k">source_task_id</span>: task/45,          <span class="c"># căn cứ là công việc</span>
   <span class="k">actions</span>: [PREVIEW, DOWNLOAD],
@@ -244,42 +346,58 @@
 }</div>
   </section>
 
-  <!-- 9 UPLOAD -->
+  <!-- 10 UPLOAD -->
   <section class="slide">
     <div class="kicker">Bảo mật nội dung</div>
     <h2>Luồng upload: quét → mã hóa → lưu trữ</h2>
-    <div class="code"><span class="c"># Client upload DOCX/PDF</span>
-  Gateway ──▶ Document Security Service
-  ├─ 1. ghi file vào vùng tạm (plaintext tạm thời)
-  ├─ 2. ClamAV (TCP :3310, INSTREAM)
-  │      ├─ FOUND → từ chối upload, dọn file tạm
-  │      └─ OK
-  │           ├─ AES-256-GCM: sinh DEK → KEK bảo vệ DEK
-  │           ├─ lưu ciphertext vào MinIO (:9000)
-  │           └─ lưu metadata vào PostgreSQL
-  └─ 3. dọn plaintext / ciphertext tạm</div>
-    <div class="grid cols-3" style="margin-top:1rem;">
-      <div class="card"><h4>ClamAV</h4><p>Quét virus/malware <b>trước khi lưu lâu dài</b>.</p></div>
-      <div class="card"><h4>MinIO</h4><p>Object storage S3 — chỉ chứa <b>ciphertext</b>.</p></div>
-      <div class="card"><h4>PostgreSQL</h4><p>Lưu <b>metadata</b>, không lưu bytes file.</p></div>
+    <div class="flowv">
+      <div class="fstep"><span class="t">1 · Client upload DOCX/PDF</span><div class="d">qua API Gateway → Document Security Service</div></div>
+      <div class="fconn"></div>
+      <div class="fstep"><span class="t">2 · Ghi file vào vùng tạm</span><div class="d">plaintext chỉ tồn tại tạm thời</div></div>
+      <div class="fconn"></div>
+      <div class="fstep"><span class="t">3 · ClamAV scan (TCP :3310 — INSTREAM)</span></div>
+      <div class="jsplit">
+        <div class="jcol">
+          <div class="jlbl no">FOUND</div>
+          <div class="fconn"></div>
+          <div class="fstep red"><span class="t">Từ chối upload</span><div class="d">dọn file tạm — không lưu gì</div></div>
+        </div>
+        <div class="jcol">
+          <div class="jlbl yes">OK</div>
+          <div class="fconn"></div>
+          <div class="fstep green"><span class="t">4 · Mã hóa AES-256-GCM</span><div class="d">sinh DEK · KEK bảo vệ DEK</div></div>
+        </div>
+      </div>
+      <div class="fconn"></div>
+      <div class="frow2">
+        <div class="fstep"><span class="t">MinIO — ciphertext</span><div class="d">object storage S3</div></div>
+        <div class="fstep"><span class="t">PostgreSQL — metadata</span><div class="d">không lưu bytes file</div></div>
+      </div>
+      <div class="fconn"></div>
+      <div class="fstep"><span class="t">5 · Dọn plaintext / ciphertext tạm</span></div>
     </div>
   </section>
 
-  <!-- 10 DOWNLOAD -->
+  <!-- 11 DOWNLOAD -->
   <section class="slide">
     <div class="kicker">Bảo mật nội dung</div>
     <h2>Luồng tải xuống: ticket + re-check quyền</h2>
-    <ol class="flow">
-      <li>Yêu cầu tải → hệ thống <b>kiểm tra lại quyền</b> tại thời điểm yêu cầu</li>
-      <li>Cấp <b>download ticket</b>: dùng 1 lần, có thời hạn, gắn actor + document + version</li>
-      <li>Browser <b>không nhận</b> credential MinIO / object key / URL private</li>
-      <li>Security Service: lấy ciphertext → kiểm tra <b>HMAC integrity</b></li>
-      <li>Giải mã AES-256-GCM bằng DEK (unwrap qua KEK)</li>
-      <li>Kiểm tra lại <b>SHA-256 checksum</b> → trả plaintext cho người được phép</li>
-    </ol>
+    <div class="flowv">
+      <div class="fstep"><span class="t">1 · Yêu cầu tải tài liệu</span></div>
+      <div class="fconn"></div>
+      <div class="fstep"><span class="t">2 · Kiểm tra lại quyền</span><div class="d">Permission Service — grant còn hiệu lực tại thời điểm này</div></div>
+      <div class="fconn"></div>
+      <div class="fstep"><span class="t">3 · Cấp download ticket</span><div class="d">dùng 1 lần · có thời hạn · gắn actor + document + version</div></div>
+      <div class="fconn"></div>
+      <div class="fstep"><span class="t">4 · Lấy ciphertext từ MinIO</span><div class="d">browser không nhận credential/object key</div></div>
+      <div class="fconn"></div>
+      <div class="fstep green"><span class="t">5 · Xác minh & giải mã</span><div class="d">HMAC integrity → AES-256-GCM (unwrap DEK qua KEK) → SHA-256 checksum</div></div>
+      <div class="fconn"></div>
+      <div class="fstep"><span class="t">6 · Trả file plaintext</span><div class="d">chỉ cho người dùng được phép</div></div>
+    </div>
   </section>
 
-  <!-- 11 XÁC THỰC -->
+  <!-- 12 XÁC THỰC -->
   <section class="slide">
     <div class="kicker">Bảo mật — Xác thực</div>
     <h2>JWT + Refresh Token Rotation</h2>
@@ -292,7 +410,7 @@
     <p class="lead" style="margin-top:1rem;">Token có thời hạn → nếu bị lộ, thời gian sử dụng bị giới hạn. JWT được <b>ký</b>, không phải mã hóa — không nhét dữ liệu nhạy cảm vào payload.</p>
   </section>
 
-  <!-- 12 PHÂN QUYỀN -->
+  <!-- 13 PHÂN QUYỀN -->
   <section class="slide">
     <div class="kicker">Bảo mật — Phân quyền</div>
     <h2>RBAC + Capability + Least Privilege</h2>
@@ -308,7 +426,7 @@
     </div>
   </section>
 
-  <!-- 13 FAIL CLOSED -->
+  <!-- 14 FAIL CLOSED -->
   <section class="slide">
     <div class="kicker">Bảo mật — Khả dụng</div>
     <h2>Fail-closed: an toàn hơn là cho phép nhầm</h2>
@@ -318,9 +436,10 @@
       <div class="card gold"><h4>Kiểm tra lại tại thời điểm dùng</h4><p>Thời hạn hiệu lực được kiểm tra <b>khi request</b>, không tin vào trạng thái cũ.</p></div>
       <div class="card gold"><h4>Comment không lọt audit</h4><p>Nội dung comment/đoạn trích tài liệu <b>không bao giờ</b> được ghi vào nhật ký.</p></div>
     </div>
+    <p style="margin-top:1.1rem; text-align:center; font-weight:800; color:var(--red); font-size:1.15rem;">Không chứng minh được quyền → DENY</p>
   </section>
 
-  <!-- 14 MÃ HOÁ -->
+  <!-- 15 MÃ HOÁ -->
   <section class="slide">
     <div class="kicker">Bảo mật — Nội dung</div>
     <h2>Mã hóa AES-256-GCM & chữ ký toàn vẹn</h2>
@@ -328,11 +447,16 @@
       <div class="card"><h4>DEK / KEK</h4><p>Mỗi phiên bản file sinh <b>DEK</b> riêng; <b>KEK versioned</b> bảo vệ DEK — hỗ trợ đổi khóa trong tương lai.</p></div>
       <div class="card"><h4>Integrity</h4><p>HMAC signature + IV + authentication tag (GCM) + SHA-256 checksum khi tải về.</p></div>
       <div class="card gold"><h4>Mã hóa ≠ chữ ký</h4><p>Mã hóa → không có khóa thì không đọc được. Chữ ký → kiểm tra nguồn gốc & tính toàn vẹn.</p></div>
-      <div class="card gold"><h4>Từ chối tài liệu nhạy cảm</h4><p>Bỏ qua nội dung file, hệ thống chỉ lưu metadata — client không bao giờ nhận secret.</p></div>
+      <div class="card gold"><h4>Metadata, không phải nội dung</h4><p>PostgreSQL chỉ lưu metadata; client không bao giờ nhận secret storage/object key.</p></div>
     </div>
+    <table class="tbl" style="margin-top:1rem;">
+      <tr><th>Đối tượng được bảo vệ</th><th>Cơ chế</th></tr>
+      <tr><td>Bí mật nội dung</td><td><code>AES-256-GCM</code> — mã hóa file trước khi lưu MinIO</td></tr>
+      <tr><td>Toàn vẹn</td><td><code>HMAC-SHA256</code> metadata + <code>SHA-256</code> checksum nội dung</td></tr>
+    </table>
   </section>
 
-  <!-- 15 AUDIT -->
+  <!-- 16 AUDIT -->
   <section class="slide">
     <div class="kicker">Ghi nhật ký</div>
     <h2>Audit Log — chuỗi hash chống giả mạo</h2>
@@ -342,57 +466,59 @@
       <div class="card"><h4>Single writer</h4><p>Một service duy nhất ghi, prefetch=1 + lock trên chain-head — chống fork chuỗi khi redelivery.</p></div>
       <div class="card"><h4>Verify</h4><p>Duyệt tuyến tính từ bản ghi gốc → phát hiện sai lệch.</p></div>
     </div>
-    <div class="code" style="margin-top:1.1rem;"><span class="k">AuditEvent</span> { id, event_type, actor_id, resource_id,
+    <div class="code" style="margin-top:1rem;"><span class="k">AuditEvent</span> { id, event_type, actor_id, resource_id,
   payload, <span class="k">prev_hash</span>, <span class="k">current_hash</span>, created_at }
 <span class="c"># task.created → DOCUMENT_GRANT_CREATED → DOCUMENT_DOWNLOAD_REDEEMED
 # TASK_DOCUMENT_DETACH_DENIED → security.alert.created ...</span></div>
   </section>
 
-  <!-- 16 MONITORING -->
+  <!-- 17 MONITORING -->
   <section class="slide">
     <div class="kicker">Giám sát an toàn</div>
     <h2>Security Monitoring — cảnh báo theo ngưỡng</h2>
-    <div class="grid cols-3">
-      <div class="card"><h4>Sự kiện</h4><p>Đăng nhập thất bại liên tiếp, truy cập tài liệu bị từ chối, v.v.</p></div>
-      <div class="card"><h4>Rule + ngưỡng</h4><p>Loại sự kiện + threshold + cửa sổ thời gian, ví dụ <b>3 lần / 15 phút</b>.</p></div>
-      <div class="card"><h4>Hành động</h4><p><b>ALERT</b> hoặc <b>BLOCK</b> — có thể thu hồi session theo chính sách.</p></div>
+    <div class="flowh">
+      <div class="hstep"><span class="n">1</span><div class="t">Sự kiện bảo mật</div><div class="d">đăng nhập thất bại · truy cập bị từ chối</div></div>
+      <div class="hlink"></div>
+      <div class="hstep"><span class="n">2</span><div class="t">Đếm theo rule</div><div class="d">(rule, actor, cửa sổ thời gian)</div></div>
+      <div class="hlink"></div>
+      <div class="hstep"><span class="n">3</span><div class="t">So ngưỡng</div><div class="d">vd 3 lần / 15 phút</div></div>
+      <div class="hlink"></div>
+      <div class="hstep green"><span class="n">4</span><div class="t">Cảnh báo</div><div class="d">ALERT / BLOCK — có thể thu hồi session</div></div>
     </div>
-    <div class="code" style="margin-top:1.1rem;"><span class="c"># Ví dụ cảnh báo đã ghi nhận thực tế trên hệ thống</span>
+    <div class="code" style="margin-top:1.2rem;"><span class="c"># Ví dụ cảnh báo đã ghi nhận thực tế trên hệ thống</span>
   <span class="k">Repeated denied content access threshold reached</span>
   actor: tansang06092004@gmail.com   action: DISPOSE
   reason: MISSING_CAPABILITY         count: 3 / threshold: 3
   window: 13:15:00 — 13:30:00        status: OPEN</div>
   </section>
 
-  <!-- 17 CÔNG NGHỆ -->
-  <section class="slide">
-    <div class="kicker">Công nghệ</div>
-    <h2>Vì sao chọn Node.js / NestJS?</h2>
-    <div class="grid cols-2">
-      <div class="card"><h4>Node.js</h4><p>Non-blocking I/O, phù hợp hệ thống API nhiều I/O (network, DB). Cùng ngôn ngữ cho frontend & backend.</p></div>
-      <div class="card"><h4>NestJS</h4><p>Framework TypeScript: Dependency Injection, module hóa, guard/interceptor/pipe — code có cấu trúc, dễ kiểm thử.</p></div>
-      <div class="card"><h4>PostgreSQL + Prisma</h4><p>Dữ liệu nghiệp vụ có quan hệ rõ (task, user, grant); Prisma = schema + truy vấn type-safe.</p></div>
-      <div class="card"><h4>RabbitMQ + Docker</h4><p>Event bất đồng bộ giữa service; Docker Compose đóng gói & triển khai nhất quán.</p></div>
-    </div>
-    <div class="badges" style="margin-top:1rem;">
-      <span class="badge">TypeScript</span><span class="badge">REST + RabbitMQ</span>
-      <span class="badge">Database-per-service</span><span class="badge">CI/CD GitHub Actions</span>
-    </div>
-  </section>
-
   <!-- 18 DEMO -->
   <section class="slide">
     <div class="kicker">Trình diễn</div>
     <h2>Demo luồng thực tế (tại UBND)</h2>
-    <ol class="flow">
-      <li>Đăng nhập tài khoản <b>lãnh đạo</b></li>
-      <li>Tạo task <i>“Xử lý hồ sơ đề xuất dự án chuyển đổi số”</i> → giao cho chuyên viên, deadline</li>
-      <li>Upload tài liệu → gắn vào task → cấp quyền <b>PREVIEW, DOWNLOAD</b></li>
-      <li>Đăng nhập tài khoản <b>chuyên viên</b> → xem đúng task & tài liệu được chia sẻ</li>
-      <li>Thử thao tác <b>không được phép</b> → server trả về từ chối</li>
-      <li>Xử lý, nộp kết quả → lãnh đạo review → <b>APPROVED</b></li>
-      <li>Xem <b>audit log</b> và <b>cảnh báo bảo mật</b> trên màn hình Admin</li>
-    </ol>
+    <div class="flowh">
+      <div class="hstep"><span class="n">1</span><div class="t">Đăng nhập lãnh đạo</div></div>
+      <div class="hlink"></div>
+      <div class="hstep"><span class="n">2</span><div class="t">Tạo task + giao việc</div><div class="d">"Xử lý hồ sơ dự án chuyển đổi số"</div></div>
+      <div class="hlink"></div>
+      <div class="hstep"><span class="n">3</span><div class="t">Upload + gắn tài liệu</div></div>
+      <div class="hlink"></div>
+      <div class="hstep"><span class="n">4</span><div class="t">Cấp quyền</div><div class="d">PREVIEW, DOWNLOAD</div></div>
+    </div>
+    <div class="flowv" style="margin-top:.2rem;"><div class="fconn"></div></div>
+    <div class="flowh">
+      <div class="hstep gold"><span class="n">5</span><div class="t">Đăng nhập chuyên viên</div><div class="d">chỉ thấy task/tài liệu được phép</div></div>
+      <div class="hlink"></div>
+      <div class="hstep gold"><span class="n">6</span><div class="t">Thao tác bị từ chối</div><div class="d">server trả denied</div></div>
+      <div class="hlink"></div>
+      <div class="hstep gold"><span class="n">7</span><div class="t">Xử lý + nộp kết quả</div></div>
+      <div class="hlink"></div>
+      <div class="hstep"><span class="n">8</span><div class="t">Review → APPROVED</div></div>
+    </div>
+    <div class="flowv" style="margin-top:.2rem;"><div class="fconn"></div></div>
+    <div class="flowh">
+      <div class="hstep green"><span class="n">9</span><div class="t">Admin</div><div class="d">xem audit log + cảnh báo bảo mật</div></div>
+    </div>
   </section>
 
   <!-- 19 KẾT LUẬN -->
@@ -433,11 +559,17 @@
     var slides = Array.prototype.slice.call(document.querySelectorAll('.slide'));
     var posEl = document.getElementById('pos');
     var cur = 0;
-    function show(i){
+    function show(i, fromHash){
       cur = Math.max(0, Math.min(slides.length-1, i));
       slides.forEach(function(s,idx){ s.classList.toggle('active', idx===cur); });
       posEl.textContent = (cur+1) + ' / ' + slides.length;
+      if(!fromHash){ try{ history.replaceState(null,'','#'+(cur+1)); }catch(e){} }
     }
+    function gotoHash(){
+      var m = /^#(\d+)$/.exec(location.hash);
+      if(m){ show(parseInt(m[1],10)-1, true); }
+    }
+    window.addEventListener('hashchange', gotoHash);
     document.getElementById('next').addEventListener('click', function(){ show(cur+1); });
     document.getElementById('prev').addEventListener('click', function(){ show(cur-1); });
     document.addEventListener('keydown', function(e){
@@ -446,7 +578,8 @@
       if(e.key==='Home'){ show(0); }
       if(e.key==='End'){ show(slides.length-1); }
     });
-    show(0);
+show(0);
+    gotoHash();
   })();
 </script>
 </body>
