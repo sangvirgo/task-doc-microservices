@@ -228,6 +228,9 @@ export class PermissionService {
     parent_grant_id?: string;
   }): Promise<GrantDto> {
     this.assertKnownPermissions(data.permissions);
+    if (data.resource_type === ResourceType.DOCUMENT) {
+      this.assertDocumentShareRule(data.permissions);
+    }
 
     const taskContext = await this.taskContextClient.getContext(data.task_id);
     if (
@@ -307,6 +310,7 @@ export class PermissionService {
 
     if (existing) {
       this.assertKnownPermissions(data.permissions);
+      this.assertDocumentShareRule(data.permissions);
       const now = new Date();
       if (data.expires_at.getTime() <= now.getTime()) {
         throw new BadRequestException('Grant expiration must be in the future');
@@ -393,6 +397,7 @@ export class PermissionService {
 
     const nextPermissions = data.permissions ?? grant.permissions;
     this.assertKnownPermissions(nextPermissions);
+    this.assertDocumentShareRule(nextPermissions);
     if (data.expires_at && data.expires_at.getTime() <= Date.now()) {
       throw new BadRequestException('Grant expiration must be in the future');
     }
@@ -663,6 +668,22 @@ export class PermissionService {
       if (!available.includes(permission)) {
         throw new BadRequestException(`Cannot grant permission not held by parent: ${permission}`);
       }
+    }
+  }
+
+  /**
+   * A document SHARE grant may only exist alongside at least one content
+   * permission (PREVIEW or DOWNLOAD). Share-on-its-own is not a valid grant.
+   */
+  private assertDocumentShareRule(permissions: string[]): void {
+    if (
+      permissions.includes(PermissionAction.SHARE) &&
+      !permissions.includes(PermissionAction.PREVIEW) &&
+      !permissions.includes(PermissionAction.DOWNLOAD)
+    ) {
+      throw new BadRequestException(
+        'SHARE permission requires PREVIEW or DOWNLOAD to be granted alongside it',
+      );
     }
   }
 

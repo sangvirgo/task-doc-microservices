@@ -1,6 +1,5 @@
 import { gatewayClient } from './client';
 import type { ManagedUser, MemberOption, SecurityAlert, SecurityRule } from '@/types/admin';
-import type { Capability } from '@/types/capability';
 
 type DirectoryPage = { items: MemberOption[]; pagination: { page: number; has_next: boolean } };
 type DirectoryOptions = { force?: boolean };
@@ -83,8 +82,6 @@ export const adminApi = {
     gatewayClient.post<{ id: string; email: string; role: string; email_verified: boolean }>('/auth/admin/register', { email, password, role }),
   lock: (id: string) => gatewayClient.post<ManagedUser>(`/users/${encodeURIComponent(id)}/lock`),
   unlock: (id: string) => gatewayClient.post<ManagedUser>(`/users/${encodeURIComponent(id)}/unlock`),
-  grantCapability: (id: string, capability: Capability) => gatewayClient.post<ManagedUser>(`/users/${encodeURIComponent(id)}/capabilities`, { capability }),
-  revokeCapability: (id: string, capability: Capability) => gatewayClient.delete<ManagedUser>(`/users/${encodeURIComponent(id)}/capabilities/${encodeURIComponent(capability)}`),
   alerts: () => gatewayClient.getList<SecurityAlert>('/monitoring/alerts'),
   resolveAlert: (id: string, resolved_by: string) => gatewayClient.post<SecurityAlert>(`/monitoring/alerts/${encodeURIComponent(id)}/resolve`, { resolved_by }),
   rules: () => gatewayClient.getList<SecurityRule>('/monitoring/rules'),

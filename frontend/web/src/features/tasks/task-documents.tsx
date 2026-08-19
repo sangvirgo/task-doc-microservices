@@ -13,8 +13,8 @@ import { GatewayError } from '@/lib/errors';
 import styles from './task-documents.module.css';
 const MAX_UPLOAD_BYTES = 5 * 1024 * 1024;
 
-const GRANTABLE_PERMISSIONS = ['PREVIEW', 'DOWNLOAD', 'UPDATE', 'SHARE', 'TRANSFER', 'DISPOSE'];
-const permissionLabel: Record<string, string> = { PREVIEW: 'Xem', DOWNLOAD: 'Tải xuống', UPDATE: 'Cập nhật', SHARE: 'Chia sẻ', TRANSFER: 'Chuyển giao', DISPOSE: 'Hủy' };
+const GRANTABLE_PERMISSIONS = ['PREVIEW', 'DOWNLOAD', 'UPDATE', 'SHARE', 'DISPOSE'];
+const permissionLabel: Record<string, string> = { PREVIEW: 'Xem', DOWNLOAD: 'Tải xuống', UPDATE: 'Cập nhật', SHARE: 'Chia sẻ', DISPOSE: 'Hủy' };
 const isFutureExpiry = (value: string) => new Date(value).getTime() > Date.now();
 const defaultExpiry = () => { const date = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000); const pad = (n: number) => String(n).padStart(2, '0'); return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`; };
 const toLocalInputValue = (value: string) => { const date = new Date(value); if (Number.isNaN(date.getTime())) return ''; const pad = (n: number) => String(n).padStart(2, '0'); return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`; };
@@ -40,7 +40,7 @@ export function TaskDocuments({ task, canUpload = false, members = [], participa
   const loadSequence = useRef(0);
   const session = readSession();
   const canDetach = (item: TaskDocument) =>
-    item.permissions.includes('SHARE') || session?.userId === task.creator_id;
+    item.permissions.includes('DISPOSE') || session?.userId === task.creator_id;
 
   const load = useCallback(async () => {
     const sequence = ++loadSequence.current;
@@ -187,7 +187,17 @@ export function TaskDocuments({ task, canUpload = false, members = [], participa
     }
   };
   const toggleSharePermission = (permission: string) => {
-    setSharePermissions(current => current.includes(permission) ? current.filter(item => item !== permission) : [...current, permission]);
+    const current = sharePermissions;
+    const next = current.includes(permission) ? current.filter(item => item !== permission) : [...current, permission];
+    const hasContent = next.includes('PREVIEW') || next.includes('DOWNLOAD');
+    if (next.includes('SHARE') && !hasContent) {
+      setStatus(permission === 'SHARE'
+        ? 'Quyền Chia sẻ (SHARE) phải đi kèm ít nhất một trong hai quyền Xem (PREVIEW) hoặc Tải xuống (DOWNLOAD).'
+        : 'Không thể bỏ cả Xem (PREVIEW) lẫn Tải xuống (DOWNLOAD) khi vẫn còn quyền Chia sẻ (SHARE).');
+      return;
+    }
+    setStatus('');
+    setSharePermissions(next);
   };
   useEffect(() => {
     if (!shareFor) return;
@@ -211,6 +221,7 @@ export function TaskDocuments({ task, canUpload = false, members = [], participa
     if (!shareFor || sharing) return;
     if (!shareActorId) { setStatus('Hãy chọn người nhận quyền.'); return; }
     if (sharePermissions.length === 0) { setStatus('Hãy chọn ít nhất một quyền để cấp.'); return; }
+    if (sharePermissions.includes('SHARE') && !sharePermissions.includes('PREVIEW') && !sharePermissions.includes('DOWNLOAD')) { setStatus('Quyền Chia sẻ (SHARE) phải đi kèm ít nhất một trong hai quyền Xem (PREVIEW) hoặc Tải xuống (DOWNLOAD).'); return; }
     if (!shareExpiry) { setStatus('Hãy chọn thời hạn hiệu lực.'); return; }
     const expiresAt = new Date(shareExpiry);
     if (!isFutureExpiry(shareExpiry)) { setStatus('Thời hạn hiệu lực phải ở tương lai.'); return; }
@@ -234,7 +245,7 @@ export function TaskDocuments({ task, canUpload = false, members = [], participa
       }
       closeShare();
     } catch (reason) {
-      setStatus(reason instanceof GatewayError ? `Không thể ${editingGrantId ? 'cập nhật' : 'cấp'} quyền (${reason.status}). Người nhận phải là thành viên trực tiếp của task.` : `Không thể ${editingGrantId ? 'cập nhật' : 'cấp'} quyền cho người nhận.`);
+      setStatus(reason instanceof GatewayError ? `Không thể ${editingGrantId ? 'cập nhật' : 'cấp'} quyền (${reason.status}). ${reason.message}` : `Không thể ${editingGrantId ? 'cập nhật' : 'cấp'} quyền cho người nhận.`);
     } finally { setSharing(false); }
   };
   return <section className={styles.section} aria-labelledby="task-documents-title">
@@ -251,6 +262,6 @@ export function TaskDocuments({ task, canUpload = false, members = [], participa
       {items?.length === 0 && <p className={styles.empty}>Chưa có tài liệu nào được gắn vào công việc này.</p>}
       {items === null && <p className={styles.empty}>Đang tải tài liệu…</p>}
     </div>}
-    {shareFor && <div className={styles.shareDialog} role="dialog" aria-modal="true" aria-labelledby={`share-title-${shareFor.document_id}`}><form className={styles.sharePanel} onSubmit={shareDocument}><div className={styles.shareHeader}><div><p className={styles.eyebrow}>Chia sẻ quyền truy cập</p><h3 id={`share-title-${shareFor.document_id}`}>{editingGrantId ? `Cập nhật quyền cho “${shareFor.title}”` : `Cấp quyền cho “${shareFor.title}”`}</h3><p className={styles.shareSub}>{editingGrantId ? 'Đang sửa một quyền đã cấp. Điều chỉnh quyền và hiệu lực rồi bấm Cập nhật quyền.' : 'Người nhận phải là thành viên trực tiếp của task. Hiệu lực giới hạn theo deadline task.'}</p></div><button type="button" className={styles.shareClose} aria-label="Đóng biểu mẫu chia sẻ quyền" onClick={closeShare} disabled={sharing}>×</button></div><div className={styles.shareBody}>{shareGrants.length > 0 ? <div className={styles.grantList}><div className={styles.grantListHeading}><span>Quyền đã cấp cho tài liệu này</span><small>{shareGrants.length} quyền</small></div>{shareGrants.map(grant => { const active = grant.status === 'ACTIVE' && !grant.revoked_at; return <div className={styles.grantRow} key={grant.id}><div className={styles.grantRowMain}><strong>{memberById.get(grant.actor_id)?.email ?? grant.actor_id.slice(0, 8)}</strong><div className={styles.grantPerms}>{grant.permissions.map(permission => <span key={permission}>{permissionLabel[permission] ?? permission}</span>)}</div><small>Hết hạn: {formatExpiry(grant.effective_expires_at)} · {grantStatusLabel(grant)}</small></div><div className={styles.grantRowActions}>{active && <button type="button" className={styles.grantEditButton} onClick={() => editGrant(grant)} disabled={Boolean(sharing) || Boolean(revokingGrantId)}>Sửa</button>}{active && <button type="button" className={styles.grantRevokeButton} onClick={() => void revokeGrant(grant)} disabled={Boolean(sharing) || Boolean(revokingGrantId)}>{revokingGrantId === grant.id ? 'Đang thu hồi…' : 'Thu hồi'}</button>}</div></div>; })}</div> : <p className={styles.grantEmpty}>Chưa có quyền nào được cấp cho tài liệu này trong task.</p>}<label>Người nhận<select name="actor_id" value={shareActorId} onChange={event => selectShareActor(event.target.value)} required><option value="" disabled>Chọn thành viên trong task</option>{recipients.map(member => <option key={member.id} value={member.id}>{member.email}</option>)}</select></label><fieldset className={styles.permissionField}><legend>Quyền được cấp</legend><p>Chọn ít nhất một quyền cho người nhận.</p><div className={styles.permissionGrid}>{GRANTABLE_PERMISSIONS.map(permission => <label key={permission}><input type="checkbox" checked={sharePermissions.includes(permission)} onChange={() => toggleSharePermission(permission)} /><span>{permissionLabel[permission] ?? permission}</span></label>)}</div></fieldset><label>Hiệu lực đến<input name="expires_at" type="datetime-local" value={shareExpiry} onChange={event => { setShareExpiry(event.target.value); setStatus(''); }} required /></label>{status && <p className={styles.shareStatus} role="status">{status}</p>}</div><div className={styles.shareActions}>{editingGrantId && <button type="button" className={styles.cancelButton} onClick={() => { setEditingGrantId(undefined); setShareActorId(''); setSharePermissions([]); setShareExpiry(''); setStatus(''); }} disabled={sharing}>Hủy sửa</button>}<button type="button" className={styles.cancelButton} onClick={closeShare} disabled={sharing}>Đóng</button><button type="submit" className={styles.submitButton} disabled={sharing || !shareActorId || sharePermissions.length === 0}>{sharing ? (editingGrantId ? 'Đang cập nhật…' : 'Đang cấp quyền…') : (editingGrantId ? 'Cập nhật quyền' : 'Cấp quyền')}</button></div></form></div>}
+    {shareFor && <div className={styles.shareDialog} role="dialog" aria-modal="true" aria-labelledby={`share-title-${shareFor.document_id}`}><form className={styles.sharePanel} onSubmit={shareDocument}><div className={styles.shareHeader}><div><p className={styles.eyebrow}>Chia sẻ quyền truy cập</p><h3 id={`share-title-${shareFor.document_id}`}>{editingGrantId ? `Cập nhật quyền cho “${shareFor.title}”` : `Cấp quyền cho “${shareFor.title}”`}</h3><p className={styles.shareSub}>{editingGrantId ? 'Đang sửa một quyền đã cấp. Điều chỉnh quyền và hiệu lực rồi bấm Cập nhật quyền.' : 'Người nhận phải là thành viên trực tiếp của task. Quyền Chia sẻ (SHARE) cần đi kèm Xem (PREVIEW) hoặc Tải xuống (DOWNLOAD).'}</p></div><button type="button" className={styles.shareClose} aria-label="Đóng biểu mẫu chia sẻ quyền" onClick={closeShare} disabled={sharing}>×</button></div><div className={styles.shareBody}>{shareGrants.length > 0 ? <div className={styles.grantList}><div className={styles.grantListHeading}><span>Quyền đã cấp cho tài liệu này</span><small>{shareGrants.length} quyền</small></div>{shareGrants.map(grant => { const active = grant.status === 'ACTIVE' && !grant.revoked_at; return <div className={styles.grantRow} key={grant.id}><div className={styles.grantRowMain}><strong>{memberById.get(grant.actor_id)?.email ?? grant.actor_id.slice(0, 8)}</strong><div className={styles.grantPerms}>{grant.permissions.map(permission => <span key={permission}>{permissionLabel[permission] ?? permission}</span>)}</div><small>Hết hạn: {formatExpiry(grant.effective_expires_at)} · {grantStatusLabel(grant)}</small></div><div className={styles.grantRowActions}>{active && <button type="button" className={styles.grantEditButton} onClick={() => editGrant(grant)} disabled={Boolean(sharing) || Boolean(revokingGrantId)}>Sửa</button>}{active && <button type="button" className={styles.grantRevokeButton} onClick={() => void revokeGrant(grant)} disabled={Boolean(sharing) || Boolean(revokingGrantId)}>{revokingGrantId === grant.id ? 'Đang thu hồi…' : 'Thu hồi'}</button>}</div></div>; })}</div> : <p className={styles.grantEmpty}>Chưa có quyền nào được cấp cho tài liệu này trong task.</p>}<label>Người nhận<select name="actor_id" value={shareActorId} onChange={event => selectShareActor(event.target.value)} required><option value="" disabled>Chọn thành viên trong task</option>{recipients.map(member => <option key={member.id} value={member.id}>{member.email}</option>)}</select></label><fieldset className={styles.permissionField}><legend>Quyền được cấp</legend><p>Chọn ít nhất một quyền cho người nhận.</p><div className={styles.permissionGrid}>{GRANTABLE_PERMISSIONS.map(permission => <label key={permission}><input type="checkbox" checked={sharePermissions.includes(permission)} onChange={() => toggleSharePermission(permission)} /><span>{permissionLabel[permission] ?? permission}</span></label>)}</div></fieldset><label>Hiệu lực đến<input name="expires_at" type="datetime-local" value={shareExpiry} onChange={event => { setShareExpiry(event.target.value); setStatus(''); }} required /></label>{status && <p className={styles.shareStatus} role="status">{status}</p>}</div><div className={styles.shareActions}>{editingGrantId && <button type="button" className={styles.cancelButton} onClick={() => { setEditingGrantId(undefined); setShareActorId(''); setSharePermissions([]); setShareExpiry(''); setStatus(''); }} disabled={sharing}>Hủy sửa</button>}<button type="button" className={styles.cancelButton} onClick={closeShare} disabled={sharing}>Đóng</button><button type="submit" className={styles.submitButton} disabled={sharing || !shareActorId || sharePermissions.length === 0}>{sharing ? (editingGrantId ? 'Đang cập nhật…' : 'Đang cấp quyền…') : (editingGrantId ? 'Cập nhật quyền' : 'Cấp quyền')}</button></div></form></div>}
   </section>;
 }

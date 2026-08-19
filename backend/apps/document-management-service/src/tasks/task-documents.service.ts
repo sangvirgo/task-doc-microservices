@@ -32,7 +32,6 @@ const DOCUMENT_GRANTABLE_ACTIONS = new Set<string>([
   PermissionAction.DOWNLOAD,
   PermissionAction.UPDATE,
   PermissionAction.SHARE,
-  PermissionAction.TRANSFER,
   PermissionAction.DISPOSE,
 ]);
 
@@ -379,9 +378,9 @@ export class TaskDocumentsService {
     }
 
     // The task creator may always remove an attachment from their own task, even
-    // when they hold no SHARE capability on the document itself.
+    // when they hold no DISPOSE capability on the document itself.
     if (context.task.creator_id !== caller.userId) {
-      await this.assertCanShare(association.document, caller, taskId, context.task.parent_task_id);
+      await this.assertCanDispose(association.document, caller, taskId, context.task.parent_task_id);
     }
 
     // Removing the association first is fail-closed: even if the external revoke call is
@@ -502,6 +501,17 @@ export class TaskDocumentsService {
     if (permissions.some((permission) => !DOCUMENT_GRANTABLE_ACTIONS.has(permission))) {
       throw new BadRequestException('Grant contains an invalid document permission action');
     }
+    // SHARE can only be granted alongside at least one content permission
+    // (PREVIEW or DOWNLOAD): a share right must never exist on its own.
+    if (
+      permissions.includes(PermissionAction.SHARE) &&
+      !permissions.includes(PermissionAction.PREVIEW) &&
+      !permissions.includes(PermissionAction.DOWNLOAD)
+    ) {
+      throw new BadRequestException(
+        'SHARE permission requires PREVIEW or DOWNLOAD to be granted alongside it',
+      );
+    }
   }
 
   private assertFutureExpiry(expiresAtValue: string): void {
@@ -566,6 +576,63 @@ export class TaskDocumentsService {
       reason_code: decision.reason_code,
     });
     throw new ForbiddenException('Caller is not authorized to share this document');
+  }
+
+  private async assertCanDispose(
+    document: DocumentDto,
+    caller: AuthContext,
+    taskId: string,
+    fallbackTaskId?: string | null,
+  ): Promise<void> {
+    if (document.owner_id === caller.userId || document.creator_id === caller.userId) return;
+
+    let decision = await this.permissionClient.check({
+      actor_id: caller.userId,
+      actor_role: caller.role,
+      resource_type: ResourceType.DOCUMENT,
+      resource_id: document.id,
+      action: PermissionAction.DISPOSE,
+      task_id: taskId,
+      owner_id: document.owner_id,
+      creator_id: document.creator_id,
+      correlation_id: randomUUID(),
+    });
+
+    if (decision.allowed) return;
+
+    if (fallbackTaskId && fallbackTaskId !== taskId) {
+      decision = await this.permissionClient.check({
+        actor_id: caller.userId,
+        actor_role: caller.role,
+        resource_type: ResourceType.DOCUMENT,
+        resource_id: document.id,
+        action: PermissionAction.DISPOSE,
+        task_id: fallbackTaskId,
+        owner_id: document.owner_id,
+        creator_id: document.creator_id,
+        correlation_id: randomUUID(),
+      });
+      if (decision.allowed) return;
+    }
+
+    decision = await this.permissionClient.check({
+      actor_id: caller.userId,
+      actor_role: caller.role,
+      resource_type: ResourceType.DOCUMENT,
+      resource_id: document.id,
+      action: PermissionAction.DISPOSE,
+      task_id: null,
+      owner_id: document.owner_id,
+      creator_id: document.creator_id,
+      correlation_id: randomUUID(),
+    });
+    if (decision.allowed) return;
+
+    await this.recordDenied('TASK_DOCUMENT_DETACH_DENIED', caller.userId, document.id, {
+      task_id: taskId,
+      reason_code: decision.reason_code,
+    });
+    throw new ForbiddenException('Caller is not authorized to dispose this document');
   }
 
   private async getAccess(

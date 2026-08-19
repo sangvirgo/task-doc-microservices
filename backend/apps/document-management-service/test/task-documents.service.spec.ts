@@ -298,7 +298,6 @@ describe('TaskDocumentsService', () => {
       PermissionAction.DOWNLOAD,
       PermissionAction.UPDATE,
       PermissionAction.SHARE,
-      PermissionAction.TRANSFER,
       PermissionAction.DISPOSE,
     ]);
   });

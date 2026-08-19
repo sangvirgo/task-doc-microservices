@@ -19,7 +19,6 @@ const permissionLabel: Record<string, string> = {
   DOWNLOAD: 'Tải xuống',
   UPDATE: 'Cập nhật',
   SHARE: 'Chia sẻ',
-  TRANSFER: 'Chuyển giao',
   DISPOSE: 'Hủy',
 };
 

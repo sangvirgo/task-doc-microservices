@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import { auditApi } from '@/api/audit';
 import { readSession } from '@/auth/session';
 import { EmptyState, ErrorState, LoadingState, PermissionDeniedState } from '@/components/common-states';
@@ -53,11 +54,21 @@ const formatTime = (value: string) => new Date(value).toLocaleString('vi-VN');
 
 export function ActivityLogPanel() {
   const session = readSession();
+  const router = useRouter();
   const [events, setEvents] = useState<AuditEventMetadata[] | null>(null);
   const [failed, setFailed] = useState(false);
   const [filter, setFilter] = useState('ALL');
   const [page, setPage] = useState(1);
   const [total, setTotal] = useState(0);
+
+  // The dedicated "Nhật ký hoạt động" page is redundant for employees: the
+  // "Siêu nhật ký" (/super-log) page already shows their own activity. Keep the
+  // page available to administrators only.
+  useEffect(() => {
+    if (session?.role && session.role !== 'ADMIN') {
+      void router.replace('/super-log');
+    }
+  }, [session?.role, router]);
 
   const load = () => {
     if (!session?.userId) return;
@@ -81,6 +92,7 @@ export function ActivityLogPanel() {
   }, [events, filter]);
 
   if (!session?.userId) return <PermissionDeniedState />;
+  if (session?.role && session.role !== 'ADMIN') return <LoadingState />;
   if (failed) return <ErrorState message="Không thể tải nhật ký hoạt động." onRetry={load} />;
   if (!events) return <LoadingState />;
 

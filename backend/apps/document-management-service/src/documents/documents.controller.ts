@@ -231,6 +231,19 @@ interface UploadedFilePayload {
 }
 
 /**
+ * Actions that grant the right to view a document's page (metadata + versions).
+ * A user holding any one of these may open the detail page; content-level actions
+ * (PREVIEW content, DOWNLOAD) are enforced separately by their own endpoints.
+ */
+const DOCUMENT_VIEW_ACTIONS: readonly PermissionAction[] = [
+  PermissionAction.PREVIEW,
+  PermissionAction.DOWNLOAD,
+  PermissionAction.UPDATE,
+  PermissionAction.SHARE,
+  PermissionAction.DISPOSE,
+];
+
+/**
  * Document Management API (V3 §5.4, §5.6).
  * Full document lifecycle with versioning, records, transfer packages, and download tickets.
  */
@@ -465,14 +478,10 @@ export class DocumentsController {
   ): Promise<DocumentDto> {
     if (!user) throw new ForbiddenException('Authentication required');
 
-    const { document, decision: permCheck } = await this.checkDocumentPermission(
-      documentId,
-      user,
-      PermissionAction.PREVIEW,
-    );
+    const { document, allowed } = await this.checkAnyDocumentAccess(documentId, user);
 
-    if (!permCheck.allowed) {
-      throw new ForbiddenException(`Document access denied: ${permCheck.reason_code}`);
+    if (!allowed) {
+      throw new ForbiddenException('Document access denied');
     }
 
     return document;
@@ -552,7 +561,7 @@ export class DocumentsController {
     @Query('page') page?: string,
     @Query('page_size') page_size?: string,
   ) {
-    await this.requireDocumentPreview(documentId, user);
+    await this.requireAnyDocumentAccess(documentId, user);
     return this.documentsService.getDocumentVersions(documentId, parsePagination(page, page_size));
   }
 
@@ -563,21 +572,43 @@ export class DocumentsController {
     @Param('version') version: string,
     @CurrentUser() user?: AuthContext,
   ): Promise<DocumentVersionDto> {
-    await this.requireDocumentPreview(documentId, user);
+    await this.requireAnyDocumentAccess(documentId, user);
     const versionNum = parseInt(version, 10);
     if (isNaN(versionNum)) throw new BadRequestException('Invalid version number');
     return this.documentsService.getDocumentVersion(documentId, versionNum);
   }
 
-  private async requireDocumentPreview(documentId: string, user?: AuthContext): Promise<void> {
+  private async requireAnyDocumentAccess(documentId: string, user?: AuthContext): Promise<void> {
     if (!user) throw new ForbiddenException('Authentication required');
-    const { decision } = await this.checkDocumentPermission(
-      documentId,
-      user,
-      PermissionAction.PREVIEW,
-    );
-    if (!decision.allowed)
-      throw new ForbiddenException(`Document access denied: ${decision.reason_code}`);
+    const { allowed } = await this.checkAnyDocumentAccess(documentId, user);
+    if (!allowed) throw new ForbiddenException('Document access denied');
+  }
+
+  /**
+   * A document page is viewable if the caller holds any document access action
+   * (e.g. PREVIEW, DOWNLOAD, UPDATE, SHARE, DISPOSE) — not only PREVIEW. A user
+   * with DOWNLOAD-only must be able to open the page and download, without preview.
+   */
+  private async checkAnyDocumentAccess(
+    documentId: string,
+    user: AuthContext,
+  ): Promise<{ document: DocumentDto; allowed: boolean }> {
+    const document = await this.documentsService.getDocument(documentId);
+    for (const action of DOCUMENT_VIEW_ACTIONS) {
+      const decision = await this.permissionClient.check({
+        actor_id: user.userId,
+        actor_role: user.role,
+        resource_type: 'DOCUMENT',
+        resource_id: documentId,
+        action,
+        task_id: null,
+        owner_id: document.owner_id,
+        creator_id: document.creator_id,
+        correlation_id: getCorrelationId() ?? randomUUID(),
+      });
+      if (decision.allowed) return { document, allowed: true };
+    }
+    return { document, allowed: false };
   }
 
   @Post(':id/versions/:version/preview-session')
