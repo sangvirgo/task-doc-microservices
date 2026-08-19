@@ -128,7 +128,12 @@ export function TaskDocuments({ task, canUpload = false, members = [], participa
   const currentUserId = readSession()?.userId;
   const visibleShareGrants = shareGrants.filter(grant => grant.actor_id !== currentUserId);
   const memberById = new Map(members.map(member => [member.id, member]));
-  const recipientIds = Array.from(new Set([task.creator_id, task.assignee_id, ...participants.map(item => item.user_id)].filter((value): value is string => Boolean(value)))).filter(userId => userId !== currentUserId);
+  // The task creator owns the original permission and must not appear as a
+  // recipient for a delegated grant. Keep the assignee and additional
+  // participants available for controlled sharing.
+  const excludedRecipientIds = new Set([currentUserId, task.creator_id]);
+  const recipientIds = Array.from(new Set([task.creator_id, task.assignee_id, ...participants.map(item => item.user_id)].filter((value): value is string => Boolean(value))))
+    .filter(userId => !excludedRecipientIds.has(userId));
   const recipients = recipientIds
     .map(userId => memberById.get(userId) ?? { id: userId, email: userId.slice(0, 8) })
     .sort((a, b) => a.email.localeCompare(b.email));
