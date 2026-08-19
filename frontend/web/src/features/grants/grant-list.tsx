@@ -68,7 +68,19 @@ useEffect(load, [session?.userId, session?.role]);
   if (error) return <ErrorState message="Không thể tải danh sách quyền tài liệu." onRetry={load} />;
   if (!issued || !received) return <LoadingState />;
 
-  const visibleGrants = view === 'issued' ? issued : received;
+  const sessionUserId = session.userId;
+  const ownedDocumentIds = new Set(
+    documents
+      .filter(document => document.owner_id === sessionUserId || document.creator_id === sessionUserId)
+      .map(document => document.id),
+  );
+  // Grants I hold on my own documents (e.g. the automatic self-grant created at
+  // upload) are not "received" rights — I already own those documents outright.
+  const receivedVisible = received.filter(
+    grant => grant.actor_id !== grant.grantor_id && !ownedDocumentIds.has(grant.resource_id),
+  );
+  const visibleGrants = view === 'issued' ? issued : receivedVisible;
+  const isSelfGrant = (grant: Grant) => view === 'issued' && grant.actor_id === session?.userId;
   const documentById = new Map(documents.map(document => [document.id, document]));
   const taskById = new Map(tasks.map(task => [task.id, task]));
   const memberById = new Map(members.map(member => [member.id, member]));
@@ -79,17 +91,17 @@ useEffect(load, [session?.userId, session?.role]);
   const revokedCount = visibleGrants.filter(grant => grant.status === 'REVOKED').length;
 
   return <section className={styles.grantsPage}>
-    <header className={styles.grantsHeader}><div><p className={styles.grantsEyebrow}>Quản trị quyền truy cập</p><h1>Quyền tài liệu</h1><p>Theo dõi tài liệu bạn đã cấp, tài liệu được cấp cho bạn và thời hạn hiệu lực.</p></div><span className={styles.grantsBadge}>{issued.length + received.length} bản ghi quyền</span></header>
+    <header className={styles.grantsHeader}><div><p className={styles.grantsEyebrow}>Quản trị quyền truy cập</p><h1>Quyền tài liệu</h1><p>Theo dõi tài liệu bạn đã cấp, tài liệu được cấp cho bạn và thời hạn hiệu lực.</p></div><span className={styles.grantsBadge}>{issued.length + receivedVisible.length} bản ghi quyền</span></header>
 
     <div className={styles.grantStats}>
       <article><span className={styles.statBlue}>↗</span><div><small>Đã cấp bởi tôi</small><strong>{issued.length}</strong><em>{view === 'issued' ? activeCount + ' đang hiệu lực' : 'Chọn tab để xem'}</em></div></article>
-      <article><span className={styles.statGreen}>↙</span><div><small>Được cấp cho tôi</small><strong>{received.length}</strong><em>{view === 'received' ? activeCount + ' đang hiệu lực' : 'Chọn tab để xem'}</em></div></article>
+      <article><span className={styles.statGreen}>↙</span><div><small>Được cấp cho tôi</small><strong>{receivedVisible.length}</strong><em>{view === 'received' ? activeCount + ' đang hiệu lực' : 'Chọn tab để xem'}</em></div></article>
       <article><span className={styles.statPurple}>⌛</span><div><small>Đã thu hồi</small><strong>{revokedCount}</strong><em>Trong danh sách đang xem</em></div></article>
     </div>
 
     <div className={styles.grantPanel}>
-      <div className={styles.panelTop}><div><p className={styles.grantsEyebrow}>DANH SÁCH QUYỀN</p><h2>{view === 'issued' ? 'Tài liệu tôi đã cấp' : 'Tài liệu được cấp cho tôi'}</h2></div><div className={styles.tabs} role="tablist" aria-label="Loại quyền tài liệu"><button type="button" role="tab" aria-selected={view === 'issued'} className={view === 'issued' ? styles.tabActive : styles.tab} onClick={() => setView('issued')}>Đã cấp <b>{issued.length}</b></button><button type="button" role="tab" aria-selected={view === 'received'} className={view === 'received' ? styles.tabActive : styles.tab} onClick={() => setView('received')}>Được cấp <b>{received.length}</b></button></div></div>
-      {visibleGrants.length === 0 ? <EmptyState title={view === 'issued' ? 'Bạn chưa cấp quyền nào' : 'Bạn chưa được cấp quyền nào'}>Các quyền tài liệu sẽ xuất hiện ở đây.</EmptyState> : <div className={styles.grantTableWrap}><table className={styles.grantTable}><thead><tr><th>Tài liệu</th><th>{view === 'issued' ? 'Người nhận' : 'Được cấp bởi'}</th><th>Task</th><th>Quyền</th><th>Trạng thái</th><th>Hiệu lực đến</th></tr></thead><tbody>{visibleGrants.map(grant => <tr key={grant.id}><td><Link href={'/grants/' + grant.id} className={styles.documentLink}>{documentTitle(grant)}</Link><small>{grant.resource_type}</small></td><td>{personName(view === 'issued' ? grant.actor_id : grant.grantor_id)}</td><td>{taskTitle(grant)}</td><td><div className={styles.permissionChips}>{(grant.permissions || []).map(permission => <span key={permission}>{permissionLabel[permission] || permission}</span>)}</div></td><td><span className={grant.status === 'ACTIVE' ? styles.statusActive : grant.status === 'REVOKED' ? styles.statusRevoked : styles.statusExpired}>{grant.status}</span></td><td><strong>{formatDateTime(grant.effective_expires_at)}</strong><small>{grant.revoked_at ? 'Thu hồi lúc ' + formatDateTime(grant.revoked_at) : 'Chưa thu hồi'}</small></td></tr>)}</tbody></table></div>}
+      <div className={styles.panelTop}><div><p className={styles.grantsEyebrow}>DANH SÁCH QUYỀN</p><h2>{view === 'issued' ? 'Tài liệu tôi đã cấp' : 'Tài liệu được cấp cho tôi'}</h2></div><div className={styles.tabs} role="tablist" aria-label="Loại quyền tài liệu"><button type="button" role="tab" aria-selected={view === 'issued'} className={view === 'issued' ? styles.tabActive : styles.tab} onClick={() => setView('issued')}>Đã cấp <b>{issued.length}</b></button><button type="button" role="tab" aria-selected={view === 'received'} className={view === 'received' ? styles.tabActive : styles.tab} onClick={() => setView('received')}>Được cấp <b>{receivedVisible.length}</b></button></div></div>
+      {visibleGrants.length === 0 ? <EmptyState title={view === 'issued' ? 'Bạn chưa cấp quyền nào' : 'Bạn chưa được cấp quyền nào'}>Các quyền tài liệu sẽ xuất hiện ở đây.</EmptyState> : <div className={styles.grantTableWrap}><table className={styles.grantTable}><thead><tr><th>Tài liệu</th><th>{view === 'issued' ? 'Người nhận' : 'Được cấp bởi'}</th><th>Task</th><th>Quyền</th><th>Trạng thái</th><th>Hiệu lực đến</th></tr></thead><tbody>{visibleGrants.map(grant => <tr key={grant.id}><td><Link href={'/grants/' + grant.id} className={styles.documentLink}>{documentTitle(grant)}</Link><small>{grant.resource_type}</small></td><td>{personName(view === 'issued' ? grant.actor_id : grant.grantor_id)}</td><td>{taskTitle(grant)}</td><td><div className={styles.permissionChips}>{isSelfGrant(grant) ? <span>Full quyền</span> : (grant.permissions || []).map(permission => <span key={permission}>{permissionLabel[permission] || permission}</span>)}</div></td><td><span className={grant.status === 'ACTIVE' ? styles.statusActive : grant.status === 'REVOKED' ? styles.statusRevoked : styles.statusExpired}>{grant.status}</span></td><td><strong>{formatDateTime(grant.effective_expires_at)}</strong><small>{grant.revoked_at ? 'Thu hồi lúc ' + formatDateTime(grant.revoked_at) : 'Chưa thu hồi'}</small></td></tr>)}</tbody></table></div>}
     </div>
   </section>;
 }
